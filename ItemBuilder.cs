@@ -202,8 +202,8 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
         {
             var top = cover is Cover.Top or Cover.TopOfIce;
             var tiltMatrix = Matrix4x4.CreateFromYawPitchRoll(0, tilt.X, tilt.Y);
-            var materialMap = MaterialMap(top ? "top:" : null);
             var skin = cover != Cover.Gated && (cover != Cover.None || IsSkin(new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = environment ?? Environment }, block, ground));
+            var materialMap = MaterialMap(top ? "top:" : skin ? "skin:" : null);
             var export = new MeshExport(Paths.ExtractedStadium, materialMap)
             {
                 Environment = environment ?? Environment,
@@ -428,7 +428,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
         return m.Success && Regex.IsMatch(m.Groups[1].Value, @"DUvLayer\s*\(\s*Lightmap\s*,\s*0\s*\)");
     }
 
-    private const float SkinLift = 0.03f;
+    private const float SkinLift = 0.02f;
 
     private static string? MaterialLibSurface(string name)
         => Regex.Match(MaterialLib.Value, $@"DMaterial\({Regex.Escape(name)}\)[^D]*(?:D(?!Material)[^D]*)*?DSurfaceId\s*\((\w+)\)") is { Success: true } m

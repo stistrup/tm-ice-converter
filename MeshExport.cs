@@ -590,7 +590,8 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
                     $"_notcollidable_{label}_v{gi}", MapMaterial(source), Visible: true, Collidable: false,
                     positions, stream.Normals is { } n ? TransformNormals(n, world) : null,
                     SnowLaidOut(source) ? PlainSnowUv(positions) : PlatformLayout || PlatformLaidOut.Contains(source) ? PlatformUv(positions) : Uv(stream, 0),
-                    Uv(stream, 1), idx, SnowLaidOut(source) ? null : Colors(stream)); // source alpha blends snow to grass
+                    Uv(stream, 1), idx, Colors(stream));
+                if (Lift != 0) piece = WithSkirt(piece, worldPos);
                 pieces.Add(piece.Uv1 is null && !source.StartsWith("Decal") ? WithProjectedLightmap(piece) : piece);
             }
         }
@@ -708,6 +709,52 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
             (lifted[3 * v], lifted[3 * v + 1], lifted[3 * v + 2]) = (lifted[3 * v] + d.X, lifted[3 * v + 1] + d.Y, lifted[3 * v + 2] + d.Z);
         }
         return lifted;
+    }
+
+    // closes the lift gap at open edges, facing out
+    private static MeshPiece WithSkirt(MeshPiece piece, float[] unlifted)
+    {
+        var (pos, idx) = (piece.Positions, piece.Indices);
+        Vector3 At(float[] p, int v) => new(p[3 * v], p[3 * v + 1], p[3 * v + 2]);
+        (int, int, int) Key(int v) => ((int)MathF.Round(unlifted[3 * v] * 1000), (int)MathF.Round(unlifted[3 * v + 1] * 1000), (int)MathF.Round(unlifted[3 * v + 2] * 1000));
+        var edges = new Dictionary<((int, int, int), (int, int, int)), (int A, int B, int C, int Count)>();
+        for (int t = 0; t + 2 < idx.Length; t += 3)
+            for (int k = 0; k < 3; k++)
+            {
+                var (a, b, c) = (idx[t + k], idx[t + (k + 1) % 3], idx[t + (k + 2) % 3]);
+                var (ka, kb) = (Key(a), Key(b));
+                if (ka == kb) continue;
+                var key = ka.CompareTo(kb) < 0 ? (ka, kb) : (kb, ka);
+                edges[key] = edges.TryGetValue(key, out var e) ? e with { Count = e.Count + 1 } : (a, b, c, 1);
+            }
+        var open = edges.Values.Where(e => e.Count == 1).ToList();
+        if (open.Count == 0) return piece;
+        var (positions, normals, uv0, uv1, colors) = (new List<float>(pos), piece.Normals is { } n0 ? new List<float>(n0) : null,
+            piece.Uv0 is { } u0 ? new List<float>(u0) : null, piece.Uv1 is { } u1 ? new List<float>(u1) : null, piece.Colors is { } c0 ? new List<float>(c0) : null);
+        var indices = new List<int>(idx);
+        foreach (var (a, b, c, _) in open)
+        {
+            var (ta, tb) = (At(pos, a), At(pos, b));
+            var edge = tb - ta;
+            var outward = At(pos, c) - ta;
+            outward -= edge * Vector3.Dot(outward, edge) / edge.LengthSquared();
+            outward = -Vector3.Normalize(outward);
+            var first = positions.Count / 3;
+            foreach (var (v, p) in new[] { (a, ta), (b, tb), (b, At(unlifted, b)), (a, At(unlifted, a)) })
+            {
+                positions.AddRange([p.X, p.Y, p.Z]);
+                normals?.AddRange([outward.X, outward.Y, outward.Z]);
+                uv0?.AddRange(piece.Uv0!.AsSpan(2 * v, 2));
+                uv1?.AddRange(piece.Uv1!.AsSpan(2 * v, 2));
+                colors?.AddRange(piece.Colors!.AsSpan(4 * v, 4));
+            }
+            var face = Vector3.Cross(tb - ta, At(unlifted, b) - ta);
+            indices.AddRange(Vector3.Dot(face, outward) >= 0 ? [first, first + 1, first + 2, first, first + 2, first + 3] : [first, first + 2, first + 1, first, first + 3, first + 2]);
+        }
+        return piece with
+        {
+            Positions = [.. positions], Normals = normals?.ToArray(), Uv0 = uv0?.ToArray(), Uv1 = uv1?.ToArray(), Colors = colors?.ToArray(), Indices = [.. indices],
+        };
     }
 
     private string MapMaterial(string name)

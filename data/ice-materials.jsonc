@@ -44,6 +44,13 @@
   // "item:" only applies to item copies
   "ItemInflatableTube": "PlatformIce_PlatformTech",
   "item:CollisionMetal": "PlatformIce_PlatformTech",
+  // "skin:" only applies to skins; PlatformIce_DecoHill shows the vista's ground near the terrain
+  "skin:Deco": "CustomSnow",
+  "skin:DecoHill": "CustomSnow",
+  "skin:DecoHill2": "CustomSnow",
+  "skin:Grass": "CustomSnow",
+  "skin:Land": "CustomSnow",
+  "skin:Penalty": "CustomSnow",
   // "top:" only applies to top skins
   "top:TrackWall": "PlatformIce_PlatformTech",
   "top:TrackWallClips": "PlatformIce_PlatformTech",
