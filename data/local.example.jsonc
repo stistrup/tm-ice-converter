@@ -1,0 +1,17 @@
+// copy to data/local.jsonc and fill in
+{
+  "paths": {
+    // Documents/Trackmania
+    "trackmania": "",
+    // OpenplanetNext
+    "openplanet": "",
+    // game install folder
+    "game": "",
+    // only needed on Linux
+    "importerWinePrefix": "~/.local/share/tm-ice-wine",
+    // where --final writes, under Maps
+    "finishedFolder": "ICE finished"
+  },
+  // only for --testrun
+  "testrunAuthor": { "login": "", "nickname": "", "zone": "World|<continent>|<country>" }
+}

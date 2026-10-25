@@ -1,0 +1,160 @@
+// hand-written fixes, these win over the name rules
+//   "From": "To" | null | { "to", "rotate", "offset", "variant", "subVariant" }
+{
+  // prefixes that look like surfaces but aren't
+  "ignorePrefixes": [
+    "StageTechnics",
+    "TechnicsScreen"
+  ],
+
+  // per map in "maps", per run with --set name=value
+  "options": {
+    "removeForcedCameras": true,
+    "keepPlasticWalls": false,
+    "engineOffToReset": true,
+    // wins over engineOffToReset
+    "engineOffToPlain": false,
+    // snow on open-zone sides
+    "snowOnZoneSides": true,
+    "effectsToGate": true
+  },
+
+  // per map: blocks, ignorePrefixes, options, keep, keepItems, removeItems ("Name x, y, z" for one placed item)
+  "maps": {
+    "Fall 2026 - 18": { "options": { "keepPlasticWalls": true } },
+    "Fall 2026 - 05": { "options": { "engineOffToPlain": true } },
+    "Fall 2026 - 02": { "options": { "snowOnZoneSides": false } },
+    "Fall 2026 - 19": { "options": { "snowOnZoneSides": false } },
+    // guide walls stay plastic
+    "Egypt 2026": { "options": { "engineOffToPlain": true },
+      "keepItems": ["InflatableBorder*", "InflatableMat1m*"],
+      "removeItems": ["InflatableBorder1mCornerOut 1151.5, 66.5, 1264.5"] },
+    "Czech Republic 2026": { "keepItems": ["InflatableBorder*"] }
+  },
+
+  // ice blocks an environment lacks
+  "unavailableIn": {
+    "*": ["OpenIceZone"]
+  },
+
+  // item swaps by id
+  "items": {
+    "Fall": "WinterFrozenTree",
+    "Spring": "WinterFrozenTree",
+    "FallTreeBig": "FrozenTreeBig",
+    "FallTreeMedium": "FrozenTreeMedium",
+    "FallTreeSmall": "FrozenTreeSmall",
+    "FallTreeTall": "FrozenTreeTall",
+    "FallTreeVerySmall": "FrozenTreeVerySmall",
+    "SpringTreeBig": "FrozenTreeBig",
+    "SpringTreeMedium": "FrozenTreeMedium",
+    "SpringTreeSmall": "FrozenTreeSmall",
+    "SpringTreeTall": "FrozenTreeTall",
+    "SpringTreeVerySmall": "FrozenTreeVerySmall",
+    "FirMedium": "FirSnowMedium",
+    "FirTall": "FirSnowTall"
+  },
+
+  // only for items touching converted ice
+  "itemsOnSnow": {
+    "TreePine": "Winter",
+    "TreePineBigA2": "FirSnowTall",
+    "TreePineBigA3": "FirSnowTall",
+    "TreePineMediumA1": "FirSnowMedium",
+    "TreePineMediumA3": "FirSnowMedium",
+    "TreePineSmallA1": "FirSnowMedium",
+    "TreePineSmallA2": "FirSnowMedium",
+    "TreePineSmallA3": "FirSnowMedium",
+    "Bush": "FrozenTreeVerySmall",
+    "BushSmallC": "FrozenTreeVerySmall",
+    "BushMediumA": "FrozenTreeVerySmall",
+    "BushMediumB": "FrozenTreeVerySmall",
+    "BushMediumD": "FrozenTreeVerySmall",
+    "BushBigA": "FrozenTreeSmall",
+    "BushBigB": "FrozenTreeSmall",
+    "BushBigC": "FrozenTreeSmall",
+    "BushBigD": "FrozenTreeSmall",
+    "Cactus": "FrozenTreeSmall",
+    "CactusSmallA": "FrozenTreeVerySmall",
+    "CactusSmallC": "FrozenTreeVerySmall",
+    "CactusSmallD": "FrozenTreeVerySmall",
+    "CactusSmallE": "FrozenTreeVerySmall",
+    "CactusBigC": "FrozenTreeSmall",
+    "CactusBigD": "FrozenTreeSmall",
+    "TreePineBig": "FirSnowTall",
+    "TreePineBigA1": "FirSnowTall",
+    "TreePineMedium": "FirSnowMedium",
+    "TreePineSmall": "FirSnowMedium",
+    "FlowerSmallB": "FrozenTreeVerySmall",
+    "PalmForest": "WinterFrozenTree",
+    "PalmGrove": "WinterFrozenTree",
+    "PalmEcotone": "WinterFrozenTree",
+    "PalmTreeBigA0": "FrozenTreeBig",
+    "PalmTreeBigA2": "FrozenTreeBig",
+    "PalmTreeBigB0": "FrozenTreeBig",
+    "PalmTreeBigB1": "FrozenTreeBig",
+    "PalmTreeBigB2": "FrozenTreeBig",
+    "PalmTreeBigB3": "FrozenTreeBig",
+    "PalmTreeSugarBigA": "FrozenTreeTall",
+    "PalmTreeSugarBigB": "FrozenTreeTall",
+    "PalmTreeSmallA": "FrozenTreeSmall",
+    "PalmTreeSmallB": "FrozenTreeSmall",
+    "BushSmallA": "FrozenTreeVerySmall",
+    "BushSmallB": "FrozenTreeVerySmall",
+    "PlantSmallC": "FrozenTreeVerySmall",
+    "PlantSmallD": "FrozenTreeVerySmall",
+    "TreeMediumA": "FrozenTreeMedium",
+    "TreeSmallA": "FrozenTreeSmall",
+    "TreeSmallB": "FrozenTreeSmall",
+    "TreeSmallC": "FrozenTreeSmall",
+    "GreenCoast:Forest": "WinterFrozenTree",
+    "GreenCoast:Grove": "WinterFrozenTree",
+    "GreenCoast:Ecotone": "WinterFrozenTree",
+    "WhiteShore:Forest": "Winter",
+    "WhiteShore:Grove": "Winter",
+    "TreeFirBig": "FirSnowTall",
+    "TreeFirMedium": "FirSnowMedium",
+    "TreeFirSmall": "FirSnowMedium",
+    "TreePineDeadBigA": "FrozenTreeBig",
+    "BushMediumC": "FrozenTreeVerySmall",
+    "BushMediumE": "FrozenTreeVerySmall",
+    "BushMediumF": "FrozenTreeVerySmall",
+    "PlantSmallA": "FrozenTreeVerySmall",
+    "PlantSmallB": "FrozenTreeVerySmall",
+    "CactusBigE": "FrozenTreeSmall",
+    "PalmTreeBigA1": "FrozenTreeBig",
+    "PalmTreeBigA3": "FrozenTreeBig",
+    "PalmTreeBigA4": "FrozenTreeBig",
+    "PalmTreeSmallC": "FrozenTreeSmall",
+    "PalmTreeSugarMediumA": "FrozenTreeMedium",
+    "PalmTreeSugarMediumB": "FrozenTreeMedium",
+    "PalmTreeSugarMediumC": "FrozenTreeMedium",
+    "PalmTreeSugarSmallA": "FrozenTreeSmall",
+    "PalmTreeSugarSmallC": "FrozenTreeSmall",
+    "TreeBigA": "FrozenTreeBig",
+    "TreeBigB": "FrozenTreeBig",
+    "TreeMediumB": "FrozenTreeMedium",
+    "TreeBushyMediumA": "FrozenTreeMedium",
+    "TreeBushyMediumB": "FrozenTreeMedium",
+    "TreeBushySmallA": "FrozenTreeSmall",
+    "TreeThinBigA": "FrozenTreeTall",
+    "TreeThinBushyBigA": "FrozenTreeTall",
+    "TreeThinMediumA": "FrozenTreeMedium",
+    "TreeThinBushySmallA": "FrozenTreeSmall",
+    "TreeThinSmallA": "FrozenTreeSmall",
+    "TreeThinSmallB": "FrozenTreeSmall",
+    "TreeThinSmallD": "FrozenTreeSmall",
+    "TreePineMediumA2": "FirSnowMedium",
+    "TreeFirVerySmall": "FirSnowMedium",
+    "TreePineDeadMediumA": "FrozenTreeMedium",
+    "TreePineDeadSmallA": "FrozenTreeSmall",
+    "TreePineDeadVerySmallA": "FrozenTreeVerySmall",
+    "SpringPalmTree": "WinterFrozenTree",
+    "PalmTreeMedium": "FrozenTreeMedium",
+    "CypressTall": "FirSnowTall"
+  },
+
+  "blocks": {
+    
+  }
+}

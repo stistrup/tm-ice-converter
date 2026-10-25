@@ -1,0 +1,72 @@
+// Nadeo material -> NadeoImporter material
+{
+  "RoadTech": "PlatformIce_PlatformTech",
+  "RoadDirt": "PlatformIce_PlatformTech",
+  "PlatformTech": "PlatformIce_PlatformTech",
+  "TrackBorders": "TrackBorders",
+  "CollisionTrackBorder": "TrackBorders",
+
+  "Technics": "Technics",
+  "TechnicsTrims": "TechnicsTrims",
+  "LightSpot": "LightSpot",
+  "DecalPaint2Logo4x1": "DecalPaint2Logo4x1",
+
+  "ChronoCheckpoint": "ScreenBack",
+  "ChronoFinish": "ScreenBack",
+
+  // empty = left out
+  "GrassFence": "",
+
+  "ThemeSnowRoad": "PlatformIce_PlatformTech",
+  // plain tiling material, the stripes come out as rings
+  "ThemeSnowRoadBorder": "CustomPlasticShiny",
+  "DecoHill": "PlatformIce_DecoHill",
+  "DecoHill2": "PlatformIce_DecoHill2",
+  "Deco": "PlatformIce_DecoHill",
+  "Penalty": "PlatformIce_DecoHill",
+  "Grass": "PlatformIce_DecoHill",
+  "Land": "PlatformIce_DecoHill",
+  "HillPxz": "PlatformIce_DecoHill",
+  "TransitionRocksToLand": "PlatformIce_DecoHill",
+  // terrain blend shaders, named after the shader
+  "Tech3 Block PyPxz_Ids": "PlatformIce_DecoHill",
+  "Tech3 Block PyPxz_Ids_Tex": "PlatformIce_DecoHill",
+  "DecoCliff": "PlatformIce_DecoHill2",
+  "DecoCliffBase": "PlatformIce_DecoHill2",
+  "OpenTechBorders": "PlatformIce_OpenTechBorders",
+  "DecalPlatform": "PlatformIce_DecalPlatform",
+  "DecalPaintSponsor4x1NoColorizeA": "DecalPaintSponsor4x1A",
+  "DecalPaintSponsor4x1NoColorizeB": "DecalPaintSponsor4x1B",
+  "DecalPaintSponsor4x1NoColorizeC": "DecalPaintSponsor4x1C",
+  "DecalPaintSponsor4x1NoColorizeD": "DecalPaintSponsor4x1D",
+  "RoadBump": "PlatformIce_PlatformTech",
+  "CollisionMetal": "Technics",
+  // "item:" only applies to item copies
+  "ItemInflatableTube": "PlatformIce_PlatformTech",
+  "item:CollisionMetal": "PlatformIce_PlatformTech",
+  // "top:" only applies to top skins
+  "top:TrackWall": "PlatformIce_PlatformTech",
+  "top:TrackWallClips": "PlatformIce_PlatformTech",
+  "top:Structure": "PlatformIce_PlatformTech",
+  "ItemInflatableMat": "PlatformIce_PlatformTech",
+  "ItemInflatableFloor": "PlatformIce_PlatformTech",
+  "ItemRamp": "PlatformIce_PlatformTech",
+  "Unknown": "CustomConcrete",
+  // no good glass in the library
+  "CanopyGlass": "GlassWaterWall",
+  "ItemObstacleLightOn": "LightSpot",
+  "SpeedometerLight": "SpeedometerLight_Dyna",
+  "ThemeRallyCastleBorders": "CustomConcrete",
+  "ThemeRallyCastleWall": "CustomConcrete",
+  "ThemeRallyCastleWallUV": "CustomConcrete",
+  "Show4x1": "Ad4x1Screen",
+  "TechnicsStep": "Technics",
+  "CollisionIce": "PlatformIce_PlatformTech",
+  "CollisionTurbo": "PlatformIce_PlatformTech",
+  "RoadTechSubIce": "PlatformIce_PlatformTech",
+  // the library's TrackWall comes out wood/black
+  "TrackWall": "CustomConcrete",
+  "TrackWallClips": "CustomConcrete",
+  // the library's Structure renders black
+  "Structure": "CustomConcrete"
+}

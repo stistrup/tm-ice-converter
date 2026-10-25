@@ -1,0 +1,10 @@
+bin/
+obj/
+__pycache__/
+
+# Kept local, never published: this machine's user and the working notes.
+# Your account (convert --testrun); format in data/local.example.jsonc.
+data/local.jsonc
+# Working notes: progress log, decisions, open questions.
+STATUS.md
+review *
