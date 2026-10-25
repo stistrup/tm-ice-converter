@@ -16,7 +16,7 @@
     "engineOffToPlain": false,
     // snow on open-zone sides
     "snowOnZoneSides": true,
-    "effectsToGate": true
+    "effectsToGate": false
   },
 
   // per map: name, blocks, ignorePrefixes, options, keep, keepItems, removeItems ("Name x, y, z" for one placed item)

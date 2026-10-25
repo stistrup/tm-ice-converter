@@ -151,7 +151,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
         => ItemName(shapes, block, ground, variant, subVariant, clips, cover, tilt, SnowOnZoneSides);
 
     private static bool IsSkin(MeshExport shapes, string block, bool ground)
-        => Converter.IsGameplayBlock(block) || ground && !shapes.IsPillarBlock(block) && !IsWholeOnGround(block, shapes.Environment);
+        => ground && !shapes.IsPillarBlock(block) && !IsWholeOnGround(block, shapes.Environment);
 
     // grass would poke through a skin
     internal static bool IsWholeOnGround(string block, string? environment)
@@ -160,21 +160,73 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     private static bool IsPadLook(string material)
         => material.StartsWith("SpecialFX") || material.StartsWith("DecalSpecial") || material.StartsWith("SpecialSign") || material.StartsWith("TriggerFX");
 
-    // leave the pad's glow uncovered
-    private static List<MeshPiece> AroundPad(List<MeshPiece> skin, List<MeshPiece> all)
+    // leave the pad uncovered but keep it icy: its own collision, lifted, keeps its gameplay
+    private static List<MeshPiece> AroundPad(List<MeshPiece> skin, List<MeshPiece> all, string? gameplay)
     {
-        var glow = all.Where(p => p.Material.StartsWith("SpecialFX")).SelectMany(p => Enumerable.Range(0, p.Positions.Length / 3).Select(i => (X: p.Positions[3 * i], Z: p.Positions[3 * i + 2]))).ToList();
-        if (glow.Count == 0) return skin;
-        var (x0, x1, z0, z1) = (glow.Min(v => v.X), glow.Max(v => v.X), glow.Min(v => v.Z), glow.Max(v => v.Z));
+        var pads = all.Where(p => !p.Visible && PadGameplay(p.Name) is not null).ToList();
+        var glow = all.Where(p => p.Material.StartsWith("SpecialFX")).SelectMany(p => p.Indices.Select(i => (X: p.Positions[3 * i], Z: p.Positions[3 * i + 2])));
+        var area = glow.Concat(pads.SelectMany(p => p.Indices.Select(i => (X: p.Positions[3 * i], Z: p.Positions[3 * i + 2])))).ToList();
+        if (area.Count == 0) return skin;
+        var (x0, x1, z0, z1) = (area.Min(v => v.X), area.Max(v => v.X), area.Min(v => v.Z), area.Max(v => v.Z));
         bool UnderPad(MeshPiece p, int t)
         {
             var xs = Enumerable.Range(0, 3).Select(k => p.Positions[3 * p.Indices[t + k]]).ToArray();
             var zs = Enumerable.Range(0, 3).Select(k => p.Positions[3 * p.Indices[t + k] + 2]).ToArray();
-            return xs.Max() > x0 && xs.Min() < x1 && zs.Max() > z0 && zs.Min() < z1;
+            return xs.Max() > x0 + 0.01f && xs.Min() < x1 - 0.01f && zs.Max() > z0 + 0.01f && zs.Min() < z1 - 0.01f;
         }
-        return skin.Select(p => p with { Indices = Enumerable.Range(0, p.Indices.Length / 3).Select(i => 3 * i).Where(t => !UnderPad(p, t)).SelectMany(t => p.Indices[t..(t + 3)]).ToArray() })
-            .Where(p => p.Indices.Length > 0).ToList();
+        var around = skin.Select(p => p with { Indices = Enumerable.Range(0, p.Indices.Length / 3).Select(i => 3 * i).Where(t => !UnderPad(p, t)).SelectMany(t => p.Indices[t..(t + 3)]).ToArray() })
+            .Where(p => p.Indices.Length > 0 && (!p.Visible || HasFloor(p))).ToList();
+        around.AddRange(pads.Select((p, i) => p with
+        {
+            Name = $"_notvisible_pad{i}_g{gameplay ?? PadGameplay(p.Name)}", Material = PadMaterial,
+            Positions = p.Positions.Select((v, k) => k % 3 == 1 ? v + SkinLift : v).ToArray(),
+        }));
+        return around;
     }
+
+    // skirts alone have no lightmap area, which the importer rejects
+    private static bool HasFloor(MeshPiece p)
+    {
+        if (p.Uv1 is not { } uv) return true;
+        float Area(int t)
+        {
+            var (a, b, c) = (p.Indices[t], p.Indices[t + 1], p.Indices[t + 2]);
+            return MathF.Abs((uv[2 * b] - uv[2 * a]) * (uv[2 * c + 1] - uv[2 * a + 1]) - (uv[2 * c] - uv[2 * a]) * (uv[2 * b + 1] - uv[2 * a + 1]));
+        }
+        return Enumerable.Range(0, p.Indices.Length / 3).Any(i => Area(3 * i) > 1e-7f);
+    }
+
+    // full item: the pad's collision as ice with the block's effect
+    private static List<MeshPiece> IcyPads(List<MeshPiece> pieces, string? gameplay)
+        => pieces.Select((p, i) => p.Visible || PadGameplay(p.Name) is not { } own ? p
+            : p with { Name = $"_notvisible_pad{i}_g{gameplay ?? own}", Material = PadMaterial }).ToList();
+
+    // special blocks share the turbo look; the effect's modifier swaps it
+    private static Dictionary<string, string> EffectLook(string effect)
+    {
+        string Lib(string name, string fallback) => Regex.IsMatch(MaterialLib.Value, $@"DMaterial\({Regex.Escape(name)}\)") ? name : fallback;
+        return new()
+        {
+            ["SpecialFXTurbo"] = Lib($"{effect}_SpecialFX", "SpecialFXTurbo"),
+            ["DecalSpecialTurbo"] = Lib($"{effect}_Decal", "DecalSpecialTurbo"),
+            ["SpecialSignTurbo"] = Lib($"{effect}_Sign", "SpecialSignTurbo"),
+            ["SpecialSignOff"] = Lib($"{effect}_SignOff", "SpecialSignOff"),
+            ["TriggerFXTurbo"] = Lib($"{effect}_TriggerFX", ""),
+        };
+    }
+
+    // the effect's ice collision material says which gameplay; Turbo has none (the mesh's own)
+    private static string? PadGameplayOf(string block)
+    {
+        if (Converter.Effect(block) is not { } effect) return null;
+        var path = Path.Combine(Paths.ExtractedStadium, "Media", "Modifier", effect, "CollisionRoadIce.Material.Gbx");
+        return File.Exists(path) && Gbx.ParseNode<GBX.NET.Engines.Plug.CPlugMaterial>(path) is { GameplayId: { } g } ? g.ToString() : null;
+    }
+
+    private static string? PadGameplay(string piece) => Regex.Match(piece, @"_g([A-Za-z0-9]+)$") is { Success: true } m ? m.Groups[1].Value : null;
+
+    // own surface so the fix-up can tell it apart
+    private const string PadMaterial = "CustomIce";
 
     // drop the foot at terrain level (flickers)
     private static List<MeshPiece> WithoutFoot(List<MeshPiece> skin)
@@ -204,6 +256,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
             var tiltMatrix = Matrix4x4.CreateFromYawPitchRoll(0, tilt.X, tilt.Y);
             var skin = cover != Cover.Gated && (cover != Cover.None || IsSkin(new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = environment ?? Environment }, block, ground));
             var materialMap = MaterialMap(top ? "top:" : skin ? "skin:" : null);
+            if (Converter.Effect(block) is { } effect) foreach (var (k, v) in EffectLook(effect)) materialMap[k] = v;
             var export = new MeshExport(Paths.ExtractedStadium, materialMap)
             {
                 Environment = environment ?? Environment,
@@ -221,7 +274,8 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
             var waypoint = skin ? null : export.Waypoint(block);
             var pieces = export.Export(parts);
             if (skin && !top && (ground || cover == Cover.InTerrain) && block.StartsWith("Deco")) pieces = WithoutFoot(pieces);
-            if (skin && Converter.IsGameplayBlock(block)) pieces = AroundPad(pieces, new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = environment ?? Environment }.Export(parts));
+            if (skin && Converter.IsGameplayBlock(block)) pieces = AroundPad(pieces, new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = environment ?? Environment }.Export(parts), PadGameplayOf(block));
+            else if (Converter.IsGameplayBlock(block)) pieces = IcyPads(pieces, PadGameplayOf(block));
             lock (Missing) Missing.UnionWith(export.Missing);
             if (pieces.Count == 0) return export.Missing.Count > 0 ? "its prefab isn't extracted yet" : top || skin && Converter.IsGameplayBlock(block) ? NothingToCover : "no geometry found";
             if (cover == Cover.TopOfIce && pieces.Where(p => p.Visible).Sum(Area) < TopOfIceMinArea) return NothingToCover;
@@ -365,7 +419,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
         var itemPath = Path.Combine(Paths.Items, name + ".Item.gbx");
         var collision = LoadJsonc<List<FbxObject>>(Path.Combine(meshDir, name + ".objects.json"))
             .Where(o => !o.Name.StartsWith("_notcollidable_") && !o.Name.StartsWith("_trigger_"))
-            .Select(o => (o.Name, physics[o.Material], o.Triangles)).ToList();
+            .Select(o => (o.Name, o.Name.StartsWith("_notvisible_pad") ? $"RoadIce:{PadGameplay(o.Name)}" : physics[o.Material], o.Triangles)).ToList();
         var surfaces = ItemPhysics.Fix(itemPath, collision);
         if (waypoint is not null) SetWaypoint(itemPath, waypoint);
 

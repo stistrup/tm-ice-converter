@@ -62,11 +62,13 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
     [GeneratedRegex("Tech(?!nics)|Dirt|Grass|Plastic|Bump")]
     private static partial Regex Surface();
 
-    // effect blocks: an item would lose the effect
-    [GeneratedRegex("Turbo|Boost|NoEngine|NoSteering|NoBrake|SlowMotion|Fragile|Reset|Cruise|Reactor")]
+    // effect blocks; longest names first, they name the Modifier folder
+    [GeneratedRegex("TurboRoulette|Turbo2|Turbo|Boost2|Boost|NoEngine|NoSteering|NoBrake|SlowMotion|Fragile|Reset|Cruise|Reactor")]
     private static partial Regex NoItem();
 
     internal static bool IsGameplayBlock(string name) => NoItem().IsMatch(name);
+
+    internal static string? Effect(string name) => NoItem().Match(name) is { Success: true } m && m.Value != "Reactor" ? m.Value : null;
 
     private static readonly string[] IcePrefixes = ["DecoPlatform", "DecoHill", "DecoCliff10", "DecoCliff8", "DecoCliff"];
 
@@ -166,15 +168,6 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             if (rules.Options.EffectsToGate && GateEffect(name) is { } effect && !block.IsFree && GateOn(map, block, effect, variantOf[block], clipsOf[block], report))
             {
                 replaced.Add(block);
-                continue;
-            }
-            if (NoItem().IsMatch(name))
-            {
-                var skinnedHere = block.IsFree
-                    ? PlaceItem(map, block, VariantOf(block), FreeClips(block), report)
-                    : PlaceItem(map, block, variantOf[block], clipsOf[block], report);
-                if (skinnedHere) { skinned.Add(block); Bump(report.SpecialSkinned, name); }
-                else Bump(report.SpecialKept, name);
                 continue;
             }
             if (IsWallOnly(block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block]))
@@ -437,7 +430,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             for (int k = 0; k < remaining.Count; k++)
             {
                 var (block, i) = remaining[k];
-                if (now[k].SetEquals(target[i]) || renamed.Contains(block) || skinned.Contains(block) || block.IsGround && !shapes.IsPillarBlock(block.Name) || NoItem().IsMatch(block.Name) || IsOnKeepList(block) || IsConcrete(block, placed[i].Variant, target[i])
+                if (now[k].SetEquals(target[i]) || renamed.Contains(block) || skinned.Contains(block) || block.IsGround && !shapes.IsPillarBlock(block.Name) || IsOnKeepList(block) || IsConcrete(block, placed[i].Variant, target[i])
                     || IsWallOnly(block, placed[i].Variant, target[i]) && !(TopAppears(now[k], target[i]) && AdapterAbove(block, replaced))) continue;
                 if (!PlaceItem(map, block, placed[i].Variant, target[i], report)) continue;
                 replaced.Add(block);

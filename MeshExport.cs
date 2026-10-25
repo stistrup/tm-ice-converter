@@ -608,8 +608,9 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
                 if (MapMaterial(name) is "" || KeepMaterial is { } keep && !keep(name)) continue;
                 var kept = KeptFaces(worldVerts, group.SelectMany(t => new[] { t.Indices.X, t.Indices.Y, t.Indices.Z }).ToArray());
                 if (kept.Length == 0) continue;
+                var gameplay = group.GroupBy(t => t.U03).MaxBy(g => g.Count())!.Key;
                 pieces.Add(new MeshPiece(
-                    $"_notvisible_{label}_c{group.Key}", MapMaterial(name), Visible: false, Collidable: true,
+                    $"_notvisible_{label}_c{group.Key}" + (gameplay == 0 ? "" : $"_g{(CPlugSurface.GameplayId)gameplay}"), MapMaterial(name), Visible: false, Collidable: true,
                     positions, null, null, null, kept));
             }
         }
