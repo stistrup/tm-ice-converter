@@ -107,9 +107,10 @@ int Watch(string[] rest)
 List<string> ChangedDropMaps(string outDir, string suffix)
 {
     Directory.CreateDirectory(Paths.DropFolder);
+    var translations = Translations.Load(Path.Combine(dataDir, "translations.jsonc"));
     return ExpandMaps([Paths.DropFolder]).Where(p =>
     {
-        var output = OutputPath(p, outDir, suffix);
+        var output = OutputPath(p, outDir, suffix, translations);
         return !File.Exists(output) || File.GetLastWriteTimeUtc(output) < File.GetLastWriteTimeUtc(p);
     }).ToList();
 }
@@ -140,7 +141,7 @@ int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerab
         {
             var gbx = Gbx.Parse<CGameCtnChallenge>(path);
             var report = converter.Convert(gbx.Node);
-            gbx.Node.MapName = Regex.Replace(gbx.Node.MapName, @"\s*\(ice[^)]*\)$", "", RegexOptions.IgnoreCase) + suffix;
+            gbx.Node.MapName = translations.NameFor(Regex.Replace(gbx.Node.MapName, @"\s*\(ice[^)]*\)$", "", RegexOptions.IgnoreCase)) + suffix;
             // own UID, stable across reconverts
             gbx.Node.MapUid = DerivedMapUid(gbx.Node.MapUid, dummyTimes ? $"{suffix}{Paths.TestrunAuthor.Login}#{Paths.TestrunGeneration}" : suffix);
             gbx.Node.Kind = CGameCtnChallenge.MapKind.InProgress;
@@ -170,7 +171,7 @@ int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerab
                 });
             }
 
-            var outPath = OutputPath(path, outDir, suffix);
+            var outPath = OutputPath(path, outDir, suffix, translations);
             gbx.Save(outPath);
             // second save fixes the header's lightmap version
             Gbx.Parse<CGameCtnChallenge>(outPath).Save(outPath);
@@ -315,8 +316,8 @@ static string Suffix(string? tag) => tag is null ? " (ICE)" : $" (ice {tag})";
 
 static string TestrunSuffix() => " - AN Ice";
 
-static string OutputPath(string map, string outDir, string suffix)
-    => Path.Combine(outDir, Path.GetFileName(map).Replace(".Map.Gbx", suffix + ".Map.Gbx", StringComparison.OrdinalIgnoreCase));
+static string OutputPath(string map, string outDir, string suffix, Translations translations)
+    => Path.Combine(outDir, translations.NameFor(Regex.Replace(Path.GetFileName(map), @"\.Map\.Gbx$", "", RegexOptions.IgnoreCase)) + suffix + ".Map.Gbx");
 
 static IEnumerable<string> ExpandMaps(IEnumerable<string> inputs) => inputs.SelectMany(p =>
     Directory.Exists(p) ? Directory.EnumerateFiles(p, "*.Map.Gbx", SearchOption.AllDirectories) : [p]);

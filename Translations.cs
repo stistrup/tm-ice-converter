@@ -35,6 +35,10 @@ public sealed class Translations
 
     public Dictionary<string, Translations> Maps { get; } = [];
 
+    public string? Name { get; private set; }
+
+    public string NameFor(string mapName) => Maps.GetValueOrDefault(mapName)?.Name ?? mapName;
+
     public List<(string Name, bool Value)> Settings { get; } = [];
 
     public List<(string Name, bool Value)> RunSettings { get; } = [];
@@ -97,6 +101,8 @@ public sealed class Translations
     private static Translations Parse(JsonElement root)
     {
         var result = new Translations();
+
+        if (root.TryGetProperty("name", out var newName)) result.Name = newName.GetString();
 
         if (root.TryGetProperty("options", out var options))
             foreach (var option in options.EnumerateObject())
