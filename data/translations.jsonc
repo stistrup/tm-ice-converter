@@ -11,7 +11,7 @@
   "options": {
     "removeForcedCameras": true,
     "keepPlasticWalls": false,
-    "engineOffToReset": true,
+    "engineOffToReset": false,
     // wins over engineOffToReset
     "engineOffToPlain": false,
     // snow on open-zone sides
@@ -22,11 +22,10 @@
   // per map: name, blocks, ignorePrefixes, options, keep, keepItems, removeItems ("Name x, y, z" for one placed item)
   "maps": {
     "Fall 2026 - 18": { "options": { "keepPlasticWalls": true } },
-    "Fall 2026 - 05": { "options": { "engineOffToPlain": true } },
     "Fall 2026 - 02": { "options": { "snowOnZoneSides": false } },
     "Fall 2026 - 19": { "options": { "snowOnZoneSides": false } },
     // guide walls stay plastic
-    "Egypt 2026": { "name": "Fall 2026 - 21 Egypt", "options": { "engineOffToPlain": true },
+    "Egypt 2026": { "name": "Fall 2026 - 21 Egypt",
       "keepItems": ["InflatableBorder*", "InflatableMat1m*"],
       "removeItems": ["InflatableBorder1mCornerOut 1151.5, 66.5, 1264.5"] },
     "Czech Republic 2026": { "name": "Fall 2026 - 23 Czech Republic", "keepItems": ["InflatableBorder*"] },

@@ -241,7 +241,8 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
             foreach (var (part, place, clipOnly) in tops)
             {
                 var sloped = Slope(part, upOnly: false).Length() >= 0.1f;
-                var turn = !sloped ? Matrix4x4.Identity : corners.Count > 0 ? FittedTopTurn(part, place, corners) : clipOnly ? TopClipTurn(part, rise) : Matrix4x4.Identity;
+                // the fit is noise on clip-only blocks
+                var turn = !sloped ? Matrix4x4.Identity : clipOnly ? TopClipTurn(part, rise) : corners.Count > 0 ? FittedTopTurn(part, place, corners) : Matrix4x4.Identity;
                 parts.Add((part.Path, part.Transform * turn * place));
             }
         }
@@ -589,7 +590,7 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
                     $"_notcollidable_{label}_v{gi}", MapMaterial(source), Visible: true, Collidable: false,
                     positions, stream.Normals is { } n ? TransformNormals(n, world) : null,
                     SnowLaidOut(source) ? PlainSnowUv(positions) : PlatformLayout || PlatformLaidOut.Contains(source) ? PlatformUv(positions) : Uv(stream, 0),
-                    Uv(stream, 1), idx, Colors(stream));
+                    Uv(stream, 1), idx, SnowLaidOut(source) ? null : Colors(stream)); // source alpha blends snow to grass
                 pieces.Add(piece.Uv1 is null && !source.StartsWith("Decal") ? WithProjectedLightmap(piece) : piece);
             }
         }
