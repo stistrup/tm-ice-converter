@@ -23,9 +23,9 @@ public interface IBlockShapes
     bool? EnvironmentHas(string blockName);
     int? NoPillarBelowVariant(string blockName, bool ground, int variantIndex);
     // null = not extracted
-    IReadOnlyList<(Vector3 A, Vector3 B, Vector3 C, string Material)>? CollisionTriangles(string blockName, bool ground, int variantIndex, int subVariant);
+    IReadOnlyList<(Vector3 A, Vector3 B, Vector3 C, string Material)>? CollisionTriangles(string blockName, bool ground, int variantIndex, int mobil);
     // null = not extracted
-    IReadOnlySet<string>? Materials(string blockName, bool ground, int variantIndex, int subVariant, IReadOnlySet<int> clips);
+    IReadOnlySet<string>? Materials(string blockName, bool ground, int variantIndex, int mobil, IReadOnlySet<int> clips);
 }
 
 public sealed class ConversionReport
@@ -266,7 +266,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             foreach (var block in items.Concat(swapped).Concat(skinned))
             {
                 if (block.IsPillar || shapes.IsPillarBlock(block.Name)
-                    || shapes.CollisionTriangles(block.Name, block.IsGround, VariantOf(block), block.SubVariant) is not { } tris) continue;
+                    || shapes.CollisionTriangles(block.Name, block.IsGround, VariantOf(block), MobilOf(block)) is not { } tris) continue;
                 Matrix4x4 place;
                 if (block.IsFree)
                 {
@@ -339,7 +339,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         // flat road only
         var middle = new Vector2(16, 16);
         float? surface = null;
-        foreach (var (a, b, c, _) in shapes.CollisionTriangles(block.Name, block.IsGround, variant, block.SubVariant) ?? [])
+        foreach (var (a, b, c, _) in shapes.CollisionTriangles(block.Name, block.IsGround, variant, MobilOf(block)) ?? [])
         {
             var n = Vector3.Normalize(Vector3.Cross(b - a, c - a));
             if (MathF.Abs(n.Y) < 0.99f) continue;
@@ -430,7 +430,9 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             for (int k = 0; k < remaining.Count; k++)
             {
                 var (block, i) = remaining[k];
-                if (now[k].SetEquals(target[i]) || renamed.Contains(block) || skinned.Contains(block) || block.IsGround && !shapes.IsPillarBlock(block.Name) || IsOnKeepList(block) || IsConcrete(block, placed[i].Variant, target[i])
+                if (OnlyTopsAppear(now[k], target[i]) && !(IsWallOnly(block, placed[i].Variant, target[i]) && AdapterAbove(block, replaced))
+                    // stands: an end cap is fine
+                    || block.Name.StartsWith("Stand") || renamed.Contains(block) || skinned.Contains(block) || block.IsGround && !shapes.IsPillarBlock(block.Name) || IsOnKeepList(block) || IsConcrete(block, placed[i].Variant, target[i])
                     || IsWallOnly(block, placed[i].Variant, target[i]) && !(TopAppears(now[k], target[i]) && AdapterAbove(block, replaced))) continue;
                 if (!PlaceItem(map, block, placed[i].Variant, target[i], report)) continue;
                 replaced.Add(block);
@@ -467,6 +469,10 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             IceTops(map, block, placed[i].Variant, now[k], report, renamed.Contains(block) ? Cover.TopOfIce : Cover.Top);
         }
     }
+
+    // new tops get ice from TopsNowShown
+    private static bool OnlyTopsAppear(IReadOnlySet<int> now, IReadOnlySet<int> original)
+        => original.IsSubsetOf(now) && now.Except(original).All(key => (key & 0xFFFF) / 32 % 6 == 5);
 
     private static bool TopAppears(IReadOnlySet<int> now, IReadOnlySet<int> original)
         => now.Except(original).Any(key => (key & 0xFFFF) / 32 % 6 == 5);
@@ -507,14 +513,16 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
     private static readonly Dictionary<string, float> Drops = [];
 
     // ground blocks keep it in flag bits 21-26
-    internal static int VariantOf(CGameCtnBlock block)
-        => block.IsGround && block.Variant == 0 ? (block.Flags >> 21) & 0x3F : block.Variant;
+    // block flags: bits 0-5 mobil row (GBX.NET Variant), 6-11 mobil entry (SubVariant), 21-26 block info variant
+    internal static int VariantOf(CGameCtnBlock block) => (block.Flags >> 21) & 0x3F;
+
+    internal static int MobilOf(CGameCtnBlock block) => block.Flags & 0xFFF;
 
     internal static Int3 CellAt(Vector3 world) => new((int)MathF.Floor(world.X / 32), (int)MathF.Floor(world.Y / 8) + 8, (int)MathF.Floor(world.Z / 32));
 
     private bool PlaceItem(CGameCtnChallenge map, CGameCtnBlock block, int variant, IReadOnlySet<int> clips, ConversionReport report, Cover cover = Cover.None)
     {
-        if (items.For(block.Name, block.IsGround, variant, block.SubVariant, clips, cover, Tilt(block)) is not { } item) return false;
+        if (items.For(block.Name, block.IsGround, variant, MobilOf(block), clips, cover, Tilt(block)) is not { } item) return false;
         if (item == IceItem.Nothing) return cover is not (Cover.Top or Cover.TopOfIce) && !IsGameplayBlock(block.Name);
         Vector3 pos;
         Vec3 rotation;
@@ -541,13 +549,13 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
     }
 
     private HashSet<int> FreeClips(CGameCtnBlock block)
-        => shapes.ClipSides(block.Name, false, block.Variant)
+        => shapes.ClipSides(block.Name, false, VariantOf(block))
             .SelectMany(s => s.Clips.Where(c => !c.Vertical && !c.Anti).Select(c => MeshExport.ClipKey(s.Bit, c.Index))).ToHashSet();
 
     // white deco with no ice version stays (concrete)
     private bool IsConcrete(CGameCtnBlock block, int variant, IReadOnlySet<int> clips)
         => block.Name.StartsWith("Deco") && block.Color == DifficultyColor.White
-            && !(shapes.Materials(block.Name, block.IsGround, variant, block.SubVariant, clips) is { } materials
+            && !(shapes.Materials(block.Name, block.IsGround, variant, MobilOf(block), clips) is { } materials
                 && materials.Any(m => m.StartsWith("Deco") && !IsGroundFill(block, m)));
 
     // walls-only blocks stay native, ice on their upward faces (not gates or stands)
@@ -556,7 +564,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         if (block.Name.StartsWith("Gate") || block.Name.StartsWith("Stand") || IsGameplayBlock(block.Name)) return;
         // odd angles: rotation order unknown
         if (!QuarterTurns(Tilt(block))) return;
-        if (shapes.Materials(block.Name, block.IsGround, variant, block.SubVariant, clips) is { } materials && materials.Any(IsWallMaterial)
+        if (shapes.Materials(block.Name, block.IsGround, variant, MobilOf(block), clips) is { } materials && materials.Any(IsWallMaterial)
             && PlaceItem(map, block, variant, clips, report, cover)
             && topped.Add(block))
             Bump(report.TopsIced, block.Name);
@@ -574,7 +582,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
     internal static bool IsWallMaterial(string material) => material is "TrackWall" or "TrackWallClips" or "Structure";
 
     private bool IsWallOnly(CGameCtnBlock block, int variant, IReadOnlySet<int> clips)
-        => shapes.Materials(block.Name, block.IsGround, variant, block.SubVariant, clips) is { Count: > 0 } materials
+        => shapes.Materials(block.Name, block.IsGround, variant, MobilOf(block), clips) is { Count: > 0 } materials
             && materials.Any(IsWallMaterial)
             && !materials.Any(m => m != "Underwater" && !IsGroundFill(block, m) && ItemBuilder.SkinCovers(block.Name, m, items.SnowOnZoneSides));
 

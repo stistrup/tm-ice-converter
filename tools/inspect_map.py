@@ -9,7 +9,7 @@ from datetime import datetime
 import bpy
 from mathutils import Vector
 
-INFO_KEYS = ("kind", "name", "sourceBlock", "cell", "position", "direction", "variant", "subVariant", "shownVariant",
+INFO_KEYS = ("kind", "name", "sourceBlock", "cell", "position", "direction", "variant", "mobil", "shownVariant",
              "drawnAs", "tags", "flags", "mesh")
 
 

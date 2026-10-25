@@ -50,7 +50,7 @@ public sealed class MapView(MeshExport shapes)
 
     private void AddBlocks(CGameCtnChallenge map)
     {
-        var grid = new List<(CGameCtnBlock Block, ClipResolver.Placed Placed, int SubVariant)>();
+        var grid = new List<(CGameCtnBlock Block, ClipResolver.Placed Placed, int Mobil)>();
         foreach (var block in map.GetBlocks())
         {
             var name = block.Name;
@@ -60,18 +60,18 @@ public sealed class MapView(MeshExport shapes)
                 var free = Matrix4x4.CreateFromYawPitchRoll(r.X, r.Y, r.Z) * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
                 var all = shapes.ClipSides(name, block.IsGround, Converter.VariantOf(block))
                     .SelectMany(s => s.Clips.Where(c => !c.Vertical).Select(c => MeshExport.ClipKey(s.Bit, c.Index))).ToHashSet();
-                Add(block, name, block.IsGround, Converter.VariantOf(block), block.SubVariant, free, all, Info(block, p));
+                Add(block, name, block.IsGround, Converter.VariantOf(block), Converter.MobilOf(block), free, all, Info(block, p));
                 continue;
             }
 
             // draw from the block above
-            var (meshName, ground, variant, subVariant) = (name, block.IsGround, Converter.VariantOf(block), block.SubVariant);
-            if (name.EndsWith("Pillar") && shapes.FindPlacedBlockParts(name, ground, variant, subVariant, new HashSet<int>()) is null
+            var (meshName, ground, variant, mobil) = (name, block.IsGround, Converter.VariantOf(block), Converter.MobilOf(block));
+            if (name.EndsWith("Pillar") && shapes.FindPlacedBlockParts(name, ground, variant, mobil, new HashSet<int>()) is null
                 && shapes.ClipSides(name, ground, variant).Count == 0)
-                (meshName, ground, variant, subVariant) = (name[..^"Pillar".Length], false, 0, 0);
+                (meshName, ground, variant, mobil) = (name[..^"Pillar".Length], false, 0, 0);
             var units = shapes.Units(meshName, ground, variant) ?? [new Int3(0, 0, 0)];
             var place = Converter.Placement(block, (units.Max(u => u.X) + 1, units.Max(u => u.Z) + 1));
-            grid.Add((block, new ClipResolver.Placed(meshName, ground, variant, place), subVariant));
+            grid.Add((block, new ClipResolver.Placed(meshName, ground, variant, place), mobil));
         }
 
         var resolver = new ClipResolver(shapes);
@@ -84,11 +84,11 @@ public sealed class MapView(MeshExport shapes)
         var drop = Matrix4x4.CreateTranslation(0, -Converter.EnvironmentDrop(map.Collection?.ToString()), 0);
         for (int i = 0; i < grid.Count; i++)
         {
-            var (block, placed, subVariant) = grid[i];
+            var (block, placed, mobil) = grid[i];
             var info = Info(block, null);
             if (placed.Name != block.Name) info["drawnAs"] = placed.Name;
             if (placed.Variant != Converter.VariantOf(block)) info["shownVariant"] = placed.Variant;
-            Add(block, placed.Name, placed.Ground, placed.Variant, subVariant, placed.Place * drop, shown[i], info);
+            Add(block, placed.Name, placed.Ground, placed.Variant, mobil, placed.Place * drop, shown[i], info);
         }
     }
 
@@ -100,7 +100,7 @@ public sealed class MapView(MeshExport shapes)
             ["name"] = block.Name,
             ["direction"] = block.Direction.ToString(),
             ["variant"] = Converter.VariantOf(block),
-            ["subVariant"] = block.SubVariant,
+            ["mobil"] = Converter.MobilOf(block),
             ["flags"] = $"0x{block.Flags:X8}",
         };
         if (freePosition is { } p) info["position"] = new[] { p.X, p.Y, p.Z };
@@ -116,14 +116,14 @@ public sealed class MapView(MeshExport shapes)
         return info;
     }
 
-    private void Add(CGameCtnBlock block, string meshName, bool ground, int variant, int subVariant, Matrix4x4 place, HashSet<int> clips,
+    private void Add(CGameCtnBlock block, string meshName, bool ground, int variant, int mobil, Matrix4x4 place, HashSet<int> clips,
         Dictionary<string, object> info)
     {
         if (shapes.IsTerrain(meshName)) info["tags"] = info.TryGetValue("tags", out var t) ? $"{t}, terrain" : "terrain";
-        var key = $"{meshName}|{(ground ? "g" : "a")}{variant}.{subVariant}|{MeshExport.ClipsKey(clips)}";
+        var key = $"{meshName}|{(ground ? "g" : "a")}{variant}.{mobil}|{MeshExport.ClipsKey(clips)}";
         if (!meshes.ContainsKey(key))
         {
-            var parts = shapes.FindPlacedBlockParts(meshName, ground, variant, subVariant, clips);
+            var parts = shapes.FindPlacedBlockParts(meshName, ground, variant, mobil, clips);
             meshes[key] = parts is null ? null : Pieces(shapes.Export(parts), shapes.MaterialModifierDir(meshName));
         }
         if (meshes[key] is null)

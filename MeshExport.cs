@@ -115,9 +115,9 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
         return cached is not null;
     }
 
-    public List<(string Path, Matrix4x4 Transform)>? FindPlacedBlockParts(string blockName, bool ground, int variantIndex, int subVariant, IReadOnlySet<int> shownClips)
+    public List<(string Path, Matrix4x4 Transform)>? FindPlacedBlockParts(string blockName, bool ground, int variantIndex, int mobil, IReadOnlySet<int> shownClips)
         => TryLoadBlock(blockName, out var block) && PickVariant(block.Info, ground, variantIndex) is { } variant
-            ? Parts(block.Path, variant, subVariant, block.Info.PillarShapeMultiDir.ToString(), (bit, index, _, _) =>
+            ? Parts(block.Path, variant, mobil, block.Info.PillarShapeMultiDir.ToString(), (bit, index, _, _) =>
                 Enumerable.Range(0, 8).Cast<int?>().FirstOrDefault(column => shownClips.Contains(ClipKey(bit, index, column!.Value))))
             : null;
 
@@ -415,9 +415,9 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
     private static bool IsVertical(External<CGameCtnBlockInfoClip> clip)
         => clip.File?.FilePath.EndsWith(".EDVerticalClip.Gbx", StringComparison.OrdinalIgnoreCase) == true;
 
-    public IReadOnlyList<(Vector3 A, Vector3 B, Vector3 C, string Material)>? CollisionTriangles(string blockName, bool ground, int variantIndex, int subVariant)
+    public IReadOnlyList<(Vector3 A, Vector3 B, Vector3 C, string Material)>? CollisionTriangles(string blockName, bool ground, int variantIndex, int mobil)
     {
-        if (FindPlacedBlockParts(blockName, ground, variantIndex, subVariant, new HashSet<int>()) is not { } parts) return null;
+        if (FindPlacedBlockParts(blockName, ground, variantIndex, mobil, new HashSet<int>()) is not { } parts) return null;
         var tris = new List<(Vector3, Vector3, Vector3, string)>();
         foreach (var p in Export(parts).Where(p => p.Collidable))
         {
@@ -427,8 +427,8 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
         return tris;
     }
 
-    public IReadOnlySet<string>? Materials(string blockName, bool ground, int variantIndex, int subVariant, IReadOnlySet<int> clips)
-        => FindPlacedBlockParts(blockName, ground, variantIndex, subVariant, clips) is { } parts
+    public IReadOnlySet<string>? Materials(string blockName, bool ground, int variantIndex, int mobil, IReadOnlySet<int> clips)
+        => FindPlacedBlockParts(blockName, ground, variantIndex, mobil, clips) is { } parts
             ? Export(parts).Select(p => p.Material).ToHashSet() : null;
 
     public IReadOnlyList<Int3>? Units(string blockName, bool ground, int variantIndex)
@@ -465,18 +465,20 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
     private static Matrix4x4 AroundUnitCenter(float yaw)
         => Matrix4x4.CreateTranslation(-16, 0, -16) * Matrix4x4.CreateRotationY(yaw) * Matrix4x4.CreateTranslation(16, 0, 16);
 
-    private static (string Path, Matrix4x4 Transform)? MobilPrefab(CGameCtnBlockInfoVariant variant, string ownerPath, int index = 0, bool exact = false)
+    // mobil as in block flags: row in bits 0-5, entry in bits 6-11
+    private static (string Path, Matrix4x4 Transform)? MobilPrefab(CGameCtnBlockInfoVariant variant, string ownerPath, int mobil = 0, bool exact = false)
     {
         var mobils = variant.Mobils ?? [];
-        var chosen = mobils.ElementAtOrDefault(index)?.FirstOrDefault(m => m.PrefabFidFile is not null)
+        var row = mobils.ElementAtOrDefault(mobil & 0x3F);
+        var chosen = (row?.ElementAtOrDefault(mobil >> 6) is { PrefabFidFile: not null } entry ? entry : row?.FirstOrDefault(m => m.PrefabFidFile is not null))
             ?? (exact ? null : mobils.SelectMany(m => m).FirstOrDefault(m => m.PrefabFidFile is not null));
-        if (chosen is not { PrefabFidFile: { } file } mobil) return null;
+        if (chosen is not { PrefabFidFile: { } file } picked) return null;
         var ancestor = Gbx.ParseHeader(ownerPath).RefTable?.AncestorLevel ?? 0;
         // degrees
         const float deg = MathF.PI / 180;
-        var transform = mobil.HasGeomTransformation
-            ? Matrix4x4.CreateFromYawPitchRoll(mobil.GeomRotation.Y * deg, mobil.GeomRotation.X * deg, mobil.GeomRotation.Z * deg)
-                * Matrix4x4.CreateTranslation(mobil.GeomTranslation.X, mobil.GeomTranslation.Y, mobil.GeomTranslation.Z)
+        var transform = picked.HasGeomTransformation
+            ? Matrix4x4.CreateFromYawPitchRoll(picked.GeomRotation.Y * deg, picked.GeomRotation.X * deg, picked.GeomRotation.Z * deg)
+                * Matrix4x4.CreateTranslation(picked.GeomTranslation.X, picked.GeomTranslation.Y, picked.GeomTranslation.Z)
             : Matrix4x4.Identity;
         return (ResolveRef(ownerPath, ancestor, file.FilePath), transform);
     }
