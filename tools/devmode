@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# devmode on|off: Openplanet developer mode (unsigned plugins); read at game start
+set -euo pipefail
+case "${1:-}" in on) want=true ;; off) want=false ;; *) echo "usage: devmode on|off" >&2; exit 2 ;; esac
+
+root="$(dirname "$(readlink -f "$0")")/.."
+openplanet=$(grep -o '"openplanet"[[:space:]]*:[[:space:]]*"[^"]*"' "$root/data/local.jsonc" | sed 's/.*"\([^"]*\)"$/\1/')
+ini="${openplanet/#\~/$HOME}/Settings.ini"
+[ -f "$ini" ] || { echo "no $ini" >&2; exit 1; }
+
+# Openplanet writes its settings back on exit
+if pgrep -fi 'Trackmania\.exe' >/dev/null; then echo "close the game first" >&2; exit 1; fi
+
+grep -q '^DeveloperMode=' "$ini" || { echo "no DeveloperMode in $ini" >&2; exit 1; }
+sed -i "s/^DeveloperMode=.*/DeveloperMode=$want/" "$ini"
+grep '^DeveloperMode=' "$ini"

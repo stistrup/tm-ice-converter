@@ -13,6 +13,9 @@ void RenderMenu()
     if (UI::MenuItem("\\$9cf" + Icons::Snowflake + "\\$z Extract the loaded map's environment folder", "", false, !g_running)) {
         startnew(RunEnvironment);
     }
+    if (UI::MenuItem("\\$9cf" + Icons::Snowflake + "\\$z Compute shadows for every map in the set folder", "", false, !g_running)) {
+        startnew(RunShadows);
+    }
 }
 
 int g_ok = 0, g_failed = 0;
