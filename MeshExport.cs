@@ -50,6 +50,15 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
     public Func<Vector3, bool>? KeepFace { get; init; }
     public bool PlatformLayout { get; init; }
 
+    // material for visual faces that touch a border (the road lip under it): null = as usual, "" = left out
+    public Func<string, string?>? LipAs { get; init; }
+
+    private const float LipTouch = 0.02f;
+    // lips run from below the road up to the border: 0.8 m (tech, bump), 1 m (dirt); flush borders touch flat faces
+    private const float LipMinHeight = 0.5f, LipMaxHeight = 1.5f;
+    private List<(Vector3 A, Vector3 B, Vector3 C)>? borders;
+    private bool collectingBorders;
+
     public string? Environment
     {
         get => environment;
@@ -522,7 +531,15 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
     public List<MeshPiece> Export(IEnumerable<(string Path, Matrix4x4 Transform)> parts)
     {
         var pieces = new List<MeshPiece>();
-        foreach (var (path, transform) in parts) AddPrefab(path, transform, pieces, depth: 0);
+        var list = parts.ToList();
+        borders = null;
+        if (LipAs is not null)
+        {
+            (borders, collectingBorders) = ([], true);
+            foreach (var (path, transform) in list) AddPrefab(path, transform, pieces, depth: 0);
+            collectingBorders = false;
+        }
+        foreach (var (path, transform) in list) AddPrefab(path, transform, pieces, depth: 0);
         return pieces;
     }
 
@@ -569,6 +586,11 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
 
     private void AddStaticObject(CPlugStaticObjectModel som, Matrix4x4 world, string label, List<MeshPiece> pieces)
     {
+        if (collectingBorders)
+        {
+            CollectBorders(som, world);
+            return;
+        }
         if (som.Mesh is { } mesh)
         {
             // best LOD only
@@ -586,6 +608,15 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
                 if (KeepMaterial is { } keep && !keep(source)) continue;
                 var worldPos = Transform(pos, world);
                 idx = KeptFaces(worldPos, idx);
+                var lipAs = LipAs?.Invoke(source);
+                int[] lip = [];
+                if (lipAs is not null) (idx, lip) = SplitLip(worldPos, idx);
+                if (lip.Length > 0 && lipAs is not "")
+                {
+                    // the game gives the hidden lip no lightmap space
+                    pieces.Add(WithProjectedLightmap(new MeshPiece($"_notcollidable_{label}_v{gi}_lip", lipAs!, Visible: true, Collidable: false,
+                        Lifted(worldPos, lip), stream.Normals is { } ln ? TransformNormals(ln, world) : null, null, null, lip)));
+                }
                 if (idx.Length == 0) continue;
                 var positions = Lifted(worldPos, idx);
                 var piece = new MeshPiece(
@@ -679,6 +710,63 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
             Indices = indices,
             Colors = piece.Colors is null ? null : [.. colors],
         };
+    }
+
+    private void CollectBorders(CPlugStaticObjectModel som, Matrix4x4 world)
+    {
+        if (som.Mesh is not { } mesh) return;
+        var geoms = mesh.ShadedGeoms ?? [];
+        var hasLods = geoms.Any(g => g.LodMask != 0);
+        var bestLod = geoms.Select(g => g.LodMask).Where(m => m != 0).Select(m => m & -m).DefaultIfEmpty(1).Min();
+        foreach (var geom in geoms.Where(g => g.LodMask == 0 ? !hasLods : (g.LodMask & bestLod) != 0))
+        {
+            if (!MaterialName(mesh, geom.MaterialIndex).Contains("Border")) continue;
+            if (mesh.Visuals?[geom.VisualIndex] is not CPlugVisualIndexedTriangles { VertexStreams: [{ Positions: { } pos }, ..], IndexBuffer.Indices: { } idx }) continue;
+            var p = Transform(pos, world);
+            Vector3 At(int i) => new(p[3 * i], p[3 * i + 1], p[3 * i + 2]);
+            for (int t = 0; t + 2 < idx.Length; t += 3) borders!.Add((At(idx[t]), At(idx[t + 1]), At(idx[t + 2])));
+        }
+    }
+
+    // faces with a corner on a border's surface, as tall as a lip
+    private (int[] Others, int[] Lip) SplitLip(float[] positions, int[] indices)
+    {
+        if (borders is not { Count: > 0 }) return (indices, []);
+        Vector3 At(int i) => new(positions[3 * i], positions[3 * i + 1], positions[3 * i + 2]);
+        bool OnBorder(Vector3 q) => borders.Any(b => DistanceToTriangle(q, b.A, b.B, b.C) < LipTouch);
+        var touching = new Dictionary<int, bool>();
+        bool Touches(int v) => touching.TryGetValue(v, out var on) ? on : touching[v] = OnBorder(At(v));
+        var (rest, lip) = (new List<int>(), new List<int>());
+        bool LipHigh(int t)
+        {
+            var ys = indices[t..(t + 3)].Select(v => positions[3 * v + 1]).ToArray();
+            return ys.Max() - ys.Min() is >= LipMinHeight and <= LipMaxHeight;
+        }
+        for (int t = 0; t + 2 < indices.Length; t += 3)
+            (LipHigh(t) && (Touches(indices[t]) || Touches(indices[t + 1]) || Touches(indices[t + 2])) ? lip : rest).AddRange(indices[t..(t + 3)]);
+        return ([.. rest], [.. lip]);
+    }
+
+    // closest point on a triangle (Ericson, Real-Time Collision Detection 5.1.5)
+    private static float DistanceToTriangle(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
+    {
+        var (ab, ac, ap) = (b - a, c - a, p - a);
+        float d1 = Vector3.Dot(ab, ap), d2 = Vector3.Dot(ac, ap);
+        if (d1 <= 0 && d2 <= 0) return Vector3.Distance(p, a);
+        var bp = p - b;
+        float d3 = Vector3.Dot(ab, bp), d4 = Vector3.Dot(ac, bp);
+        if (d3 >= 0 && d4 <= d3) return Vector3.Distance(p, b);
+        float vc = d1 * d4 - d3 * d2;
+        if (vc <= 0 && d1 >= 0 && d3 <= 0) return Vector3.Distance(p, a + ab * (d1 / (d1 - d3)));
+        var cp = p - c;
+        float d5 = Vector3.Dot(ab, cp), d6 = Vector3.Dot(ac, cp);
+        if (d6 >= 0 && d5 <= d6) return Vector3.Distance(p, c);
+        float vb = d5 * d2 - d1 * d6;
+        if (vb <= 0 && d2 >= 0 && d6 <= 0) return Vector3.Distance(p, a + ac * (d2 / (d2 - d6)));
+        float va = d3 * d6 - d5 * d4;
+        if (va <= 0 && d4 - d3 >= 0 && d5 - d6 >= 0) return Vector3.Distance(p, b + (c - b) * ((d4 - d3) / (d4 - d3 + d5 - d6)));
+        var denom = 1 / (va + vb + vc);
+        return Vector3.Distance(p, a + ab * (vb * denom) + ac * (vc * denom));
     }
 
     private int[] KeptFaces(float[] positions, int[] indices)

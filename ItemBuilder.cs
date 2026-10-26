@@ -293,6 +293,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
                 Lift = skin ? SkinLift : 0,
                 Up = Vector3.TransformNormal(Vector3.UnitY, Matrix4x4.Transpose(tiltMatrix)),
                 KeepFace = top ? n => Vector3.TransformNormal(n, tiltMatrix).Y > TopMinY : null,
+                LipAs = top ? null : m => SwappedToIce(materialMap, m) ? (skin ? "" : "CustomConcrete") : null,
                 PlatformLayout = top,
             };
             clips ??= export.ClipSides(block, ground, variant)
@@ -325,6 +326,9 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     private readonly Dictionary<string, IceItem?> itemCopies = [];
 
     private static readonly HashSet<string> IceSurfaces = ["RoadIce", "Ice", "Snow"];
+
+    private static bool SwappedToIce(IReadOnlyDictionary<string, string> materialMap, string material)
+        => materialMap.TryGetValue(material, out var to) && to != material && MaterialLibSurface(to) is { } s && IceSurfaces.Contains(s);
 
     // ice copy of a placed item that drives as non-ice (mats, tubes, ramps)
     public IceItem? ForItem(string itemId)
