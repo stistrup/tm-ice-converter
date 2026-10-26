@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Reflection;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
@@ -6,6 +7,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using GBX.NET;
 using GBX.NET.Engines.GameData;
+using GBX.NET.Engines.Plug;
 
 namespace TmIceConverter;
 
@@ -33,7 +35,7 @@ public interface IItemSource
 public sealed class ItemBuilder(string dataDir) : IItemSource
 {
     // bump to rebuild every item
-    private const int PipelineVersion = 11;
+    private const int PipelineVersion = 13;
 
     private readonly MeshExport shapes = new(Paths.ExtractedStadium, new Dictionary<string, string>());
     private readonly Dictionary<string, string> failures = [];
@@ -57,16 +59,20 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     public bool SnowOnZoneSides { get; set; }
 
     private readonly Dictionary<string, Request> planned = [];
+    // incomplete items never turn current: build once per run
+    private readonly HashSet<string> built = [];
 
     public IceItem? For(string block, bool ground, int variant, int mobil, IReadOnlySet<int> clips, Cover cover = Cover.None, Vector2 tilt = default)
     {
         var name = ItemName(shapes, block, ground, variant, mobil, clips, cover, tilt, SnowOnZoneSides);
         if (failedItems.Contains(name)) return null;
-        lock (emptyItems) if (emptyItems.Contains(name)) return IceItem.Nothing;
+        lock (emptyItems) if (emptyItems.Contains(name) || IsKnownEmpty(name) && emptyItems.Add(name)) return IceItem.Nothing;
         if (shapes.Units(block, ground, variant) is not null && shapes.FindPlacedBlockParts(block, ground, variant, mobil, clips) is null)
             return IceItem.Nothing;
         var path = Path.Combine(Paths.Items, name + ".Item.gbx");
-        if (!IsCurrent(name, path, out var builtFrom))
+        bool builtThisRun;
+        lock (built) builtThisRun = built.Contains(name);
+        if (!builtThisRun && !IsCurrent(name, path, out var builtFrom))
         {
             if (Planning)
             {
@@ -77,6 +83,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
             if (error is NothingToCover)
             {
                 lock (emptyItems) emptyItems.Add(name);
+                WriteEmptyStamp(name);
                 return IceItem.Nothing;
             }
             if (error is not null)
@@ -91,32 +98,48 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
         return new IceItem(new Ident($"IceConverter\\{name}.Item.gbx", header.Collection, header.Author), path, shapes.BlockSize(block, ground, variant));
     }
 
-    public void BuildPlanned()
+    // false when nothing was planned
+    public bool BuildPlanned()
     {
-        var todo = planned.Values.ToList();
+        var jobs = plannedCopies.Values.Select(c => (Action<TextWriter>)(log =>
+        {
+            var copy = BuildItemCopy(c.ItemId, c.Environment, log, plan: false);
+            lock (itemCopies) itemCopies[$"{c.Environment}:{c.ItemId}"] = copy;
+        })).Concat(planned.Values.Select(r => (Action<TextWriter>)(log => BuildRequest(r, log)))).ToList();
+        plannedCopies.Clear();
         planned.Clear();
-        if (todo.Count == 0) return;
-        var parallel = Math.Max(1, System.Environment.ProcessorCount / 2);
-        Console.WriteLine($"Building {todo.Count} items, {parallel} at a time");
+        if (jobs.Count == 0) return false;
+        // jobs mostly wait on Blender and Wine start-up; two cores left for the desktop
+        var parallel = Math.Max(1, System.Environment.ProcessorCount - 2);
+        Console.WriteLine($"Building {jobs.Count} items, {parallel} at a time");
         var done = 0;
-        Parallel.ForEach(todo, new ParallelOptions { MaxDegreeOfParallelism = parallel }, r =>
+        Parallel.ForEach(jobs, new ParallelOptions { MaxDegreeOfParallelism = parallel }, job =>
         {
             var log = new StringWriter();
-            var shapesHere = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = r.Environment };
-            var name = ItemName(shapesHere, r.Block, r.Ground, r.Variant, r.Mobil, r.Clips, r.Cover, r.Tilt, r.ZoneSides);
-            if (!IsCurrent(name, Path.Combine(Paths.Items, name + ".Item.gbx"), out var builtFrom)
-                && Build(r.Block, r.Ground, r.Variant, r.Mobil, r.Clips, builtFrom, r.Environment, log, r.Cover, r.Tilt, r.ZoneSides) is { } error)
-            {
-                if (error is NothingToCover) lock (emptyItems) emptyItems.Add(name);
-                else
-                {
-                    lock (failures) { failures[r.Block] = error; failedItems.Add(name); }
-                    log.WriteLine($"  no item for {r.Block}: {error}");
-                }
-            }
+            job(log);
             var n = Interlocked.Increment(ref done);
-            if (log.ToString() is { Length: > 0 } text) lock (Console.Out) Console.Write($"[{n}/{todo.Count}] " + text.TrimStart());
+            if (log.ToString() is { Length: > 0 } text) lock (Console.Out) Console.Write($"[{n}/{jobs.Count}] " + text.TrimStart());
         });
+        return true;
+    }
+
+    private void BuildRequest(Request r, TextWriter log)
+    {
+        var shapesHere = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = r.Environment };
+        var name = ItemName(shapesHere, r.Block, r.Ground, r.Variant, r.Mobil, r.Clips, r.Cover, r.Tilt, r.ZoneSides);
+        lock (built) built.Add(name);
+        if (IsCurrent(name, Path.Combine(Paths.Items, name + ".Item.gbx"), out var builtFrom)
+            || Build(r.Block, r.Ground, r.Variant, r.Mobil, r.Clips, builtFrom, r.Environment, log, r.Cover, r.Tilt, r.ZoneSides) is not { } error) return;
+        if (error is NothingToCover)
+        {
+            lock (emptyItems) emptyItems.Add(name);
+            WriteEmptyStamp(name);
+        }
+        else
+        {
+            lock (failures) { failures[r.Block] = error; failedItems.Add(name); }
+            log.WriteLine($"  no item for {r.Block}: {error}");
+        }
     }
 
     // rebuild only when the tools and the exported input both changed
@@ -139,6 +162,12 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     private static string Hash(byte[] data) => System.Convert.ToHexString(SHA256.HashData(data))[..16];
 
     private void WriteStamp(string name, string input) => File.WriteAllLines(StampPath(name), [Tools(), input]);
+
+    // nothing to cover leaves no item file: remember it, or every run exports it again
+    private void WriteEmptyStamp(string name) => File.WriteAllLines(StampPath(name), ["empty", Tools()]);
+
+    private bool IsKnownEmpty(string name)
+        => File.Exists(StampPath(name)) && File.ReadAllLines(StampPath(name)) is ["empty", var tool] && tool == Tools();
 
     private static string PiecesPath(string name) => Path.Combine(Paths.Work, "Mesh", name + ".pieces.json");
 
@@ -302,19 +331,21 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     {
         var key = $"{Environment}:{itemId}";
         lock (itemCopies) if (itemCopies.TryGetValue(key, out var known)) return known;
-        var copy = BuildItemCopy(itemId);
-        lock (itemCopies) itemCopies[key] = copy;
+        var copy = BuildItemCopy(itemId, Environment, Console.Out, Planning);
+        if (!plannedCopies.ContainsKey(key)) lock (itemCopies) itemCopies[key] = copy;
         return copy;
     }
 
-    private IceItem? BuildItemCopy(string itemId)
+    private readonly Dictionary<string, (string ItemId, string? Environment)> plannedCopies = [];
+
+    private IceItem? BuildItemCopy(string itemId, string? environment, TextWriter log, bool plan)
     {
-        if (shapes.ItemFile(itemId) is not { } file) return null;
+        var look = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = environment };
+        if (look.ItemFile(itemId) is not { } file) return null;
         try
         {
             var materialMap = MaterialMap("item:");
             List<MeshPiece>? plain;
-            var look = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = Environment };
             try { plain = look.ExportItem(file, out _); }
             catch (InvalidCastException) { return null; }
             lock (Missing) Missing.UnionWith(look.Missing);
@@ -323,21 +354,29 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
                 : MaterialLibSurface(m) is { } own && NotIce.Contains(own);
             if (plain is null || !plain.Any(p => Ices(p.Material))) return null;
 
-            var export = new MeshExport(Paths.ExtractedStadium, materialMap) { Environment = Environment };
-            var pieces = export.ExportItem(file, out var reason) ?? throw new InvalidDataException(reason);
-            lock (Missing) Missing.UnionWith(export.Missing);
             var env = Path.GetRelativePath(Path.GetDirectoryName(Paths.ExtractedStadium)!, file).Split('/')[0];
             var name = itemId + "_Ice" + (env == "Stadium" ? "" : "_" + env);
             var path = Path.Combine(Paths.Items, name + ".Item.gbx");
-            if (!IsCurrent(name, path, out var builtFrom) && Finish(name, pieces, null, export, builtFrom, Console.Out) is { } error)
-                throw new InvalidDataException(error);
+            var ident = new Ident($"IceConverter\\{name}.Item.gbx", new Id(26), "IceConverter");
+            if (!IsCurrent(name, path, out var builtFrom))
+            {
+                if (plan)
+                {
+                    lock (plannedCopies) plannedCopies.TryAdd($"{environment}:{itemId}", (itemId, environment));
+                    return new IceItem(ident, path, (1, 1));
+                }
+                var export = new MeshExport(Paths.ExtractedStadium, materialMap) { Environment = environment };
+                var pieces = export.ExportItem(file, out var reason) ?? throw new InvalidDataException(reason);
+                lock (Missing) Missing.UnionWith(export.Missing);
+                if (Finish(name, pieces, null, export, builtFrom, log) is { } error) throw new InvalidDataException(error);
+            }
             var header = Gbx.ParseHeaderNode<CGameItemModel>(path).Ident;
-            return new IceItem(new Ident($"IceConverter\\{name}.Item.gbx", header.Collection, header.Author), path, (1, 1));
+            return new IceItem(ident with { Collection = header.Collection, Author = header.Author }, path, (1, 1));
         }
         catch (Exception e)
         {
             lock (failures) failures[itemId] = Reason(e);
-            Console.WriteLine($"  no ice copy of item {itemId}: {Reason(e)}");
+            log.WriteLine($"  no ice copy of item {itemId}: {Reason(e)}");
             return null;
         }
     }
@@ -422,6 +461,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
             .Select(o => (o.Name, o.Name.StartsWith("_notvisible_pad") ? $"RoadIce:{PadGameplay(o.Name)}" : physics[o.Material], o.Triangles)).ToList();
         var surfaces = ItemPhysics.Fix(itemPath, collision);
         if (waypoint is not null) SetWaypoint(itemPath, waypoint);
+        AddVertexColours(itemPath);
 
         // rebuilt once extracted
         if (export.Missing.Count == 0) WriteStamp(name, input);
@@ -442,6 +482,52 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
         var s = MeshExport.SpawnPoint;
         chunk.U03 = new Iso4(1, 0, 0, 0, 1, 0, 0, 0, 1, s.X, s.Y, s.Z);
         gbx.Save(itemPath);
+    }
+
+    // the importer keeps colours only for DColor0 materials; without them DecoHill reads as grass. Same set the editor fills on resave.
+    private static readonly string[] ColouredMaterials = ["Custom", "PlatformIce_Deco", "PlatformIce_Decal", "Decal", "Chrono", "GlassWaterWall"];
+
+    private static void AddVertexColours(string itemPath)
+    {
+        var gbx = Gbx.Parse<CGameItemModel>(itemPath);
+        if ((gbx.Node.EntityModel as CGameCommonItemEntityModel)?.StaticObject?.Mesh is not { } mesh) return;
+        var added = false;
+        foreach (var geom in mesh.ShadedGeoms ?? [])
+        {
+            var name = mesh.CustomMaterials is { } mats && geom.MaterialIndex < mats.Length ? mats[geom.MaterialIndex].MaterialUserInst?.MaterialName : null;
+            if (name is null || !ColouredMaterials.Any(name.StartsWith)) continue;
+            if (mesh.Visuals?[geom.VisualIndex] is not CPlugVisualIndexedTriangles { VertexStreams: [{ Positions: { } pos, Colors: { } colors } stream, ..] }) continue;
+            if (colors.ContainsKey(0)) continue;
+            InsertColourDecl(stream);
+            colors[0] = Enumerable.Repeat(-1, pos.Length).ToArray();
+            added = true;
+        }
+        if (added) gbx.Save(itemPath);
+    }
+
+    // GBX.NET writes streams from their declarations: Flags1 = stride/4 << 20 | type << 8 | attribute, Flags2 = offset << 2
+    private static readonly FieldInfo DataDecls = typeof(CPlugVertexStream).GetField("dataDecls", BindingFlags.NonPublic | BindingFlags.Instance)
+        ?? throw new MissingFieldException(nameof(CPlugVertexStream), "dataDecls");
+
+    private static void InsertColourDecl(CPlugVertexStream stream)
+    {
+        const uint color0 = 0x08, colorType = 0x08 << 8, space = 0x2u << 28, strideStep = 1u << 20;
+        var decls = (CPlugVertexStream.DataDecl[])DataDecls.GetValue(stream)!;
+        var at = Array.FindIndex(decls, d => (d.Flags1 & 0xFF) > color0);
+        if (at < 0) at = decls.Length;
+        var offset = at < decls.Length ? decls[at].Offset : (int)((decls[0].Flags1 >> 20) & 0xFF) * 4;
+        foreach (var (d, i) in decls.Select((d, i) => (d, i)))
+        {
+            d.Flags1 += strideStep;
+            if (i >= at) { d.Flags2 += 4 << 2; d.Offset += 4; }
+        }
+        var colour = new CPlugVertexStream.DataDecl
+        {
+            Flags1 = (decls[0].Flags1 & 0x0FF00000) | space | colorType | color0,
+            Flags2 = (uint)offset << 2,
+            Offset = (ushort)offset,
+        };
+        DataDecls.SetValue(stream, decls[..at].Append(colour).Concat(decls[at..]).ToArray());
     }
 
     private static string? RunImporter(string itemXml)

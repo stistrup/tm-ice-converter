@@ -18,7 +18,8 @@ public static class ItemPhysics
         var groups = collisionObjects.OrderBy(o => o.Name, StringComparer.Ordinal)
             .GroupBy(o => o.Physics).ToList();
         var actual = tris.GroupBy(t => (int)t.SurfaceIndex).ToDictionary(g => g.Key, g => g.Count());
-        for (int i = 0; i < groups.Count; i++)
+        // the importer drops degenerate triangles; counts only matter to tell surfaces apart
+        for (int i = 0; i < groups.Count && groups.Count > 1; i++)
         {
             var expected = groups[i].Sum(o => o.Triangles);
             if (Math.Abs(actual.GetValueOrDefault(i) - expected) > Math.Max(2, expected / 200))

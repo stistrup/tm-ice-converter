@@ -125,13 +125,16 @@ int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerab
     translations.RunSettings.AddRange(settings ?? []);
     var converter = new Converter(KnownBlocks(), translations, shapes, items);
 
-    // dry run to collect items, build them in parallel
+    // dry runs to collect items, build them in parallel; built items can show new tops, so repeat
     items.Planning = true;
-    foreach (var path in maps)
-        try { converter.Convert(Gbx.ParseNode<CGameCtnChallenge>(path)); }
-        catch { }
+    for (var round = 0; round < 5; round++)
+    {
+        foreach (var path in maps)
+            try { converter.Convert(Gbx.ParseNode<CGameCtnChallenge>(path)); }
+            catch { }
+        if (!items.BuildPlanned()) break;
+    }
     items.Planning = false;
-    items.BuildPlanned();
 
     var failed = 0;
     foreach (var path in maps)
