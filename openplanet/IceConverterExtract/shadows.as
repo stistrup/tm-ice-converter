@@ -1,7 +1,17 @@
 // computes shadows for every map in a folder under Maps and saves each in place
 
-[Setting category="Shadows" name="Folder under Maps"]
+[Setting hidden]
 string S_ShadowFolder = "";
+
+[SettingsTab name="Shadow folder"]
+void RenderShadowFolderSetting()
+{
+    if (!UI::BeginCombo("Folder under Maps", S_ShadowFolder)) return;
+    auto folders = MapFolders();
+    for (uint i = 0; i < folders.Length; i++)
+        if (UI::Selectable(folders[i], folders[i] == S_ShadowFolder)) S_ShadowFolder = folders[i];
+    UI::EndCombo();
+}
 
 [Setting category="Shadows" name="Quality"]
 CGameEditorPluginMap::EShadowsQuality S_ShadowQuality = CGameEditorPluginMap::EShadowsQuality::High;
@@ -9,13 +19,49 @@ CGameEditorPluginMap::EShadowsQuality S_ShadowQuality = CGameEditorPluginMap::ES
 [Setting category="Shadows" name="Skip maps that already have this quality"]
 bool S_SkipShadowed = true;
 
+array<string> g_mapFolders;
+uint64 g_mapFoldersAt = 0;
+
+void RenderShadowsMenu()
+{
+    if (!UI::BeginMenu("\\$9cf" + Icons::Snowflake + "\\$z Compute shadows for every map in", !g_running)) return;
+    if (g_mapFolders.Length == 0 || Time::Now - g_mapFoldersAt > 2000) {
+        g_mapFolders = MapFolders();
+        g_mapFoldersAt = Time::Now;
+    }
+    for (uint i = 0; i < g_mapFolders.Length; i++) {
+        if (UI::MenuItem(g_mapFolders[i], "", g_mapFolders[i] == S_ShadowFolder)) {
+            S_ShadowFolder = g_mapFolders[i];
+            startnew(RunShadows);
+        }
+    }
+    UI::EndMenu();
+}
+
+// folders under Maps that hold maps
+array<string> MapFolders()
+{
+    string root = IO::FromUserGameFolder("Maps/").Replace("\\", "/");
+    auto files = IO::IndexFolder(root, true);
+    array<string> folders;
+    for (uint i = 0; i < files.Length; i++) {
+        string file = files[i].Replace("\\", "/");
+        if (!file.ToLower().EndsWith(".map.gbx") || !file.StartsWith(root)) continue;
+        string folder = Path::GetDirectoryName(file.SubStr(root.Length));
+        while (folder.EndsWith("/")) folder = folder.SubStr(0, folder.Length - 1);
+        if (folder.Length > 0 && folders.Find(folder) < 0) folders.InsertLast(folder);
+    }
+    folders.SortAsc();
+    return folders;
+}
+
 void RunShadows()
 {
     g_running = true;
     string folder = S_ShadowFolder.Trim();
     string dir = IO::FromUserGameFolder("Maps/" + folder);
     if (folder.Length == 0 || !IO::FolderExists(dir)) {
-        UI::ShowNotification("Ice Converter", "Set Shadows > Folder under Maps in the plugin settings first");
+        UI::ShowNotification("Ice Converter", "Pick a folder in the plugin settings (Shadow folder) first");
         g_running = false;
         return;
     }

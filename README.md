@@ -28,7 +28,7 @@ tools/ice-convert show <item>                          preview a built item
 
 The Blender tools are buggy, experimental and janky, but they somewhat work: `view`, `inspect`, `show`, `tools/zfight.py` and `tools/render_at.py`.
 
-Options and per-map exceptions live in `data/translations.jsonc`, material mappings in `data/ice-materials.jsonc`.
+Options and per-map exceptions live in `data/maps.jsonc`, block and item swaps in `data/swaps.jsonc`, material mappings in `data/ice-materials.jsonc`.
 
 ## Working on it with an AI
 

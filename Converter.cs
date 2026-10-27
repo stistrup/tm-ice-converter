@@ -82,6 +82,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         keepItems = rules;
         shapes.Environment = items.Environment = collection;
         items.SnowOnZoneSides = rules.Options.SnowOnZoneSides;
+        items.SnowOnGroundDeco = rules.Options.SnowOnGroundDeco;
         var resolver = new ClipResolver(shapes);
         // clips as in the original
         var grid = map.GetBlocks().Where(b => !b.IsFree).ToList();
@@ -175,6 +176,16 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             // ground blocks and deco set into the terrain stay native under a skin
             var inTerrain = !block.IsGround && !block.IsFree && name.StartsWith("Deco")
                 && cellsOf[block].Any(c => terrainTop.TryGetValue((c.X, c.Z), out var groundY) && c.Y <= groundY);
+            // only a block keeps the ground away; grass grows through a skin on deco, not on ice
+            if ((block.IsGround || inTerrain) && ItemBuilder.IsWholeOnGround(name, collection) && rules.Options.SnowOnGroundDeco
+                && "PlatformIce" + name["DecoPlatform".Length..] is var twin && knownBlocks.Contains(twin) && translations.IsAvailable(twin, collection) && shapes.EnvironmentHas(twin) != false
+                && PlaceItem(map, block, variantOf[block], clipsOf[block], report, Cover.OverTwin))
+            {
+                block.Name = twin;
+                renamed.Add(block);
+                Bump(report.Swapped, (name, twin, Source.Rule));
+                continue;
+            }
             if ((block.IsGround || inTerrain) && !ItemBuilder.IsWholeOnGround(name, collection))
             {
                 if (PlaceItem(map, block, variantOf[block], clipsOf[block], report, inTerrain ? Cover.InTerrain : Cover.None)) { skinned.Add(block); Bump(report.Skinned, name); }
@@ -183,7 +194,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             }
             var ok = block.IsFree
                 ? PlaceItem(map, block, VariantOf(block), FreeClips(block), report)
-                : PlaceItem(map, block, variantOf[block], clipsOf[block], report);
+                : PlaceItem(map, block, variantOf[block], clipsOf[block], report, inTerrain ? Cover.InTerrain : Cover.None);
             if (!ok) { Bump(report.Unmatched, name); continue; }
             replaced.Add(block);
             Bump(report.ReplacedByItem, name);
@@ -432,7 +443,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
                 var (block, i) = remaining[k];
                 if (OnlyTopsAppear(now[k], target[i]) && !(IsWallOnly(block, placed[i].Variant, target[i]) && AdapterAbove(block, replaced))
                     // stands: an end cap is fine
-                    || block.Name.StartsWith("Stand") || renamed.Contains(block) || skinned.Contains(block) || block.IsGround && !shapes.IsPillarBlock(block.Name) || IsOnKeepList(block) || IsConcrete(block, placed[i].Variant, target[i])
+                    || block.Name.StartsWith("Stand") || renamed.Contains(block) || skinned.Contains(block) || block.IsGround || shapes.IsPillarBlock(block.Name) || IsOnKeepList(block) || IsConcrete(block, placed[i].Variant, target[i])
                     || IsWallOnly(block, placed[i].Variant, target[i]) && !(TopAppears(now[k], target[i]) && AdapterAbove(block, replaced))) continue;
                 if (!PlaceItem(map, block, placed[i].Variant, target[i], report)) continue;
                 replaced.Add(block);

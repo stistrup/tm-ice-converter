@@ -38,7 +38,7 @@ switch (args)
                   Convert maps to ice. Without maps: everything in the drop folder that changed since its last
                   conversion. Output goes to Maps/ICE in progress as "<name> (ICE).Map.Gbx" ("(ice <tag>)" with -t);
                   --final writes to the finished folder (finishedFolder in data/local.jsonc). Options (removeForcedCameras, keepPlasticWalls)
-                  default from "options" in data/translations.jsonc, per map from "maps"; --set overrides them for the run.
+                  default from "options" in data/maps.jsonc, per map from "maps"; --set overrides them for the run.
                   --testrun writes "<name> - AN Ice" to Maps/Ice testrun, validated with a 1:00:00.000 author time, ready
                   for a club campaign without driving them.
               watch [-o <out dir>] [-t <tag>]
@@ -107,7 +107,7 @@ int Watch(string[] rest)
 List<string> ChangedDropMaps(string outDir, string suffix)
 {
     Directory.CreateDirectory(Paths.DropFolder);
-    var translations = Translations.Load(Path.Combine(dataDir, "translations.jsonc"));
+    var translations = Translations.Load(dataDir);
     return ExpandMaps([Paths.DropFolder]).Where(p =>
     {
         var output = OutputPath(p, outDir, suffix, translations);
@@ -121,7 +121,7 @@ int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerab
     Directory.CreateDirectory(outDir);
     var shapes = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>());
     var items = new ItemBuilder(dataDir);
-    var translations = Translations.Load(Path.Combine(dataDir, "translations.jsonc"));
+    var translations = Translations.Load(dataDir);
     translations.RunSettings.AddRange(settings ?? []);
     var converter = new Converter(KnownBlocks(), translations, shapes, items);
 
@@ -450,7 +450,7 @@ static string FormatReport(string source, ConversionReport report, IReadOnlyDict
         foreach (var (name, n) in report.Unmatched.OrderByDescending(kv => kv.Value))
             sb.AppendLine($"- {name} x{n}: {(itemFailures.TryGetValue(name, out var why) ? FirstLine(why) : "no ice version")}");
         foreach (var (name, n) in report.SpecialKept) sb.AppendLine($"- {name} x{n}: gameplay or pillar block, kept on purpose");
-        sb.AppendLine("\nA block with a known ice equivalent can go in `blocks` in data/translations.jsonc.\n");
+        sb.AppendLine("\nA block with a known ice equivalent can go in `blocks` in data/swaps.jsonc.\n");
     }
 
     if (report.FreeBlockOffsetsSkipped > 0)

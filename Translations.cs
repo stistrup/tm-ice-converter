@@ -10,7 +10,7 @@ public sealed record Translation(
     byte? Variant = null,
     byte? SubVariant = null);
 
-public sealed record ConvertOptions(bool RemoveForcedCameras = false, bool KeepPlasticWalls = false, bool EngineOffToReset = false, bool EffectsToGate = false, bool EngineOffToPlain = false, bool SnowOnZoneSides = false)
+public sealed record ConvertOptions(bool RemoveForcedCameras = false, bool KeepPlasticWalls = false, bool EngineOffToReset = false, bool EffectsToGate = false, bool EngineOffToPlain = false, bool SnowOnZoneSides = false, bool SnowOnGroundDeco = false)
 {
     public ConvertOptions With(string name, bool value) => name switch
     {
@@ -20,7 +20,8 @@ public sealed record ConvertOptions(bool RemoveForcedCameras = false, bool KeepP
         "effectsToGate" => this with { EffectsToGate = value },
         "engineOffToPlain" => this with { EngineOffToPlain = value },
         "snowOnZoneSides" => this with { SnowOnZoneSides = value },
-        _ => throw new FormatException($"unknown option '{name}' (known: removeForcedCameras, keepPlasticWalls, engineOffToReset, effectsToGate, engineOffToPlain, snowOnZoneSides)"),
+        "snowOnGroundDeco" => this with { SnowOnGroundDeco = value },
+        _ => throw new FormatException($"unknown option '{name}' (known: removeForcedCameras, keepPlasticWalls, engineOffToReset, effectsToGate, engineOffToPlain, snowOnZoneSides, snowOnGroundDeco)"),
     };
 }
 
@@ -87,14 +88,29 @@ public sealed class Translations
             || collection != "Stadium2020" && UnavailableIn.TryGetValue("*", out var everywhere) && everywhere.Any(block.StartsWith));
 
     // "From": "To" | null | { "to", "rotate", "offset", "variant" }
-    public static Translations Load(string path)
+    public static Translations Load(string dataDir) => Load(Path.Combine(dataDir, "swaps.jsonc"), Path.Combine(dataDir, "maps.jsonc"));
+
+    private static Translations Load(params string[] paths)
     {
         var options = new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
-        using var doc = JsonDocument.Parse(File.ReadAllText(path), options);
-        var result = Parse(doc.RootElement);
-        if (doc.RootElement.TryGetProperty("maps", out var maps))
-            foreach (var map in maps.EnumerateObject())
-                result.Maps[map.Name] = Parse(map.Value);
+        var result = new Translations();
+        foreach (var path in paths)
+        {
+            using var doc = JsonDocument.Parse(File.ReadAllText(path), options);
+            var part = Parse(doc.RootElement);
+            foreach (var (k, v) in part.Blocks) result.Blocks[k] = v;
+            result.IgnorePrefixes.AddRange(part.IgnorePrefixes);
+            foreach (var (k, v) in part.UnavailableIn) result.UnavailableIn[k] = v;
+            foreach (var (k, v) in part.Items) result.Items[k] = v;
+            foreach (var (k, v) in part.ItemsOnSnow) result.ItemsOnSnow[k] = v;
+            result.Settings.AddRange(part.Settings);
+            result.Keep.UnionWith(part.Keep);
+            result.KeepItems.UnionWith(part.KeepItems);
+            result.RemoveItems.UnionWith(part.RemoveItems);
+            if (doc.RootElement.TryGetProperty("maps", out var maps))
+                foreach (var map in maps.EnumerateObject())
+                    result.Maps[map.Name] = Parse(map.Value);
+        }
         return result;
     }
 

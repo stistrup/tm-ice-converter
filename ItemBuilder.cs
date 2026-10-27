@@ -20,12 +20,15 @@ public enum Cover
     TopOfIce,
     // effect comes from a gate
     Gated,
+    // snow over the native ice twin
+    OverTwin,
 }
 
 public interface IItemSource
 {
     string? Environment { get; set; }
     bool SnowOnZoneSides { get; set; }
+    bool SnowOnGroundDeco { get; set; }
     IceItem? For(string block, bool ground, int variant, int mobil, IReadOnlySet<int> clips, Cover cover = Cover.None, Vector2 tilt = default);
     IceItem? ForItem(string itemId);
     IReadOnlyDictionary<string, string> Failures { get; }
@@ -54,9 +57,11 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     // planning: For() only notes what's needed, BuildPlanned() builds it
     public bool Planning { get; set; }
 
-    private sealed record Request(string Block, bool Ground, int Variant, int Mobil, IReadOnlySet<int> Clips, Cover Cover, Vector2 Tilt, string? Environment, bool ZoneSides);
+    private sealed record Request(string Block, bool Ground, int Variant, int Mobil, IReadOnlySet<int> Clips, Cover Cover, Vector2 Tilt, string? Environment, bool ZoneSides, bool TerrainSnow);
 
     public bool SnowOnZoneSides { get; set; }
+
+    public bool SnowOnGroundDeco { get; set; } = true;
 
     private readonly Dictionary<string, Request> planned = [];
     // incomplete items never turn current: build once per run
@@ -64,7 +69,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
 
     public IceItem? For(string block, bool ground, int variant, int mobil, IReadOnlySet<int> clips, Cover cover = Cover.None, Vector2 tilt = default)
     {
-        var name = ItemName(shapes, block, ground, variant, mobil, clips, cover, tilt, SnowOnZoneSides);
+        var name = ItemName(shapes, block, ground, variant, mobil, clips, cover, tilt, SnowOnZoneSides, SnowOnGroundDeco);
         if (failedItems.Contains(name)) return null;
         lock (emptyItems) if (emptyItems.Contains(name) || IsKnownEmpty(name) && emptyItems.Add(name)) return IceItem.Nothing;
         if (shapes.Units(block, ground, variant) is not null && shapes.FindPlacedBlockParts(block, ground, variant, mobil, clips) is null)
@@ -76,10 +81,10 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
         {
             if (Planning)
             {
-                planned.TryAdd(name, new Request(block, ground, variant, mobil, clips, cover, tilt, Environment, SnowOnZoneSides));
+                planned.TryAdd(name, new Request(block, ground, variant, mobil, clips, cover, tilt, Environment, SnowOnZoneSides, SnowOnGroundDeco));
                 return new IceItem(new Ident($"IceConverter\\{name}.Item.gbx", new Id(26), "IceConverter"), path, shapes.BlockSize(block, ground, variant));
             }
-            var error = Build(block, ground, variant, mobil, clips, builtFrom, cover: cover, tilt: tilt, zoneSides: SnowOnZoneSides);
+            var error = Build(block, ground, variant, mobil, clips, builtFrom, cover: cover, tilt: tilt, zoneSides: SnowOnZoneSides, terrainSnow: SnowOnGroundDeco);
             if (error is NothingToCover)
             {
                 lock (emptyItems) emptyItems.Add(name);
@@ -126,10 +131,10 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     private void BuildRequest(Request r, TextWriter log)
     {
         var shapesHere = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = r.Environment };
-        var name = ItemName(shapesHere, r.Block, r.Ground, r.Variant, r.Mobil, r.Clips, r.Cover, r.Tilt, r.ZoneSides);
+        var name = ItemName(shapesHere, r.Block, r.Ground, r.Variant, r.Mobil, r.Clips, r.Cover, r.Tilt, r.ZoneSides, r.TerrainSnow);
         lock (built) built.Add(name);
         if (IsCurrent(name, Path.Combine(Paths.Items, name + ".Item.gbx"), out var builtFrom)
-            || Build(r.Block, r.Ground, r.Variant, r.Mobil, r.Clips, builtFrom, r.Environment, log, r.Cover, r.Tilt, r.ZoneSides) is not { } error) return;
+            || Build(r.Block, r.Ground, r.Variant, r.Mobil, r.Clips, builtFrom, r.Environment, log, r.Cover, r.Tilt, r.ZoneSides, r.TerrainSnow) is not { } error) return;
         if (error is NothingToCover)
         {
             lock (emptyItems) emptyItems.Add(name);
@@ -177,7 +182,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
 
     // no dots: the importer cuts the name there
     public string ItemName(string block, bool ground, int variant, int mobil, IReadOnlySet<int> clips, Cover cover = Cover.None, Vector2 tilt = default)
-        => ItemName(shapes, block, ground, variant, mobil, clips, cover, tilt, SnowOnZoneSides);
+        => ItemName(shapes, block, ground, variant, mobil, clips, cover, tilt, SnowOnZoneSides, SnowOnGroundDeco);
 
     private static bool IsSkin(MeshExport shapes, string block, bool ground)
         => ground && !shapes.IsPillarBlock(block) && !IsWholeOnGround(block, shapes.Environment);
@@ -257,10 +262,12 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     // own surface so the fix-up can tell it apart
     private const string PadMaterial = "CustomIce";
 
+    private static bool OnTerrain(string block, bool ground, Cover cover) => block.StartsWith("Deco") && (cover == Cover.InTerrain || cover == Cover.None && ground);
+
     // drop the foot at terrain level (flickers)
     private static List<MeshPiece> WithoutFoot(List<MeshPiece> skin)
     {
-        static bool IsSnow(MeshPiece p) => p.Material.StartsWith("PlatformIce_Deco");
+        static bool IsSnow(MeshPiece p) => p.Material.StartsWith("PlatformIce_Deco") || p.Material == "CustomSnow";
         Vector3 At(MeshPiece p, int i) => new(p.Positions[3 * i], p.Positions[3 * i + 1], p.Positions[3 * i + 2]);
         bool Flat(MeshPiece p, int t) => Vector3.Cross(At(p, p.Indices[t + 1]) - At(p, p.Indices[t]), At(p, p.Indices[t + 2]) - At(p, p.Indices[t])) is var n
             && n.LengthSquared() > 0 && Vector3.Normalize(n).Y > 0.99f;
@@ -272,18 +279,19 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
             .Where(p => p.Indices.Length > 0).ToList();
     }
 
-    private static string ItemName(MeshExport shapes, string block, bool ground, int variant, int mobil, IReadOnlySet<int> clips, Cover cover = Cover.None, Vector2 tilt = default, bool zoneSides = false)
-        => block + "_Ice" + (shapes.DefinedIn(block) is { } env ? "_" + env : "") + (cover is Cover.Top or Cover.TopOfIce ? "_top" : cover == Cover.Gated ? "_gated" : cover == Cover.InTerrain || IsSkin(shapes, block, ground) ? (zoneSides && !block.StartsWith("Deco") ? "_skinzs" : "_skin") : ground ? "_g" : "") + TiltKey(tilt) + (variant == 0 && mobil == 0 ? "" : $"_v{variant}m{mobil}") + "_" + MeshExport.ClipsKey(clips);
+    private static string ItemName(MeshExport shapes, string block, bool ground, int variant, int mobil, IReadOnlySet<int> clips, Cover cover = Cover.None, Vector2 tilt = default, bool zoneSides = false, bool terrainSnow = true)
+        => block + "_Ice" + (shapes.DefinedIn(block) is { } env ? "_" + env : "") + (cover is Cover.Top or Cover.TopOfIce ? "_top" : cover == Cover.Gated ? "_gated" : cover == Cover.InTerrain && IsWholeOnGround(block, shapes.Environment) ? "_interrain" : cover is Cover.InTerrain or Cover.OverTwin || IsSkin(shapes, block, ground) ? (zoneSides && !block.StartsWith("Deco") ? "_skinzs" : "_skin") : ground ? "_g" : "") + (!terrainSnow && OnTerrain(block, ground, cover) ? "_bare" : "") + TiltKey(tilt) + (variant == 0 && mobil == 0 ? "" : $"_v{variant}m{mobil}") + "_" + MeshExport.ClipsKey(clips);
 
     public string? Build(string block, bool ground = false, int variant = 0, int mobil = 0, IReadOnlySet<int>? clips = null, string? builtFrom = null,
-        string? environment = null, TextWriter? log = null, Cover cover = Cover.None, Vector2 tilt = default, bool zoneSides = false)
+        string? environment = null, TextWriter? log = null, Cover cover = Cover.None, Vector2 tilt = default, bool zoneSides = false, bool terrainSnow = true)
     {
         log ??= Console.Out;
         try
         {
             var top = cover is Cover.Top or Cover.TopOfIce;
             var tiltMatrix = Matrix4x4.CreateFromYawPitchRoll(0, tilt.X, tilt.Y);
-            var skin = cover != Cover.Gated && (cover != Cover.None || IsSkin(new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = environment ?? Environment }, block, ground));
+            var whole = (cover == Cover.InTerrain || cover == Cover.None && ground) && IsWholeOnGround(block, environment ?? Environment);
+            var skin = !whole && cover != Cover.Gated && (cover != Cover.None || IsSkin(new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = environment ?? Environment }, block, ground));
             var materialMap = MaterialMap(top ? "top:" : skin ? "skin:" : null);
             if (Converter.Effect(block) is { } effect) foreach (var (k, v) in EffectLook(effect)) materialMap[k] = v;
             var export = new MeshExport(Paths.ExtractedStadium, materialMap)
@@ -303,7 +311,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
                 ?? throw new InvalidDataException($"{block} has nothing to draw");
             var waypoint = skin ? null : export.Waypoint(block);
             var pieces = export.Export(parts);
-            if (skin && !top && (ground || cover == Cover.InTerrain) && block.StartsWith("Deco")) pieces = WithoutFoot(pieces);
+            if (!terrainSnow && OnTerrain(block, ground, cover)) pieces = WithoutFoot(pieces);
             if (skin && Converter.IsGameplayBlock(block)) pieces = AroundPad(pieces, new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = environment ?? Environment }.Export(parts), PadGameplayOf(block));
             else if (Converter.IsGameplayBlock(block)) pieces = IcyPads(pieces, PadGameplayOf(block));
             lock (Missing) Missing.UnionWith(export.Missing);
@@ -313,7 +321,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
             // tilt baked into the mesh
             if (tilt != default) pieces = pieces.Select(p => Turned(p, tiltMatrix)).ToList();
 
-            return Finish(ItemName(export, block, ground, variant, mobil, clips, cover, tilt, zoneSides), pieces, waypoint, export, builtFrom, log);
+            return Finish(ItemName(export, block, ground, variant, mobil, clips, cover, tilt, zoneSides, terrainSnow), pieces, waypoint, export, builtFrom, log);
         }
         catch (Exception e)
         {

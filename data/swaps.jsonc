@@ -7,33 +7,6 @@
     "TechnicsScreen"
   ],
 
-  // per map in "maps", per run with --set name=value
-  "options": {
-    "removeForcedCameras": true,
-    "keepPlasticWalls": false,
-    "engineOffToReset": false,
-    // wins over engineOffToReset
-    "engineOffToPlain": false,
-    // snow on open-zone sides
-    "snowOnZoneSides": true,
-    "effectsToGate": false
-  },
-
-  // per map: name, blocks, ignorePrefixes, options, keep, keepItems, removeItems ("Name x, y, z" for one placed item)
-  "maps": {
-    "Fall 2026 - 18": { "options": { "keepPlasticWalls": true } },
-    "Fall 2026 - 02": { "options": { "snowOnZoneSides": false } },
-    "Fall 2026 - 19": { "options": { "snowOnZoneSides": false } },
-    // guide walls stay plastic
-    "Egypt 2026": { "name": "Fall 2026 - 21 Egypt",
-      "keepItems": ["InflatableBorder*", "InflatableMat1m*"],
-      "removeItems": ["InflatableBorder1mCornerOut 1151.5, 66.5, 1264.5"] },
-    "Czech Republic 2026": { "name": "Fall 2026 - 23 Czech Republic", "keepItems": ["InflatableBorder*"] },
-    "United Kingdom 2026": { "name": "Fall 2026 - 22 United Kingdom" },
-    "India 2026": { "name": "Fall 2026 - 24 India" },
-    "New Zealand 2026": { "name": "Fall 2026 - 25 New Zealand" }
-  },
-
   // ice blocks an environment lacks
   "unavailableIn": {
     "*": ["OpenIceZone"]
