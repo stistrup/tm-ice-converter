@@ -35,7 +35,8 @@ public static class CustomBlocks
         mesh.Mesh.MaterialsFolderName = null;
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(ident.Id.Split('\\')[^1]));
         Directory.CreateDirectory(Path.GetDirectoryName(blockPath)!);
-        new Gbx<CGameItemModel>(Container(ident, name, archetype, ident.Collection, [(variantId, mesh)])) { BodyCompression = GbxCompression.Uncompressed }.Save(blockPath);
+        // the game saves blocks uncompressed but loads compressed ones too: half the size
+        new Gbx<CGameItemModel>(Container(ident, name, archetype, ident.Collection, [(variantId, mesh)])) { BodyCompression = GbxCompression.Compressed }.Save(blockPath);
     }
 
     // same bytes the game writes for a compiled custom block
