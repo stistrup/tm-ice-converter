@@ -153,7 +153,7 @@ int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerab
             if (dummyTimes) { DummyValidation(gbx.Node); AsTestrunAuthor(gbx.Node); }
             // clubs reject maps without a lightmap declared
             (gbx.Node.LightmapVersion, gbx.Node.LightmapFrames, gbx.Node.LightmapCache) = (null, null, null);
-            if (report.UsedItems.Count > 0)
+            if (report.UsedItems.Count + report.UsedBlocks.Count > 0)
             {
                 // keep embedded entries findable by name
                 var embedded = gbx.Node.ExpectedEmbeddedItemModels ?? [];
@@ -171,6 +171,8 @@ int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerab
                     }
                     foreach (var item in report.UsedItems)
                         zip.CreateEntryFromFile(item.FilePath, "Items/" + item.Ident.Id.Replace('\\', '/'));
+                    foreach (var block in report.UsedBlocks)
+                        zip.CreateEntryFromFile(block.FilePath, "Items/" + block.Ident.Id.Replace('\\', '/'));
                 });
             }
 
@@ -180,7 +182,7 @@ int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerab
             Gbx.Parse<CGameCtnChallenge>(outPath).Save(outPath);
             File.WriteAllText(outPath[..^".Map.Gbx".Length] + ".report.md", FormatReport(path, report, items.Failures));
 
-            Console.WriteLine($"  {report.Swapped.Values.Sum()} swapped, {report.ReplacedByItem.Values.Sum()} replaced by items, {report.Skinned.Values.Sum()} skinned, {report.Left} left as they were -> {outPath}");
+            Console.WriteLine($"  {report.Swapped.Values.Sum()} swapped, {report.ReplacedByBlock.Values.Sum()} custom blocks, {report.ReplacedByItem.Values.Sum()} replaced by items, {report.Skinned.Values.Sum()} skinned, {report.Left} left as they were -> {outPath}");
             Console.WriteLine(dummyTimes ? "  Validated with a dummy 1:00:00.000 author time; no shadows."
                 : "  In game: open it in the editor, compute shadows (Normal if the map is near 7.1 MB), validate, save.");
         }
@@ -419,6 +421,14 @@ static string FormatReport(string source, ConversionReport report, IReadOnlyDict
 {
     var sb = new StringBuilder($"# {Path.GetFileName(source)}\n\n");
     sb.AppendLine("After loading: compute shadows (the map has none; Normal keeps it smaller, rooms take up to 7.1 MB), validate, save.\n");
+
+    if (report.ReplacedByBlock.Count > 0)
+    {
+        sb.AppendLine($"## Custom ice blocks ({report.ReplacedByBlock.Values.Sum()})\n");
+        sb.AppendLine("The native block with an ice body; the game adds its borders, caps and pillars and joins it to its neighbours.\n");
+        foreach (var (name, n) in report.ReplacedByBlock.OrderByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n}");
+        sb.AppendLine();
+    }
 
     if (report.ReplacedByItem.Count > 0)
     {

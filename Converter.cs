@@ -15,6 +15,7 @@ public sealed record IceItem(Ident Ident, string FilePath, (int X, int Z) Size)
 public interface IBlockShapes
 {
     string? Environment { get; set; }
+    bool RecordMissing { get; set; }
     IReadOnlyList<Int3>? Units(string blockName, bool ground, int variantIndex);
     IReadOnlyList<ClipSide> ClipSides(string blockName, bool ground, int variantIndex);
     bool IsPillarBlock(string blockName);
@@ -43,6 +44,8 @@ public sealed class ConversionReport
     public Dictionary<string, int> Sunk { get; } = [];
     public Dictionary<string, int> Gated { get; } = [];
     public HashSet<IceItem> UsedItems { get; } = [];
+    public Dictionary<string, int> ReplacedByBlock { get; } = [];
+    public HashSet<IceBlock> UsedBlocks { get; } = [];
     public Dictionary<string, int> KeptByItem { get; } = [];
     public Dictionary<string, int> Concrete { get; } = [];
     public Dictionary<string, int> Walls { get; } = [];
@@ -99,6 +102,8 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         var replaced = new HashSet<CGameCtnBlock>(ReferenceEqualityComparer.Instance);
         var renamed = new HashSet<CGameCtnBlock>(ReferenceEqualityComparer.Instance);
         var skinned = new HashSet<CGameCtnBlock>(ReferenceEqualityComparer.Instance);
+        // renamed only at the end: clips and snow work on the native name
+        var customs = new Dictionary<CGameCtnBlock, IceBlock>(ReferenceEqualityComparer.Instance);
         var engineOffGates = new List<CGameCtnBlock>();
         foreach (var block in map.GetBlocks())
         {
@@ -192,6 +197,15 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
                 else Bump(report.Unmatched, name);
                 continue;
             }
+            if (rules.Options.CustomBlocks && !block.IsFree && !block.IsGround && !inTerrain && !IsGameplayBlock(name)
+                && (items.BlockFor(name, name, false, variantOf[block], MobilOf(block), map.Collection!.Value, NoClips)
+                    ?? (SurfaceParent(name, variantOf[block], clipsOf[block]) is { } parent
+                        ? items.BlockFor(name, parent.Name, false, variantOf[block], MobilOf(block), map.Collection!.Value, parent.Baked) : null)) is { } iceBlock)
+            {
+                customs[block] = iceBlock;
+                Bump(report.ReplacedByBlock, name);
+                continue;
+            }
             var ok = block.IsFree
                 ? PlaceItem(map, block, VariantOf(block), FreeClips(block), report)
                 : PlaceItem(map, block, variantOf[block], clipsOf[block], report, inTerrain ? Cover.InTerrain : Cover.None);
@@ -199,8 +213,15 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             replaced.Add(block);
             Bump(report.ReplacedByItem, name);
         }
-        KeepNeighbours(map, grid, placed, target, replaced, renamed, skinned, report);
-        var snow = new SnowSurfaces(map, replaced, renamed, skinned, shapes, rules.Options.SnowOnZoneSides);
+        KeepNeighbours(map, grid, placed, target, replaced, renamed, skinned, new HashSet<CGameCtnBlock>(customs.Keys, ReferenceEqualityComparer.Instance), report);
+        var snow = new SnowSurfaces(map, replaced.Concat(customs.Keys), renamed, skinned, shapes, rules.Options.SnowOnZoneSides);
+        foreach (var (block, iceBlock) in customs)
+        {
+            block.Name = iceBlock.Ident.Id + "_CustomBlock";
+            block.Flags |= CustomBlocks.CustomFlag;
+            block.Author = iceBlock.Ident.Author;
+            report.UsedBlocks.Add(iceBlock);
+        }
         foreach (var block in replaced.Concat(engineOffGates)) map.RemoveBlock(block);
         if (rules.Options.EngineOffToReset || rules.Options.EngineOffToPlain)
             foreach (var gate in map.GetAnchoredObjects().Where(o => o.ItemModel?.Id is { } id && id.StartsWith("Gate") && id.Contains("NoEngine")).ToList())
@@ -212,6 +233,50 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         MatchPlatformColour(map, report);
         if (rules.Options.RemoveForcedCameras) RemoveForcedCameras(map, report);
         return report;
+    }
+
+    private static readonly HashSet<int> NoClips = [];
+
+    private readonly Dictionary<(string, int, string?), (string Name, HashSet<int> Missing)?> surfaceParents = [];
+
+    // same family, same cells, its clips minus some that don't connect (penalty sides): those get baked in, the rest stay native
+    private (string Name, HashSet<int> Baked)? SurfaceParent(string name, int variant, IReadOnlySet<int> shown)
+    {
+        var key = (name, variant, shapes.Environment);
+        if (!surfaceParents.TryGetValue(key, out var found))
+        {
+            var own = shapes.ClipSides(name, false, variant);
+            var units = shapes.Units(name, false, variant);
+            var family = Family().Match(name).Value;
+            found = null;
+            shapes.RecordMissing = false;
+            // closest name first: RoadTechSlopePenaltyDirt -> RoadTechSlopeStraight before RoadTechNarrowSlope…
+            foreach (var other in knownBlocks.Where(o => o != name && family.Length > 0 && o.StartsWith(family) && !o.Contains('\\'))
+                .OrderByDescending(o => CommonPrefix(o, name)).ThenBy(o => o.Length).ThenBy(o => o, StringComparer.Ordinal))
+            {
+                if (units is null || shapes.EnvironmentHas(other) == false || shapes.Units(other, false, variant) is not { } u || !u.SequenceEqual(units)) continue;
+                var theirs = shapes.ClipSides(other, false, variant).ToDictionary(s => s.Bit, s => s.Clips.Select(c => c.Name).ToHashSet());
+                if (theirs.Any(kv => own.FirstOrDefault(s => s.Bit == kv.Key) is not { } side || !kv.Value.IsSubsetOf(side.Clips.Select(c => c.Name)))) continue;
+                var missing = own.SelectMany(s => s.Clips.Where(c => !(theirs.TryGetValue(s.Bit, out var n) && n.Contains(c.Name))).Select(c => (Side: s, Clip: c))).ToList();
+                if (missing.Count == 0 || missing.Any(m => m.Clip.Group is not null || m.Clip.SymmetricGroup is not null || m.Clip.Vertical)) continue;
+                found = (other, missing.Select(m => MeshExport.ClipKey(m.Side.Bit, m.Clip.Index)).ToHashSet());
+                break;
+            }
+            shapes.RecordMissing = true;
+            surfaceParents[key] = found;
+        }
+        return found is { } f ? (f.Name, f.Missing.Where(shown.Contains).ToHashSet()) : null;
+    }
+
+    // leading two words: RoadTech, DecoPlatform
+    [GeneratedRegex("^[A-Z][a-z]+[A-Z][a-z]+")]
+    private static partial Regex Family();
+
+    private static int CommonPrefix(string a, string b)
+    {
+        var n = 0;
+        while (n < a.Length && n < b.Length && a[n] == b[n]) n++;
+        return n;
     }
 
     private static void RemoveForcedCameras(CGameCtnChallenge map, ConversionReport report)
@@ -429,7 +494,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         => !block.IsFree && keepList.Contains(Translations.KeepKey(block.Name, block.Coord.X, block.Coord.Y, block.Coord.Z));
 
     private void KeepNeighbours(CGameCtnChallenge map, List<CGameCtnBlock> grid, List<ClipResolver.Placed> placed,
-        List<HashSet<int>> target, HashSet<CGameCtnBlock> replaced, HashSet<CGameCtnBlock> renamed, HashSet<CGameCtnBlock> skinned, ConversionReport report)
+        List<HashSet<int>> target, HashSet<CGameCtnBlock> replaced, HashSet<CGameCtnBlock> renamed, HashSet<CGameCtnBlock> skinned, HashSet<CGameCtnBlock> customs, ConversionReport report)
     {
         var resolver = new ClipResolver(shapes);
         for (int round = 0; round < 50; round++)
@@ -443,7 +508,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
                 var (block, i) = remaining[k];
                 if (OnlyTopsAppear(now[k], target[i]) && !(IsWallOnly(block, placed[i].Variant, target[i]) && AdapterAbove(block, replaced))
                     // stands: an end cap is fine
-                    || block.Name.StartsWith("Stand") || renamed.Contains(block) || skinned.Contains(block) || block.IsGround || shapes.IsPillarBlock(block.Name) || IsOnKeepList(block) || IsConcrete(block, placed[i].Variant, target[i])
+                    || block.Name.StartsWith("Stand") || renamed.Contains(block) || customs.Contains(block) || skinned.Contains(block) || block.IsGround || shapes.IsPillarBlock(block.Name) || IsOnKeepList(block) || IsConcrete(block, placed[i].Variant, target[i])
                     || IsWallOnly(block, placed[i].Variant, target[i]) && !(TopAppears(now[k], target[i]) && AdapterAbove(block, replaced))) continue;
                 if (!PlaceItem(map, block, placed[i].Variant, target[i], report)) continue;
                 replaced.Add(block);
@@ -454,7 +519,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         }
         var final = grid.Select((b, i) => (Block: b, Index: i)).Where(x => !replaced.Contains(x.Block)).ToList();
         TopsNowShown(map, placed, target, final, resolver.Resolve(final.Select(x => resolver.Of(x.Block) is var p && p.Name == placed[x.Index].Name
-            ? p with { Variant = placed[x.Index].Variant } : p).ToList()), replaced, skinned, renamed, report);
+            ? p with { Variant = placed[x.Index].Variant } : p).ToList()), replaced, skinned, renamed, customs, report);
     }
 
     // lone Default-colour platform gets the others' colour
@@ -470,12 +535,12 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
     // tops that only show after conversion
     private void TopsNowShown(CGameCtnChallenge map, List<ClipResolver.Placed> placed, List<HashSet<int>> target,
         List<(CGameCtnBlock Block, int Index)> remaining, List<HashSet<int>> now, HashSet<CGameCtnBlock> replaced,
-        HashSet<CGameCtnBlock> skinned, HashSet<CGameCtnBlock> renamed, ConversionReport report)
+        HashSet<CGameCtnBlock> skinned, HashSet<CGameCtnBlock> renamed, HashSet<CGameCtnBlock> customs, ConversionReport report)
     {
         for (int k = 0; k < remaining.Count; k++)
         {
             var (block, i) = remaining[k];
-            if (topped.Contains(block) || replaced.Contains(block) || skinned.Contains(block) || !TopAppears(now[k], target[i])
+            if (topped.Contains(block) || replaced.Contains(block) || skinned.Contains(block) || customs.Contains(block) || !TopAppears(now[k], target[i])
                 || shapes.IsTerrain(block.Name) || IsOnKeepList(block)) continue;
             IceTops(map, block, placed[i].Variant, now[k], report, renamed.Contains(block) ? Cover.TopOfIce : Cover.Top);
         }

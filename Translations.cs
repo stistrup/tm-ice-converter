@@ -10,7 +10,7 @@ public sealed record Translation(
     byte? Variant = null,
     byte? SubVariant = null);
 
-public sealed record ConvertOptions(bool RemoveForcedCameras = false, bool KeepPlasticWalls = false, bool EngineOffToReset = false, bool EffectsToGate = false, bool EngineOffToPlain = false, bool SnowOnZoneSides = false, bool SnowOnGroundDeco = false)
+public sealed record ConvertOptions(bool RemoveForcedCameras = false, bool KeepPlasticWalls = false, bool EngineOffToReset = false, bool EffectsToGate = false, bool EngineOffToPlain = false, bool SnowOnZoneSides = false, bool SnowOnGroundDeco = false, bool CustomBlocks = false)
 {
     public ConvertOptions With(string name, bool value) => name switch
     {
@@ -21,7 +21,8 @@ public sealed record ConvertOptions(bool RemoveForcedCameras = false, bool KeepP
         "engineOffToPlain" => this with { EngineOffToPlain = value },
         "snowOnZoneSides" => this with { SnowOnZoneSides = value },
         "snowOnGroundDeco" => this with { SnowOnGroundDeco = value },
-        _ => throw new FormatException($"unknown option '{name}' (known: removeForcedCameras, keepPlasticWalls, engineOffToReset, effectsToGate, engineOffToPlain, snowOnZoneSides, snowOnGroundDeco)"),
+        "customBlocks" => this with { CustomBlocks = value },
+        _ => throw new FormatException($"unknown option '{name}' (known: removeForcedCameras, keepPlasticWalls, engineOffToReset, effectsToGate, engineOffToPlain, snowOnZoneSides, snowOnGroundDeco, customBlocks)"),
     };
 }
 

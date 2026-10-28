@@ -115,7 +115,7 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
             // GBX.NET leaves missing refs null
             if (infoPath is not null && Gbx.ParseHeader(infoPath).RefTable is { } refs)
                 foreach (var f in refs.Files)
-                    if (ResolveRef(infoPath, refs.AncestorLevel, f.FilePath) is var target && !File.Exists(target))
+                    if (RecordMissing && ResolveRef(infoPath, refs.AncestorLevel, f.FilePath) is var target && !File.Exists(target))
                         Missing.Add(RelativeToGameData(target));
             var variant = (CGameCtnBlockInfoVariant?)info?.VariantBaseAir ?? info?.VariantBaseGround;
             blockCache[blockName] = cached = info is null || variant is null ? null : (info, infoPath!, variant);
@@ -418,6 +418,9 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
         => TryLoadBlock(blockName, out var block) && block.Info.WayPointType.ToString() is var w && w != "None" ? w : null;
 
     public HashSet<string> Missing { get; } = [];
+
+    // off while only looking blocks up
+    public bool RecordMissing { get; set; } = true;
 
     public string RelativeToGameData(string path) => Path.GetRelativePath(Path.GetDirectoryName(stadiumDir)!, path).Replace('\\', '/');
 

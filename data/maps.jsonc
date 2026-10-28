@@ -11,7 +11,9 @@
     "snowOnZoneSides": true,
     // deco platforms on/in the ground: native ice + snow skin (off: faces at ground level dropped, terrain shows)
     "snowOnGroundDeco": true,
-    "effectsToGate": false
+    "effectsToGate": false,
+    // blocks that would become whole items become custom blocks instead (off: items)
+    "customBlocks": true
   },
 
   // per map: name, blocks, ignorePrefixes, options, keep, keepItems, removeItems ("Name x, y, z" for one placed item)

@@ -31,6 +31,7 @@ public interface IItemSource
     bool SnowOnGroundDeco { get; set; }
     IceItem? For(string block, bool ground, int variant, int mobil, IReadOnlySet<int> clips, Cover cover = Cover.None, Vector2 tilt = default);
     IceItem? ForItem(string itemId);
+    IceBlock? BlockFor(string block, string archetype, bool ground, int variant, int mobil, Id collection, IReadOnlySet<int> baked);
     IReadOnlyDictionary<string, string> Failures { get; }
 }
 
@@ -102,6 +103,24 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
         var header = Gbx.ParseHeaderNode<CGameItemModel>(path).Ident;
         return new IceItem(new Ident($"IceConverter\\{name}.Item.gbx", header.Collection, header.Author), path, shapes.BlockSize(block, ground, variant));
     }
+
+    // the item's main body plus the baked clips in a custom block of the archetype; the game adds the other clips
+    public IceBlock? BlockFor(string block, string archetype, bool ground, int variant, int mobil, Id collection, IReadOnlySet<int> baked)
+    {
+        if (For(block, ground, variant, mobil, baked) is not { } item || item == IceItem.Nothing) return null;
+        // no ice in it: clips draw the surface (penalty slopes), the game would keep them native
+        if (File.Exists(item.FilePath) && !HasIceSurface(item.FilePath)) return null;
+        var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + (archetype == block ? "" : "_on_" + archetype);
+        var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
+        var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
+        if (!Planning && (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(item.FilePath)))
+            CustomBlocks.Write(item.FilePath, path, ident, archetype, CustomBlocks.VariantId(ground, variant, mobil));
+        return new IceBlock(ident, path);
+    }
+
+    private static bool HasIceSurface(string itemPath)
+        => (Gbx.ParseNode<CGameItemModel>(itemPath).EntityModel as CGameCommonItemEntityModel)?.StaticObject?.Mesh?.CustomMaterials is { } materials
+            && materials.Any(m => m.MaterialUserInst is { } u && ((u.MaterialName ?? "") + (u.Link ?? "")).Contains("PlatformIce"));
 
     // false when nothing was planned
     public bool BuildPlanned()
