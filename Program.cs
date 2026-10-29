@@ -31,6 +31,8 @@ switch (args)
         return View(rest);
     case ["inspect", .. var rest] when rest.Length > 0:
         return Inspect(rest);
+    case ["clipcheck", .. var rest] when rest.Length > 0:
+        return CheckClips(rest);
     default:
         Console.WriteLine($"""
             Usage:
@@ -54,6 +56,10 @@ switch (args)
               inspect <map.Gbx | view dir> [-o <out dir>]
                   Open a map's scene in Blender with the Ice inspector (sidebar, Tool tab): what each block/item is, marks with notes
                   (saved to marks.json in the view dir), filter by name. A map is rebuilt first; a view dir opens as is.
+
+              clipcheck <map.Gbx | folder>... [-v <kind>]
+                  Compare the clips the converter resolves with the ones the game baked into each map, per kind
+                  (top, side, bottom, vertical); -v lists that kind's mismatches by clip name.
 
             Drop folder: {Paths.DropFolder}
             """);
@@ -308,6 +314,32 @@ int Inspect(string[] rest)
     var script = Path.GetFullPath(Path.Combine(dataDir, "..", "tools", "inspect_map.py"));
     System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("blender", [blend, "--python", script]) { UseShellExecute = false });
     Console.WriteLine($"Opened {blend}; marks go to {Path.Combine(outDir, "marks.json")}");
+    return 0;
+}
+
+int CheckClips(string[] rest)
+{
+    var verbose = Option(ref rest, "-v");
+    var shapes = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>());
+    var totals = new Dictionary<(string Kind, string What), int>();
+    var details = new List<(string Map, string What, ClipCheck.Clip Clip)>();
+    foreach (var path in ExpandMaps(rest))
+    {
+        var result = ClipCheck.Compare(Gbx.ParseNode<CGameCtnChallenge>(path), shapes);
+        foreach (var (kind, n) in result.Baked) totals[(kind, "baked")] = totals.GetValueOrDefault((kind, "baked")) + n;
+        foreach (var c in result.GameOnly) { totals[(c.Kind, "game")] = totals.GetValueOrDefault((c.Kind, "game")) + 1; details.Add((path, "game shows", c)); }
+        foreach (var c in result.OursOnly) { totals[(c.Kind, "ours")] = totals.GetValueOrDefault((c.Kind, "ours")) + 1; details.Add((path, "we show", c)); }
+        Console.WriteLine($"{Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(path)),-30} game shows, we hide {result.GameOnly.Count,5} | we show, game hides {result.OursOnly.Count,5}");
+    }
+    Console.WriteLine();
+    foreach (var kind in ClipCheck.Kinds)
+        Console.WriteLine($"{kind,-9} baked {totals.GetValueOrDefault((kind, "baked")),6} | game shows, we hide {totals.GetValueOrDefault((kind, "game")),5} | we show, game hides {totals.GetValueOrDefault((kind, "ours")),5}");
+    if (verbose is not null)
+        foreach (var g in details.Where(d => d.Clip.Kind == verbose).GroupBy(d => (d.What, d.Clip.Name)).OrderByDescending(g => g.Count()))
+        {
+            var (map, _, c) = g.First();
+            Console.WriteLine($"  {g.Count(),5} {g.Key.What}: {g.Key.Name}, e.g. {Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(map))} {c.Cell} on {c.Block} {c.BlockCoord}");
+        }
     return 0;
 }
 
