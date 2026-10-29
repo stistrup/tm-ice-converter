@@ -107,14 +107,15 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     // the item's main body plus the baked clips in a custom block of the archetype; the game adds the other clips
     public IceBlock? BlockFor(string block, string archetype, bool ground, int variant, int mobil, Id collection, IReadOnlySet<int> baked)
     {
-        if (For(block, ground, variant, mobil, baked) is not { } item || item == IceItem.Nothing) return null;
+        if (CustomBlocks.VariantId(ground, variant, mobil) is not { } variantId
+            || For(block, ground, variant, mobil, baked) is not { } item || item == IceItem.Nothing) return null;
         // no ice in it: clips draw the surface (penalty slopes), the game would keep them native
         if (File.Exists(item.FilePath) && !HasIceSurface(item.FilePath)) return null;
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + (archetype == block ? "" : "_on_" + archetype);
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
         if (!Planning && (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(item.FilePath)))
-            CustomBlocks.Write(item.FilePath, path, ident, archetype, CustomBlocks.VariantId(ground, variant, mobil));
+            CustomBlocks.Write(item.FilePath, path, ident, archetype, variantId);
         return new IceBlock(ident, path);
     }
 

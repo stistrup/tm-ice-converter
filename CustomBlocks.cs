@@ -14,8 +14,9 @@ public static class CustomBlocks
 {
     public const int CustomFlag = 0x8000;
 
-    // matches a placement's ground flag, variant and mobil
-    public static int VariantId(bool ground, int variant, int mobil) => (ground ? 0 : 1_000_000) + variant * 1000 + mobil;
+    // matches a placement's ground flag, variant and mobil entry; mobil rows other than 0 (pillars, terrain) unknown
+    public static int? VariantId(bool ground, int variant, int mobil)
+        => (mobil & 0x3F) == 0 ? (ground ? 0 : 1_000_000) + variant * 1000 + (mobil >> 6) : null;
 
     // block from a built ice item's mesh
     public static void Write(string itemPath, string blockPath, Ident ident, string archetype, int variantId)
