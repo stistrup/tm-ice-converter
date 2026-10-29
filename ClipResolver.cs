@@ -105,7 +105,7 @@ public sealed class ClipResolver(IBlockShapes shapes)
                 (occupants.TryGetValue(c, out var l) ? l : occupants[c] = []).Add(i);
         // stacked pillars: only the top one shows its top
         bool PillarAbove(Int3 cell, int block)
-            => occupants.TryGetValue(cell + Up, out var l) && l.Any(o => pillar[o] && blocks[o].Name == blocks[block].Name);
+            => occupants.TryGetValue(cell + Up, out var l) && l.Any(o => o != block && pillar[o] && blocks[o].Name == blocks[block].Name);
 
         var shown = blocks.Select(_ => new HashSet<int>()).ToList();
         foreach (var ((cell, dir), list) in sides)
