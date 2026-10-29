@@ -26,7 +26,7 @@ public sealed class ClipResolver(IBlockShapes shapes)
         for (int i = 0; i < blocks.Count; i++)
             if (shapes.IsPillarBlock(blocks[i].Name))
                 foreach (var cell in UnitCells(placed[i])) pillarCells.Add(cell);
-        // standing on an adapter counts as supported
+        // standing on a matching top clip counts as supported
         var tops = new Dictionary<Int3, List<ClipInfo>>();
         for (int i = 0; i < blocks.Count; i++)
             foreach (var side in shapes.ClipSides(placed[i].Name, placed[i].Ground, placed[i].Variant).Where(s => s.Bit % 6 == 5))
@@ -39,10 +39,10 @@ public sealed class ClipResolver(IBlockShapes shapes)
             if (shapes.NoPillarBelowVariant(placed[i].Name, placed[i].Ground, placed[i].Variant) is not { } npb) continue;
             var cells = UnitCells(placed[i]).ToList();
             var bottom = cells.Min(c => c.Y);
-            var adapters = shapes.ClipSides(placed[i].Name, placed[i].Ground, placed[i].Variant)
-                .Where(s => s.Bit % 6 == 4).SelectMany(s => s.Clips.Where(c => c.Anti)).ToList();
+            var bottoms = shapes.ClipSides(placed[i].Name, placed[i].Ground, placed[i].Variant)
+                .Where(s => s.Bit % 6 == 4).SelectMany(s => s.Clips).ToList();
             bool Supported(Int3 c) => pillarCells.Contains(c + Down)
-                || tops.TryGetValue(c, out var offered) && adapters.Any(a => offered.Any(t => Compatible(a, t)));
+                || tops.TryGetValue(c, out var offered) && bottoms.Any(a => offered.Any(t => Compatible(a, t)));
             if (!cells.Where(c => c.Y == bottom).Any(Supported))
                 placed[i] = placed[i] with { Variant = npb };
         }
