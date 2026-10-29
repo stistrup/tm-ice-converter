@@ -61,7 +61,6 @@ public sealed class ClipResolver(IBlockShapes shapes)
     {
         var sides = new Dictionary<(Int3 Cell, Int3 Dir), List<SideAt>>();
         var pillar = blocks.Select(b => shapes.IsPillarBlock(b.Name)).ToArray();
-        var terrain = blocks.Select(b => shapes.IsTerrain(b.Name)).ToArray();
         for (int i = 0; i < blocks.Count; i++)
         {
             foreach (var side in shapes.ClipSides(blocks[i].Name, blocks[i].Ground, blocks[i].Variant))
@@ -100,15 +99,10 @@ public sealed class ClipResolver(IBlockShapes shapes)
             return (top ? MeshExport.ColumnTop : 0) | (bottom ? MeshExport.ColumnBottom : 0) | (bottom && ground ? MeshExport.ColumnOnGround : 0);
         }
 
-        // top hidden if another block shares the cell
         var occupants = new Dictionary<Int3, List<int>>();
         for (int i = 0; i < blocks.Count; i++)
             foreach (var c in UnitCells(blocks[i]))
                 (occupants.TryGetValue(c, out var l) ? l : occupants[c] = []).Add(i);
-        // unless it has its own top there
-        var topsAt = sides.Where(kv => kv.Key.Dir == Up).SelectMany(kv => kv.Value.Where(s => s.Side.Clips.Count > 0).Select(s => (kv.Key.Cell, s.Block))).ToHashSet();
-        bool Covered(Int3 cell, int block)
-            => occupants.TryGetValue(cell, out var l) && l.Any(o => o != block && !pillar[o] && !terrain[o] && !topsAt.Contains((cell, o)));
         // stacked pillars: only the top one shows its top
         bool PillarAbove(Int3 cell, int block)
             => occupants.TryGetValue(cell + Up, out var l) && l.Any(o => pillar[o] && blocks[o].Name == blocks[block].Name);
@@ -122,16 +116,16 @@ public sealed class ClipResolver(IBlockShapes shapes)
             foreach (var at in list)
             {
                 // anti-clips show where they connect
-                // shaped tops/bottoms only connect when turned the same way
+                // a top hides under any matching bottom; shaped bottoms only connect when turned the same way
                 var connected = at.Side.Clips.Any(a => !a.Anti && facingAt.Any(f => f.Side.Clips.Any(b => Compatible(a, b)
-                    && (dir.Y == 0 || Grouped(a, b) || SameTurn(blocks[at.Block].Place, blocks[f.Block].Place)))));
+                    && (dir.Y >= 0 || Grouped(a, b) || SameTurn(blocks[at.Block].Place, blocks[f.Block].Place)))));
                 var picked = at.Side.Clips
                     .Where(c => c.Type.StartsWith("FreeClip"))
                     .Where(c => c.Anti ? facing.Any(f => Compatible(c, f))
                         : c.Vertical && c.VerticalGroup is not null
                         ? Column(cell, dir, c.VerticalGroup)
                             && !(sharedPoles && facing.Any(f => f.Vertical && f.VerticalGroup == c.VerticalGroup) && Column(cell + dir, Neg(dir), c.VerticalGroup))
-                        : !connected && !(dir.Y > 0 && (Covered(cell, at.Block) || PillarAbove(cell, at.Block))))
+                        : !connected && !(dir.Y > 0 && PillarAbove(cell, at.Block)))
                     .ToList();
                 if (picked.Any(c => c.Full)) picked = picked.Where(c => c.Full || !c.Deletable).ToList();
                 foreach (var c in picked)
