@@ -125,7 +125,8 @@ public sealed class ClipResolver(IBlockShapes shapes)
                         // facing poles of the same group: neither shows
                         ? Column(cell, dir, c.VerticalGroup)
                             && !(facing.Any(f => f.Vertical && f.VerticalGroup == c.VerticalGroup) && Column(cell + dir, Neg(dir), c.VerticalGroup))
-                        : !connected && !(dir.Y > 0 && PillarAbove(cell, at.Block)))
+                        // a full clip on the facing side removes deletable ones too
+                        : !connected && !(dir.Y > 0 && PillarAbove(cell, at.Block)) && !(c.Deletable && facing.Any(f => f.Full)))
                     .ToList();
                 if (picked.Any(c => c.Full)) picked = picked.Where(c => c.Full || !c.Deletable).ToList();
                 foreach (var c in picked)
