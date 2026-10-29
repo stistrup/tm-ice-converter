@@ -23,6 +23,8 @@ public interface IBlockShapes
     // null = unknown
     bool? EnvironmentHas(string blockName);
     int? NoPillarBelowVariant(string blockName, bool ground, int variantIndex);
+    // null = no waypoint
+    string? Waypoint(string blockName);
     // null = not extracted
     IReadOnlyList<(Vector3 A, Vector3 B, Vector3 C, string Material)>? CollisionTriangles(string blockName, bool ground, int variantIndex, int mobil);
     // null = not extracted
@@ -197,7 +199,9 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
                 else Bump(report.Unmatched, name);
                 continue;
             }
+            // waypoints stay items: the game doesn't turn a custom block's spawn with the block
             if (rules.Options.CustomBlocks && !block.IsFree && !block.IsGround && !inTerrain && !IsGameplayBlock(name)
+                && shapes.Waypoint(name) is null
                 && (items.BlockFor(name, name, false, variantOf[block], MobilOf(block), map.Collection!.Value, NoClips)
                     ?? (SurfaceParent(name, variantOf[block], clipsOf[block]) is { } parent
                         ? items.BlockFor(name, parent.Name, false, variantOf[block], MobilOf(block), map.Collection!.Value, parent.Baked) : null)) is { } iceBlock)
