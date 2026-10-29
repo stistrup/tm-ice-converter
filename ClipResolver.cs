@@ -112,7 +112,6 @@ public sealed class ClipResolver(IBlockShapes shapes)
         {
             var facingAt = sides.GetValueOrDefault((cell + dir, Neg(dir))) ?? [];
             var facing = facingAt.SelectMany(s => s.Side.Clips).ToList();
-            var sharedPoles = dir.X < 0 || dir.Z < 0;
             foreach (var at in list)
             {
                 // anti-clips show where they connect
@@ -123,8 +122,9 @@ public sealed class ClipResolver(IBlockShapes shapes)
                     .Where(c => c.Type.StartsWith("FreeClip"))
                     .Where(c => c.Anti ? facing.Any(f => Compatible(c, f))
                         : c.Vertical && c.VerticalGroup is not null
+                        // facing poles of the same group: neither shows
                         ? Column(cell, dir, c.VerticalGroup)
-                            && !(sharedPoles && facing.Any(f => f.Vertical && f.VerticalGroup == c.VerticalGroup) && Column(cell + dir, Neg(dir), c.VerticalGroup))
+                            && !(facing.Any(f => f.Vertical && f.VerticalGroup == c.VerticalGroup) && Column(cell + dir, Neg(dir), c.VerticalGroup))
                         : !connected && !(dir.Y > 0 && PillarAbove(cell, at.Block)))
                     .ToList();
                 if (picked.Any(c => c.Full)) picked = picked.Where(c => c.Full || !c.Deletable).ToList();
