@@ -56,6 +56,8 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
     private const float LipTouch = 0.02f;
     // lips run from below the road up to the border: 0.8 m (tech, bump), 1 m (dirt); flush borders touch flat faces
     private const float LipMinHeight = 0.5f, LipMaxHeight = 1.5f;
+    // steeper than 60°
+    private const float LipMaxNormalY = 0.5f;
     private List<(Vector3 A, Vector3 B, Vector3 C)>? borders;
     private bool collectingBorders;
 
@@ -743,7 +745,9 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
         bool LipHigh(int t)
         {
             var ys = indices[t..(t + 3)].Select(v => positions[3 * v + 1]).ToArray();
-            return ys.Max() - ys.Min() is >= LipMinHeight and <= LipMaxHeight;
+            // steep only: sloped road beside a border rises as much
+            var n = Vector3.Normalize(Vector3.Cross(At(indices[t + 1]) - At(indices[t]), At(indices[t + 2]) - At(indices[t])));
+            return ys.Max() - ys.Min() is >= LipMinHeight and <= LipMaxHeight && MathF.Abs(n.Y) < LipMaxNormalY;
         }
         for (int t = 0; t + 2 < indices.Length; t += 3)
             (LipHigh(t) && (Touches(indices[t]) || Touches(indices[t + 1]) || Touches(indices[t + 2])) ? lip : rest).AddRange(indices[t..(t + 3)]);
