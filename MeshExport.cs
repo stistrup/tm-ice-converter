@@ -31,7 +31,7 @@ public sealed record ClipSide(int Bit, Vector3 Probe)
 }
 
 public sealed record ClipInfo(int Index, string Name, string Type, bool Vertical, string? Group, string? SymmetricGroup,
-    string? VerticalGroup, string? Pair, bool Full, bool Deletable, bool Anti);
+    string? VerticalGroup, string? Pair, bool Full, bool Deletable, bool Anti, string MultiDir = "SameDir");
 
 // block prefabs from the extraction -> mesh pieces
 public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, string> materialMap) : IBlockShapes
@@ -181,7 +181,7 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
             yield return new ClipInfo(i, node?.Ident.Id ?? Path.GetFileName(file).Split('.')[0], node?.ClipType.ToString() ?? "",
                 IsVertical(clips[i]), NonEmpty(node?.ClipGroupId), NonEmpty(node?.SymmetricalClipGroupId),
                 NonEmpty((node as CGameCtnBlockInfoClipVertical)?.VerticalClipGroupId), NonEmpty(node?.ASymmetricalClipId),
-                node?.IsFullFreeClip ?? false, node?.CanBeDeletedByFullFreeClip ?? false, IsAntiClip(node));
+                node?.IsFullFreeClip ?? false, node?.CanBeDeletedByFullFreeClip ?? false, IsAntiClip(node), node?.TopBottomMultiDir.ToString() ?? "SameDir");
         }
     }
 
@@ -258,6 +258,39 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
             }
         }
         return parts.Count > 0 ? parts : null;
+    }
+
+    // quarter turns of a shaped top/bottom clip on top of its block's direction: learned from maps, else the fitted mesh turn
+    public int ShapedClipTurn(string blockName, bool ground, int variantIndex, int bit, ClipInfo clip)
+        => ClipTurns.Learned(blockName, bit, clip.Name)
+            ?? (ShapedClipTurns(blockName, ground, variantIndex).TryGetValue((bit, clip.Index), out var turn) ? ClipTurns.DirOf(turn) : 0);
+
+    private readonly Dictionary<(string, bool, int), Dictionary<(int Bit, int Index), Matrix4x4>> shapedTurns = [];
+
+    // turn of each shaped top/bottom clip inside its block: the clip mesh fitted to the block's corners
+    public IReadOnlyDictionary<(int Bit, int Index), Matrix4x4> ShapedClipTurns(string blockName, bool ground, int variantIndex)
+    {
+        if (shapedTurns.TryGetValue((blockName, ground, variantIndex), out var known)) return known;
+        var turns = shapedTurns[(blockName, ground, variantIndex)] = [];
+        if (!TryLoadBlock(blockName, out var block) || PickVariant(block.Info, ground, variantIndex) is not { } variant
+            || MobilPrefab(variant, block.Path) is not { } main) return turns;
+        var corners = Corners([main]);
+        var ancestor = Gbx.ParseHeader(block.Path).RefTable?.AncestorLevel ?? 0;
+        foreach (var (unitOrigin, bit, clips, place, _) in ClipSlots(variant))
+        {
+            if (bit % 6 < 4) continue;
+            for (int i = 0; i < (clips?.Length ?? 0); i++)
+                if (clips![i] is { Node: { ASymmetricalClipId.Length: > 0 } node, File: { } file }
+                    && ((CGameCtnBlockInfoVariant?)node.VariantBaseAir ?? node.VariantBaseGround) is { } clipVariant
+                    && MobilPrefab(clipVariant, ResolveRef(block.Path, ancestor, file.FilePath)) is { } part)
+                {
+                    // sloped bottoms follow the road; corners can't tell a slope's ends apart
+                    var sloped = bit % 6 == 4 ? BottomClipTurn("AllDir", part, main) : Matrix4x4.Identity;
+                    turns[(bit, i)] = !sloped.IsIdentity || Slope(part, upOnly: false).Length() >= 0.1f && bit % 6 == 4
+                        ? sloped : FittedTopTurn(part, place * Matrix4x4.CreateTranslation(unitOrigin), corners);
+                }
+        }
+        return turns;
     }
 
     private List<Vector3> Corners(List<(string Path, Matrix4x4 Transform)> parts)

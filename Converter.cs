@@ -25,6 +25,7 @@ public interface IBlockShapes
     int? NoPillarBelowVariant(string blockName, bool ground, int variantIndex);
     // null = no waypoint
     string? Waypoint(string blockName);
+    int ShapedClipTurn(string blockName, bool ground, int variantIndex, int bit, ClipInfo clip);
     // null = not extracted
     IReadOnlyList<(Vector3 A, Vector3 B, Vector3 C, string Material)>? CollisionTriangles(string blockName, bool ground, int variantIndex, int mobil);
     // null = not extracted

@@ -103,6 +103,11 @@ public sealed class ClipResolver(IBlockShapes shapes)
         for (int i = 0; i < blocks.Count; i++)
             foreach (var c in UnitCells(blocks[i]))
                 (occupants.TryGetValue(c, out var l) ? l : occupants[c] = []).Add(i);
+        int Apart(SideAt x, ClipInfo a, SideAt y, ClipInfo b)
+        {
+            int Dir(SideAt s, ClipInfo c) => ClipTurns.DirOf(blocks[s.Block].Place) + shapes.ShapedClipTurn(blocks[s.Block].Name, blocks[s.Block].Ground, blocks[s.Block].Variant, s.Side.Bit, c);
+            return ((Dir(x, a) - Dir(y, b)) % 4 + 4) % 4;
+        }
         // stacked pillars: only the top one shows its top
         bool PillarAbove(Int3 cell, int block)
             => occupants.TryGetValue(cell + Up, out var l) && l.Any(o => o != block && pillar[o] && blocks[o].Name == blocks[block].Name);
@@ -115,9 +120,16 @@ public sealed class ClipResolver(IBlockShapes shapes)
             foreach (var at in list)
             {
                 // anti-clips show where they connect
-                // a top hides under any matching bottom; shaped bottoms only connect when turned the same way
+                // shaped tops/bottoms connect facing the same or the opposite way; when several in a cell match
+                // the same clip, only those facing its way connect
+                bool Shaped(ClipInfo a, SideAt f, ClipInfo b)
+                {
+                    var apart = Apart(at, a, f, b);
+                    return a.MultiDir == "AllDir" || apart == 0
+                        || apart == 2 && !(dir.Y > 0 && list.Any(o => o.Block != at.Block && o.Side.Clips.Any(c => Compatible(c, b) && Apart(o, c, f, b) == 0)));
+                }
                 var connected = at.Side.Clips.Any(a => !a.Anti && facingAt.Any(f => f.Side.Clips.Any(b => Compatible(a, b)
-                    && (dir.Y >= 0 || Grouped(a, b) || SameTurn(blocks[at.Block].Place, blocks[f.Block].Place)))));
+                    && (dir.Y == 0 || Grouped(a, b) || Shaped(a, f, b)))));
                 var picked = at.Side.Clips
                     .Where(c => c.Type.StartsWith("FreeClip"))
                     .Where(c => c.Anti ? facing.Any(f => Compatible(c, f))
@@ -139,8 +151,6 @@ public sealed class ClipResolver(IBlockShapes shapes)
     private static bool Grouped(ClipInfo a, ClipInfo b)
         => a.Group is not null && b.Group is not null && (a.Group == b.Group || a.Group == b.SymmetricGroup || a.SymmetricGroup == b.Group);
 
-    private static bool SameTurn(Matrix4x4 a, Matrix4x4 b)
-        => Vector3.Distance(Vector3.TransformNormal(Vector3.UnitX, a), Vector3.TransformNormal(Vector3.UnitX, b)) < 0.01f;
 
     private static bool Compatible(ClipInfo a, ClipInfo b)
     {

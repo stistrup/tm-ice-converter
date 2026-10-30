@@ -33,6 +33,8 @@ switch (args)
         return Inspect(rest);
     case ["clipcheck", .. var rest] when rest.Length > 0:
         return CheckClips(rest);
+    case ["learn-clip-turns", .. var rest] when rest.Length > 0:
+        return LearnClipTurns(rest);
     default:
         Console.WriteLine($"""
             Usage:
@@ -60,6 +62,9 @@ switch (args)
               clipcheck <map.Gbx | folder>... [-v <kind>]
                   Compare the clips the converter resolves with the ones the game baked into each map, per kind
                   (top, side, bottom, vertical); -v lists that kind's mismatches by clip name.
+              learn-clip-turns <map.Gbx | folder>...
+                  Learn how the game turns each block type's shaped top/bottom clips from the clips baked into the maps,
+                  into data/clip-turns.jsonc. Block types no map shows fall back to fitting the clip mesh.
 
             Drop folder: {Paths.DropFolder}
             """);
@@ -340,6 +345,16 @@ int CheckClips(string[] rest)
             var (map, _, c) = g.First();
             Console.WriteLine($"  {g.Count(),5} {g.Key.What}: {g.Key.Name}, e.g. {Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(map))} {c.Cell} on {c.Block} {c.BlockCoord}");
         }
+    return 0;
+}
+
+int LearnClipTurns(string[] rest)
+{
+    var shapes = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>());
+    var seen = ClipTurns.Learn(ExpandMaps(rest).Select(p => Gbx.ParseNode<CGameCtnChallenge>(p)), shapes);
+    ClipTurns.Write(seen);
+    var mixed = seen.Count(kv => kv.Value.Count > 1);
+    Console.WriteLine($"{seen.Count} block/clip turns -> {ClipTurns.FilePath}{(mixed > 0 ? $"; {mixed} not unanimous (see the comments)" : "")}");
     return 0;
 }
 
