@@ -217,12 +217,15 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
         if (main is not null) { parts.Add((main.Value.Path, main.Value.Transform)); walls.Add(parts[^1]); }
 
         var ancestor = Gbx.ParseHeader(infoPath).RefTable?.AncestorLevel ?? 0;
+        var blockName = Path.GetFileName(infoPath).Split('.')[0];
+        // baked clips say how the game turns it
+        Matrix4x4? Learned(int bit, CGameCtnBlockInfoClip node) => ClipTurns.Learned(blockName, bit, node.Ident.Id) is { } k ? AroundUnitCenter(-k * MathF.PI / 2) : null;
         var rise = Vector2.Zero;
         if (main is null)
             foreach (var (unitOrigin, bit, clips, _, probe) in ClipSlots(variant))
                 if (bit % 6 < 4 && clips is { Length: > 0 })
                     rise += Vector2.Normalize(new Vector2(probe.X - unitOrigin.X - 16, probe.Z - unitOrigin.Z - 16));
-        var tops = new List<((string Path, Matrix4x4 Transform) Part, Matrix4x4 Place, bool ClipOnly)>();
+        var tops = new List<((string Path, Matrix4x4 Transform) Part, Matrix4x4 Place, bool ClipOnly, Matrix4x4? Learned)>();
         foreach (var (unitOrigin, bit, clips, place, _) in ClipSlots(variant))
         {
             var seen = new HashSet<string>();
@@ -238,9 +241,10 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
                         ? MobilPrefab(clipVariant, clipPath) : null;
                 if (prefab is { } part)
                 {
-                    if (bit % 6 == 5) { tops.Add((part, place * Matrix4x4.CreateTranslation(unitOrigin), main is null)); continue; }
-                    var turn = bit % 6 == 4 && main is { } m ? BottomClipTurn(pillarShapeDirs, part, m) : Matrix4x4.Identity;
-                    if (bit % 6 == 4 && turn.IsIdentity) turn = InFootprintTurn(part, place * Matrix4x4.CreateTranslation(unitOrigin), variant);
+                    if (bit % 6 == 5) { tops.Add((part, place * Matrix4x4.CreateTranslation(unitOrigin), main is null, Learned(bit, node))); continue; }
+                    var turn = bit % 6 != 4 ? Matrix4x4.Identity
+                        : Learned(bit, node) ?? (main is { } m ? BottomClipTurn(pillarShapeDirs, part, m) : Matrix4x4.Identity);
+                    if (bit % 6 == 4 && turn.IsIdentity && Learned(bit, node) is null) turn = InFootprintTurn(part, place * Matrix4x4.CreateTranslation(unitOrigin), variant);
                     parts.Add((part.Path, part.Transform * turn * place * Matrix4x4.CreateTranslation(unitOrigin)));
                     if (bit % 6 < 4) walls.Add(parts[^1]);
                 }
@@ -249,11 +253,11 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
         if (tops.Count > 0)
         {
             var corners = walls.Count > 0 ? Corners(walls) : [];
-            foreach (var (part, place, clipOnly) in tops)
+            foreach (var (part, place, clipOnly, learned) in tops)
             {
                 var sloped = Slope(part, upOnly: false).Length() >= 0.1f;
                 // the fit is noise on clip-only blocks
-                var turn = !sloped ? Matrix4x4.Identity : clipOnly ? TopClipTurn(part, rise) : corners.Count > 0 ? FittedTopTurn(part, place, corners) : Matrix4x4.Identity;
+                var turn = learned ?? (!sloped ? Matrix4x4.Identity : clipOnly ? TopClipTurn(part, rise) : corners.Count > 0 ? FittedTopTurn(part, place, corners) : Matrix4x4.Identity);
                 parts.Add((part.Path, part.Transform * turn * place));
             }
         }
@@ -405,6 +409,21 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
             if (files[itemId].FirstOrDefault() is { } file) return file;
         }
         return null;
+    }
+
+    private static readonly Dictionary<string, List<string>?> itemVariants = [];
+
+    // model names of a variant list item: FallTreeMedium, Fall.Prefab…
+    public List<string>? ItemVariants(string itemId)
+    {
+        if (ItemFile(itemId) is not { } file) return null;
+        lock (itemVariants)
+            if (itemVariants.TryGetValue(file, out var known)) return known;
+        var found = Gbx.ParseNode<CGameItemModel>(file).EntityModel is NPlugItem_SVariantList { Variants: { } variants }
+            ? variants.Select(v => Path.GetFileName(v.EntityModelFile?.FilePath ?? "") is var f && f.EndsWith(".Prefab.Gbx") ? f[..^".Gbx".Length] : f.Split('.')[0]).ToList()
+            : null;
+        lock (itemVariants) itemVariants[file] = found;
+        return found;
     }
 
     public List<MeshPiece>? ExportItem(string itemPath, out string? reason)

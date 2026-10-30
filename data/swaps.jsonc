@@ -126,6 +126,7 @@
     "TreePineDeadVerySmallA": "FrozenTreeVerySmall",
     "SpringPalmTree": "WinterFrozenTree",
     "PalmTreeMedium": "FrozenTreeMedium",
+    "PalmTreeSmall": "FrozenTreeSmall",
     "CypressTall": "FirSnowTall"
   },
 

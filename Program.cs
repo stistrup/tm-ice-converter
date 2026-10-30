@@ -480,7 +480,7 @@ static string FormatReport(string source, ConversionReport report, IReadOnlyDict
     if (report.ReplacedByItem.Count > 0)
     {
         sb.AppendLine($"## Replaced by ice items ({report.ReplacedByItem.Values.Sum()})\n");
-        foreach (var (name, n) in report.ReplacedByItem.OrderByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n}");
+        foreach (var ((name, why), n) in report.ItemReasons.OrderBy(kv => kv.Key.Reason).ThenByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n} ({why})");
         foreach (var (name, n) in report.KeptByItem) sb.AppendLine($"- {name} x{n}: native neighbour (pillar, road…) that would change next to the items, rebuilt as it was");
         sb.AppendLine();
     }

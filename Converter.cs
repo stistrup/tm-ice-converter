@@ -50,6 +50,7 @@ public sealed class ConversionReport
     public Dictionary<string, int> ReplacedByBlock { get; } = [];
     public HashSet<IceBlock> UsedBlocks { get; } = [];
     public Dictionary<string, int> KeptByItem { get; } = [];
+    public Dictionary<(string Block, string Reason), int> ItemReasons { get; } = [];
     public Dictionary<string, int> Concrete { get; } = [];
     public Dictionary<string, int> Walls { get; } = [];
     public Dictionary<string, int> TopsIced { get; } = [];
@@ -217,6 +218,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             if (!ok) { Bump(report.Unmatched, name); continue; }
             replaced.Add(block);
             Bump(report.ReplacedByItem, name);
+            Bump(report.ItemReasons, (name, ItemReason(block, inTerrain, rules.Options.CustomBlocks)));
         }
         KeepNeighbours(map, grid, placed, target, replaced, renamed, skinned, new HashSet<CGameCtnBlock>(customs.Keys, ReferenceEqualityComparer.Instance), report);
         var snow = new SnowSurfaces(map, replaced.Concat(customs.Keys), renamed, skinned, shapes, rules.Options.SnowOnZoneSides);
@@ -241,6 +243,17 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
     }
 
     private static readonly HashSet<int> NoClips = [];
+
+    // why a grid block became an item, not a custom block
+    private string ItemReason(CGameCtnBlock block, bool inTerrain, bool customBlocks)
+        => !customBlocks ? "customBlocks off"
+            : block.IsFree ? "free"
+            : block.IsGround ? "ground"
+            : inTerrain ? "in terrain"
+            : IsGameplayBlock(block.Name) ? "gameplay"
+            : shapes.Waypoint(block.Name) is not null ? "waypoint"
+            : CustomBlocks.VariantId(false, 0, MobilOf(block)) is null ? "mobil row"
+            : "no ice surface";
 
     private readonly Dictionary<(string, int, string?), (string Name, HashSet<int> Missing)?> surfaceParents = [];
 
@@ -306,11 +319,13 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             // "<Env>:<Item>" beats the bare id
             bool Find(Dictionary<string, string> table, out string to)
                 => table.TryGetValue($"{map.Collection}:{model.Id}", out to!) || table.TryGetValue(model.Id, out to!);
-            if (Find(translations.Items, out var to)
-                || Find(translations.ItemsOnSnow, out to) && snow.Touches(new Vector3(p.X, p.Y, p.Z), TreeHeight(to)))
+            var always = Find(translations.Items, out var to);
+            if ((always || Find(translations.ItemsOnSnow, out to)) && VariantSwap(map, item, to) is var (target, variant)
+                && (always || snow.Touches(new Vector3(p.X, p.Y, p.Z), TreeHeight(target))))
             {
-                item.ItemModel = model with { Id = to, Collection = new Id(26) }; // Stadium2020
-                Bump(report.SwappedItems, (model.Id, to));
+                item.ItemModel = model with { Id = target, Collection = new Id(26) }; // Stadium2020
+                item.Flags = (short)(item.Flags & ~VariantBits | variant << 8);
+                Bump(report.SwappedItems, (model.Id, target));
             }
             // stacked copies go up 1 cm each
             else if (items.ForItem(model.Id) is { } ice)
@@ -374,8 +389,14 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             }
         }
 
-        // ice anywhere in the tree's column?
-        public bool Touches(Vector3 root, float height) => Heights(root).Any(h => h >= root.Y - ReachBelow && h <= root.Y + height);
+        // stands on ice, and the frozen tree wouldn't reach through ice above it
+        public bool Touches(Vector3 root, float height)
+        {
+            var hs = Heights(root).ToList();
+            return hs.Any(h => h >= root.Y - ReachBelow && h <= root.Y + OnIce) && !hs.Any(h => h > root.Y + OnIce && h <= root.Y + height);
+        }
+
+        private const float OnIce = 0.5f;
 
         public bool Flush(Vector3 p) => Heights(p).Any(h => MathF.Abs(h - p.Y) <= 0.02f);
 
@@ -441,6 +462,27 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         Bump(report.Gated, block.Name);
         return true;
     }
+
+    // placed item's variant index in its variant list
+    private const int VariantBits = 0x1F00;
+
+    // a variant list swaps per variant: by the variant's own model, clusters to the target's cluster
+    private (string Target, int Variant)? VariantSwap(CGameCtnChallenge map, CGameCtnAnchoredObject item, string to)
+    {
+        if (shapes is not MeshExport mesh || mesh.ItemVariants(item.ItemModel.Id) is not { Count: > 1 } from) return (to, 0);
+        var index = (item.Flags & VariantBits) >> 8;
+        if (index >= from.Count) return null;
+        var own = from[index];
+        if (translations.Items.TryGetValue($"{map.Collection}:{own}", out var t) || translations.Items.TryGetValue(own, out t)
+            || translations.ItemsOnSnow.TryGetValue($"{map.Collection}:{own}", out t) || translations.ItemsOnSnow.TryGetValue(own, out t))
+            return (t, 0);
+        if (!own.EndsWith(".Prefab") || mesh.ItemVariants(to) is not { } into) return null;
+        var cluster = into.FindIndex(v => v.EndsWith(".Prefab") && ClusterLetter(v) == ClusterLetter(own));
+        return cluster < 0 ? null : (to, cluster);
+    }
+
+    // Fall.Prefab, FallB.Prefab, FallC.Prefab
+    private static string ClusterLetter(string prefab) => prefab[..^".Prefab".Length] is var s && char.IsUpper(s[^1]) ? s[^1..] : "";
 
     private static float TreeHeight(string frozen) => frozen switch
     {

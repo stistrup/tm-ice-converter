@@ -5,7 +5,7 @@ using GBX.NET.Engines.Game;
 
 namespace TmIceConverter;
 
-// how the game turns a block type's shaped top/bottom clips (per clip slot), in quarter turns on top of the block's direction;
+// how the game turns a block type's top/bottom clips (per clip slot), in quarter turns on top of the block's direction;
 // learned from the clips the game baked into maps
 public static class ClipTurns
 {
@@ -39,7 +39,7 @@ public static class ClipTurns
                 {
                     var cell = Converter.CellAt(Vector3.Transform(side.Probe, placed[i].Place));
                     // one baked clip of that name in the cell, or it can't be told apart
-                    foreach (var clip in side.Clips.Where(c => c.Pair is not null))
+                    foreach (var clip in side.Clips)
                         if (baked.TryGetValue((clip.Name, cell), out var dirs) && dirs.Count == 1)
                         {
                             var key = Key(grid[i].Name, side.Bit, clip.Name);
