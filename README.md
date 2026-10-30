@@ -1,6 +1,6 @@
 # TmIceConverter
 
-Turns Trackmania 2020 maps into ice versions. Blocks that have a native ice version are swapped, everything else that should be ice becomes a custom item built from Nadeo's own meshes and embedded in the map.
+Turns Trackmania 2020 maps into ice versions. Blocks that have a native ice version are swapped; most others become custom ice blocks built from Nadeo's own meshes and embedded in the map, on Stadium and on the vistas. What can't be a block yet becomes a custom ice item, and walls, ground and concrete stay native with an ice surface laid on top.
 
 ## Setup
 
@@ -40,17 +40,17 @@ This is how it was mostly built. Drive the converted map, and when something loo
 
 An in-game screenshot of the spot helps a lot, since the Blender scene isn't exactly what the game draws.
 
-## What we've figured out so far
-
-Current understanding after a lot of trial and error, not documentation. Some of it may well be wrong.
-
-- Which end caps, borders and pillar poles a block shows depends on its neighbours. Replacing a block with an item changes its neighbours too, so those get rebuilt as well, see `ClipResolver`.
-- Some clips are shared between mirrored blocks and the data doesn't say how they're turned; the converter picks the best fit.
-- Items can't carry gameplay effects, so turbo/reset/slow-motion blocks stay native or get a gate.
-- Blocks missing from an environment make the game refuse the map; items are fine anywhere.
-- A map without shadows still has to declare a lightmap or clubs reject it.
-- NadeoImporter drops collision surfaces and waypoint info, which get patched in afterwards.
-
 `tools/zfight.py` finds flickering faces and `tools/render_at.py` renders from any camera, handy for checking a converted map.
+
+## Known issues
+
+- Starts, checkpoints and finishes are items, not blocks: the game doesn't turn a custom block's spawn with the block.
+- Free-placed blocks, gameplay pads, water walls and some ground deco still become items.
+- Where native ice meets an item, the native block draws its border across the road.
+- Item undersides and pillar joints are lighter than native ones, and item lighting can look blotchy. Compute shadows at High.
+- Some end caps, borders and pillar poles differ from what the game would show, mostly vertical clips next to pillars.
+- Large maps go over the 7.1 MB room limit, and the game's shadow save makes them bigger still. Campaigns and solo play have no limit.
+- Frozen trees have other shapes than the originals.
+- The rink markings of the ice texture show on ice laid over roads.
 
 Built on [GBX.NET](https://github.com/BigBang1112/gbx-net). Written with extensive help from Claude, steered and tested by hand on best effort.
