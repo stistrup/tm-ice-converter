@@ -26,7 +26,7 @@ public static class Paths
 
     public static string TestrunFolder => Path.Combine(Maps, "Ice testrun");
     // bump for fresh test run UIDs
-    public const int TestrunGeneration = 6;
+    public const int TestrunGeneration = 7;
 
     public static string LocalSettings { get; set; } = "local.jsonc";
 
