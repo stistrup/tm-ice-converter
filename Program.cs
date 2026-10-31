@@ -31,6 +31,8 @@ switch (args)
         return View(rest);
     case ["inspect", .. var rest] when rest.Length > 0:
         return Inspect(rest);
+    case ["compress", .. var rest] when rest.Length > 0:
+        return Compress(rest);
     case ["clipcheck", .. var rest] when rest.Length > 0:
         return CheckClips(rest);
     case ["learn-clip-turns", .. var rest] when rest.Length > 0:
@@ -65,6 +67,8 @@ switch (args)
               learn-clip-turns <map.Gbx | folder>...
                   Learn how the game turns each block type's shaped top/bottom clips from the clips baked into the maps,
                   into data/clip-turns.jsonc. Block types no map shows fall back to fitting the clip mesh.
+              compress <map.Gbx | folder>...
+                  Recompress the custom blocks embedded in maps, in place (the game's shadow save writes them uncompressed).
 
             Drop folder: {Paths.DropFolder}
             """);
@@ -345,6 +349,38 @@ int CheckClips(string[] rest)
             var (map, _, c) = g.First();
             Console.WriteLine($"  {g.Count(),5} {g.Key.What}: {g.Key.Name}, e.g. {Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(map))} {c.Cell} on {c.Block} {c.BlockCoord}");
         }
+    return 0;
+}
+
+int Compress(string[] rest)
+{
+    foreach (var path in rest.SelectMany(p => Directory.Exists(p) ? Directory.GetFiles(p, "*.Map.Gbx") : [p]))
+    {
+        var before = new FileInfo(path).Length;
+        var gbx = Gbx.Parse<CGameCtnChallenge>(path);
+        if (gbx.Node.EmbeddedZipData is null) continue;
+        var changed = 0;
+        gbx.Node.UpdateEmbeddedZipData(zip =>
+        {
+            foreach (var entry in zip.Entries.Where(e => e.FullName.EndsWith(".Block.Gbx", StringComparison.OrdinalIgnoreCase)).ToList())
+            {
+                var data = new MemoryStream();
+                using (var from = entry.Open()) from.CopyTo(data);
+                data.Position = 0;
+                var block = Gbx.Parse<GBX.NET.Engines.GameData.CGameItemModel>(data);
+                if (block.BodyCompression == GbxCompression.Compressed) continue;
+                block.BodyCompression = GbxCompression.Compressed;
+                var name = entry.FullName;
+                entry.Delete();
+                using var to = zip.CreateEntry(name).Open();
+                block.Save(to);
+                changed++;
+            }
+        });
+        if (changed == 0) { Console.WriteLine($"{Path.GetFileName(path)}: nothing to compress"); continue; }
+        gbx.Save(path);
+        Console.WriteLine($"{Path.GetFileName(path)}: {changed} blocks, {before / 1048576.0:F1} -> {new FileInfo(path).Length / 1048576.0:F1} MB");
+    }
     return 0;
 }
 
