@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Reflection;
 using GBX.NET;
 using GBX.NET.Engines.GameData;
@@ -19,7 +20,7 @@ public static class CustomBlocks
         => (mobil & 0x3F) == 0 ? (ground ? 0 : 1_000_000) + variant * 1000 + (mobil >> 6) : null;
 
     // block from a built ice item's mesh
-    public static void Write(string itemPath, string blockPath, Ident ident, string archetype, int variantId)
+    public static void Write(string itemPath, string blockPath, Ident ident, string archetype, int variantId, (Vector3 At, float Pitch, float Roll)? spawn = null)
     {
         var mesh = ((CGameCommonItemEntityModel)Gbx.ParseNode<CGameItemModel>(itemPath).EntityModel!).StaticObject!;
         var folder = mesh.Mesh!.MaterialsFolderName ?? "";
@@ -37,11 +38,11 @@ public static class CustomBlocks
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(ident.Id.Split('\\')[^1]));
         Directory.CreateDirectory(Path.GetDirectoryName(blockPath)!);
         // the game saves blocks uncompressed but loads compressed ones too: half the size
-        new Gbx<CGameItemModel>(Container(ident, name, archetype, ident.Collection, [(variantId, mesh)])) { BodyCompression = GbxCompression.Compressed }.Save(blockPath);
+        new Gbx<CGameItemModel>(Container(ident, name, archetype, ident.Collection, [(variantId, mesh)], spawn)) { BodyCompression = GbxCompression.Compressed }.Save(blockPath);
     }
 
     // same bytes the game writes for a compiled custom block
-    private static CGameItemModel Container(Ident ident, string name, string archetype, Id collection, IEnumerable<(int Id, CPlugStaticObjectModel Mesh)> variants)
+    private static CGameItemModel Container(Ident ident, string name, string archetype, Id collection, IEnumerable<(int Id, CPlugStaticObjectModel Mesh)> variants, (Vector3 At, float Pitch, float Roll)? spawn)
     {
         var item = new CGameItemModel();
         AddChunks(item, (0x2E001003, 8, null), (0x2E001006, null, null), (0x2E002000, null, null), (0x2E002001, 0, null), (0x2E001009, null, null),
@@ -85,10 +86,14 @@ public static class CustomBlocks
         block.Chunks.Add(new SkippableChunk(0x2E025003) { Data = new byte[5] });
         block.ArchetypeBlockInfoId = archetype;
         block.ArchetypeBlockInfoCollectionId = collection;
-        block.CustomizedVariants = variants.Select(v => new CGameBlockItem.Mobil { Id = v.Id, Properties = new CGameBlockItem.MobilProperties { Flags = 1, StaticObject = v.Mesh } }).ToList();
+        block.CustomizedVariants = variants.Select(v => new CGameBlockItem.Mobil { Id = v.Id, Properties = spawn is { } at ? WithSpawn(v.Mesh, at) : new CGameBlockItem.MobilProperties { Flags = 1, StaticObject = v.Mesh } }).ToList();
         item.EntityModelEdition = block;
         return item;
     }
+
+    // without it the car spawns at the block's corner. Flag 4: spawn x, y, z, yaw, pitch, roll in the block's frame; flag 8: unknown point
+    private static CGameBlockItem.MobilProperties WithSpawn(CPlugStaticObjectModel mesh, (Vector3 At, float Pitch, float Roll) spawn)
+        => new() { Flags = 1 | 4 | 8, StaticObject = mesh, U01 = new BoxAligned(spawn.At.X, spawn.At.Y, spawn.At.Z, 0, spawn.Pitch, spawn.Roll), U02 = new Vec3(0, 0, 0) };
 
     private static readonly MethodInfo CreateChunk = typeof(CMwNod).GetMethod(nameof(CMwNod.CreateChunk))!;
 

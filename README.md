@@ -44,7 +44,6 @@ An in-game screenshot of the spot helps a lot, since the Blender scene isn't exa
 
 ## Known issues
 
-- Starts, checkpoints and finishes are items, not blocks: the game doesn't turn a custom block's spawn with the block.
 - Free-placed blocks, gameplay pads, water walls and some ground deco still become items.
 - Where native ice meets an item, the native block draws its border across the road.
 - Item undersides and pillar joints are lighter than native ones, and item lighting can look blotchy. Compute shadows at High.

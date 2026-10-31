@@ -595,6 +595,12 @@ static string FormatReport(string source, ConversionReport report, IReadOnlyDict
         sb.AppendLine($"\n## Kept by the map's keep list ({report.KeptByList.Values.Sum()})\n");
         foreach (var (name, n) in report.KeptByList) sb.AppendLine($"- {name} x{n}");
     }
+    if (report.Water.Count > 0)
+    {
+        sb.AppendLine($"\n## Water, kept native ({report.Water.Values.Sum()})\n");
+        foreach (var (name, n) in report.Water.OrderByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n}");
+    }
+
     if (report.Kept.Count > 0)
     {
         sb.AppendLine($"\n## Kept by table ({report.Kept.Values.Sum()})\n");

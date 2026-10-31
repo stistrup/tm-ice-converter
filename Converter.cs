@@ -50,6 +50,7 @@ public sealed class ConversionReport
     public Dictionary<string, int> ReplacedByBlock { get; } = [];
     public HashSet<IceBlock> UsedBlocks { get; } = [];
     public Dictionary<string, int> KeptByItem { get; } = [];
+    public Dictionary<string, int> Water { get; } = [];
     public Dictionary<(string Block, string Reason), int> ItemReasons { get; } = [];
     public Dictionary<string, int> Concrete { get; } = [];
     public Dictionary<string, int> Walls { get; } = [];
@@ -166,6 +167,9 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
                 continue;
             }
 
+            // water stays water: an ice top on a water block is a solid slab; banks with an ice version swapped above
+            if (name.Contains("Water")) { Bump(report.Water, name); continue; }
+
             // white deco = concrete, keep
             if (IsConcrete(block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block]))
             { Bump(report.Concrete, name); IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report); continue; }
@@ -201,9 +205,9 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
                 else Bump(report.Unmatched, name);
                 continue;
             }
-            // waypoints stay items: the game doesn't turn a custom block's spawn with the block
+            // waypoints as custom blocks need customWaypoints
             if (rules.Options.CustomBlocks && !block.IsFree && !block.IsGround && !inTerrain && !IsGameplayBlock(name)
-                && shapes.Waypoint(name) is null
+                && (rules.Options.CustomWaypoints || shapes.Waypoint(name) is null)
                 && (items.BlockFor(name, name, false, variantOf[block], MobilOf(block), map.Collection!.Value, NoClips)
                     ?? (SurfaceParent(name, variantOf[block], clipsOf[block]) is { } parent
                         ? items.BlockFor(name, parent.Name, false, variantOf[block], MobilOf(block), map.Collection!.Value, parent.Baked) : null)) is { } iceBlock)
@@ -218,7 +222,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             if (!ok) { Bump(report.Unmatched, name); continue; }
             replaced.Add(block);
             Bump(report.ReplacedByItem, name);
-            Bump(report.ItemReasons, (name, ItemReason(block, inTerrain, rules.Options.CustomBlocks)));
+            Bump(report.ItemReasons, (name, ItemReason(block, inTerrain, rules.Options)));
         }
         KeepNeighbours(map, grid, placed, target, replaced, renamed, skinned, new HashSet<CGameCtnBlock>(customs.Keys, ReferenceEqualityComparer.Instance), report);
         var snow = new SnowSurfaces(map, replaced.Concat(customs.Keys), renamed, skinned, shapes, rules.Options.SnowOnZoneSides);
@@ -245,13 +249,13 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
     private static readonly HashSet<int> NoClips = [];
 
     // why a grid block became an item, not a custom block
-    private string ItemReason(CGameCtnBlock block, bool inTerrain, bool customBlocks)
-        => !customBlocks ? "customBlocks off"
+    private string ItemReason(CGameCtnBlock block, bool inTerrain, ConvertOptions options)
+        => !options.CustomBlocks ? "customBlocks off"
             : block.IsFree ? "free"
             : block.IsGround ? "ground"
             : inTerrain ? "in terrain"
             : IsGameplayBlock(block.Name) ? "gameplay"
-            : shapes.Waypoint(block.Name) is not null ? "waypoint"
+            : !options.CustomWaypoints && shapes.Waypoint(block.Name) is not null ? "waypoint (customWaypoints off)"
             : CustomBlocks.VariantId(false, 0, MobilOf(block)) is null ? "mobil row"
             : "no ice surface";
 

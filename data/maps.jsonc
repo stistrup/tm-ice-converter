@@ -13,7 +13,9 @@
     "snowOnGroundDeco": true,
     "effectsToGate": false,
     // blocks that would become whole items become custom blocks instead (off: items)
-    "customBlocks": true
+    "customBlocks": true,
+    // starts/checkpoints/finishes as custom blocks too
+    "customWaypoints": true
   },
 
   // per map: name, blocks, ignorePrefixes, options, keep, keepItems, removeItems ("Name x, y, z" for one placed item)

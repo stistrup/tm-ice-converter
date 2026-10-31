@@ -471,6 +471,26 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
     public string? Waypoint(string blockName)
         => TryLoadBlock(blockName, out var block) && block.Info.WayPointType.ToString() is var w && w != "None" ? w : null;
 
+    // on the road at the block's middle, tilted with it: the lowest upward face there (the arch is above)
+    public (Vector3 At, float Pitch, float Roll) Spawn(string blockName, bool ground, int variantIndex, int mobil)
+    {
+        (float Y, Vector3 N)? road = null;
+        foreach (var (a, b, c, _) in CollisionTriangles(blockName, ground, variantIndex, mobil) ?? [])
+        {
+            var n = Vector3.Normalize(Vector3.Cross(b - a, c - a));
+            var d = (b.X - a.X) * (c.Z - a.Z) - (c.X - a.X) * (b.Z - a.Z);
+            if (n.Y < 0.5f || MathF.Abs(d) < 1e-6f) continue;
+            var u = ((SpawnPoint.X - a.X) * (c.Z - a.Z) - (c.X - a.X) * (SpawnPoint.Z - a.Z)) / d;
+            var v = ((b.X - a.X) * (SpawnPoint.Z - a.Z) - (SpawnPoint.X - a.X) * (b.Z - a.Z)) / d;
+            if (u < 0 || v < 0 || u + v > 1) continue;
+            var y = a.Y + u * (b.Y - a.Y) + v * (c.Y - a.Y);
+            if (road is not { } r || y < r.Y) road = (y, n);
+        }
+        if (road is not { } found) return (SpawnPoint, 0, 0);
+        // up = (-sin roll, cos roll cos pitch, cos roll sin pitch), as Matrix4x4.CreateFromYawPitchRoll turns it
+        return (SpawnPoint with { Y = found.Y }, MathF.Atan2(found.N.Z, found.N.Y), -MathF.Asin(found.N.X));
+    }
+
     public HashSet<string> Missing { get; } = [];
 
     // off while only looking blocks up
