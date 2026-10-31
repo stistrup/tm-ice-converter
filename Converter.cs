@@ -706,6 +706,8 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         Dictionary<CGameCtnBlock, IceBlock>? customs = null)
     {
         if (block.Name.StartsWith("Gate") || block.Name.StartsWith("Stand") || IsGameplayBlock(block.Name)) return;
+        // the minimum skips platform rims; a wall's top is all wall
+        if (cover == Cover.TopOfIce && IsWallOnly(block, variant, clips)) cover = Cover.Top;
         // odd angles: rotation order unknown
         if (!QuarterTurns(Tilt(block))) return;
         if (shapes.Materials(block.Name, block.IsGround, variant, MobilOf(block), clips) is not { } materials || !materials.Any(IsWallMaterial)) return;

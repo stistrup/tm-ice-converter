@@ -321,6 +321,10 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
             var skin = !whole && !body && !topsBody && cover != Cover.Gated && (cover != Cover.None || IsSkin(new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = environment ?? Environment }, block, ground));
             var materialMap = MaterialMap(top ? "top:" : skin ? "skin:" : null);
             if (body) foreach (var key in materialMap.Keys.Where(m => m.StartsWith("Deco") && !SkinCovers(block, m, zoneSides)).ToList()) materialMap.Remove(key);
+            // "native" in ice-materials.jsonc: the game's own material, linked after import
+            var native = materialMap.Where(kv => kv.Value == "native").Select(kv => kv.Key).ToHashSet();
+            foreach (var key in native) materialMap.Remove(key);
+            if (skin || top) native.Clear();
             if (Converter.Effect(block) is { } effect) foreach (var (k, v) in EffectLook(effect)) materialMap[k] = v;
             var export = new MeshExport(Paths.ExtractedStadium, materialMap)
             {
@@ -355,7 +359,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
             if (!terrainSnow && OnTerrain(block, ground, cover)) pieces = WithoutFoot(pieces);
             if (skin && Converter.IsGameplayBlock(block)) pieces = AroundPad(pieces, new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = environment ?? Environment }.Export(parts), PadGameplayOf(block));
             else if (Converter.IsGameplayBlock(block)) pieces = IcyPads(pieces, PadGameplayOf(block));
-            if (body) pieces = pieces.Select(p => !materialMap.ContainsKey(p.Material) && !(MaterialLibSurface(p.Material) is { } own && !NotIce.Contains(own))
+            pieces = pieces.Select(p => (native.Contains(p.Material) || body && !materialMap.ContainsKey(p.Material) && !(MaterialLibSurface(p.Material) is { } own && !NotIce.Contains(own)))
                 && NativeLink(p.Material, export.Environment) is not null ? p with { Material = NativePrefix + p.Material } : p).ToList();
             lock (Missing) Missing.UnionWith(export.Missing);
             if (pieces.Count == 0) return export.Missing.Count > 0 ? "its prefab isn't extracted yet" : top || skin && Converter.IsGameplayBlock(block) ? NothingToCover : "no geometry found";
@@ -491,6 +495,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
         foreach (var m in materials.Where(m => m.StartsWith(NativePrefix))) physics[m] = NativeSurface(m, export.Environment);
         if (materials.FirstOrDefault(m => !m.StartsWith(NativePrefix) && NotIce.Contains(physics[m])) is { } dry)
             return $"material {dry} drives as {physics[dry]}; map it to an ice material in data/ice-materials.jsonc";
+        var standIn = NativeStandIns(materials, physics);
         var lightmapOnly = string.Join(",", materials.Where(MaterialLibLightmapOnly));
         if (!RunQuiet("blender", ["--background", "--factory-startup", "--python", BuildScript, "--", json, Path.Combine(meshDir, name + ".fbx"), lightmapOnly], out var blenderLog))
             return "Blender failed:\n" + blenderLog;
@@ -498,7 +503,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
         File.WriteAllText(Path.Combine(meshDir, name + ".MeshParams.xml"), $"""
             <MeshParams MeshType="Static" Collection="Stadium" Scale="1" FbxFile="{name}.fbx">
               <Materials>
-            {string.Join("\n", materials.Select(m => $"    <Material Name=\"{m}\" Link=\"{(m.StartsWith(NativePrefix) ? NativePlaceholder(physics[m]) : m)}\" PhysicsId=\"{physics[m]}\"/>"))}
+            {string.Join("\n", materials.Select(m => $"    <Material Name=\"{m}\" Link=\"{(m.StartsWith(NativePrefix) ? standIn[physics[m]] : m)}\" PhysicsId=\"{physics[m]}\"/>"))}
               </Materials>
             </MeshParams>
             """);
@@ -648,8 +653,23 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     // kept terrain the importer can't take: built on a library stand-in with the same surface, then linked to the game's own material
     private const string NativePrefix = "Native_";
 
-    private static string NativePlaceholder(string surface)
-        => Regex.Match(MaterialLib.Value, $@"DMaterial\((Custom\w+)\)[^D]*(?:D(?!Material)[^D]*)*?DSurfaceId\s*\({surface}\)") is { Success: true } m ? m.Groups[1].Value : "CustomConcrete";
+    // a library material with texture and lightmap UVs, as the game's materials expect (Custom* are lightmap-only: the game crashed),
+    // one per surface and none the item uses itself, or the importer merges their collision
+    private static Dictionary<string, string> NativeStandIns(List<string> materials, Dictionary<string, string> physics)
+    {
+        var candidates = Regex.Matches(MaterialLib.Value, @"DMaterial\((\w+)\)((?:(?!DMaterial\().)*)", RegexOptions.Singleline)
+            .Where(m => Regex.IsMatch(m.Groups[2].Value, @"DUvLayer\s*\(\s*BaseMaterial\s*,\s*0\s*\)") && Regex.IsMatch(m.Groups[2].Value, @"DUvLayer\s*\(\s*Lightmap\s*,\s*1\s*\)"))
+            .Select(m => (Name: m.Groups[1].Value, Surface: Regex.Match(m.Groups[2].Value, @"DSurfaceId\s*\(\s*(\w+)").Groups[1].Value))
+            .Where(c => !materials.Contains(c.Name)).ToList();
+        var result = new Dictionary<string, string>();
+        foreach (var surface in materials.Where(m => m.StartsWith(NativePrefix)).Select(m => physics[m]).Distinct().Order())
+        {
+            var pick = candidates.FirstOrDefault(c => c.Surface == surface && !result.ContainsValue(c.Name)).Name
+                ?? candidates.First(c => !result.ContainsValue(c.Name)).Name;
+            result[surface] = pick;
+        }
+        return result;
+    }
 
     // the environment's own version first (vistas restyle Stadium materials)
     private static string? NativeLink(string material, string? environment)

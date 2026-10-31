@@ -23,8 +23,8 @@
   "LightShape": "",
 
   "ThemeSnowRoad": "PlatformIce_PlatformTech",
-  // plain tiling material, the stripes come out as rings
-  "ThemeSnowRoadBorder": "CustomPlasticShiny",
+  // "native": the game's own material (not in the importer library), linked after import
+  "ThemeSnowRoadBorder": "native",
   "DecoHill": "PlatformIce_DecoHill",
   "DecoHill2": "PlatformIce_DecoHill2",
   "Deco": "PlatformIce_DecoHill",
