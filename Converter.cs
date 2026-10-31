@@ -186,7 +186,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             }
             if (IsWallOnly(block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block]))
             { Bump(report.Walls, name); IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report); continue; }
-            // ground blocks and deco set into the terrain stay native under a skin
+            // deco set into the terrain stays native under a skin
             var inTerrain = !block.IsGround && !block.IsFree && name.StartsWith("Deco")
                 && cellsOf[block].Any(c => terrainTop.TryGetValue((c.X, c.Z), out var groundY) && c.Y <= groundY);
             // only a block keeps the ground away; grass grows through a skin on deco, not on ice
@@ -199,21 +199,24 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
                 Bump(report.Swapped, (name, twin, Source.Rule));
                 continue;
             }
+            // waypoints as custom blocks need customWaypoints; free blocks too, the game turns and tilts them; ground blocks keep their ground plate.
+            // the game draws the placed variant's body, not the resolver's no-pillar-below one
+            var (variant, shown) = (VariantOf(block), block.IsFree ? FreeClips(block) : clipsOf[block]);
+            if (rules.Options.CustomBlocks && !inTerrain && !IsGameplayBlock(name)
+                && (rules.Options.CustomWaypoints || shapes.Waypoint(name) is null)
+                && (items.BlockFor(name, name, block.IsGround, variant, MobilOf(block), map.Collection!.Value, NoClips)
+                    ?? (SurfaceParent(name, variant, shown) is { } parent
+                        ? items.BlockFor(name, parent.Name, block.IsGround, variant, MobilOf(block), map.Collection!.Value, parent.Baked) : null)) is { } iceBlock)
+            {
+                customs[block] = iceBlock;
+                Bump(report.ReplacedByBlock, name);
+                continue;
+            }
+            // no custom block: ground blocks stay native under a skin too
             if ((block.IsGround || inTerrain) && !ItemBuilder.IsWholeOnGround(name, collection))
             {
                 if (PlaceItem(map, block, variantOf[block], clipsOf[block], report, inTerrain ? Cover.InTerrain : Cover.None)) { skinned.Add(block); Bump(report.Skinned, name); }
                 else Bump(report.Unmatched, name);
-                continue;
-            }
-            // waypoints as custom blocks need customWaypoints
-            if (rules.Options.CustomBlocks && !block.IsFree && !block.IsGround && !inTerrain && !IsGameplayBlock(name)
-                && (rules.Options.CustomWaypoints || shapes.Waypoint(name) is null)
-                && (items.BlockFor(name, name, false, variantOf[block], MobilOf(block), map.Collection!.Value, NoClips)
-                    ?? (SurfaceParent(name, variantOf[block], clipsOf[block]) is { } parent
-                        ? items.BlockFor(name, parent.Name, false, variantOf[block], MobilOf(block), map.Collection!.Value, parent.Baked) : null)) is { } iceBlock)
-            {
-                customs[block] = iceBlock;
-                Bump(report.ReplacedByBlock, name);
                 continue;
             }
             var ok = block.IsFree
@@ -251,7 +254,6 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
     // why a grid block became an item, not a custom block
     private string ItemReason(CGameCtnBlock block, bool inTerrain, ConvertOptions options)
         => !options.CustomBlocks ? "customBlocks off"
-            : block.IsFree ? "free"
             : block.IsGround ? "ground"
             : inTerrain ? "in terrain"
             : IsGameplayBlock(block.Name) ? "gameplay"
