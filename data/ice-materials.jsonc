@@ -12,8 +12,9 @@
   "LightSpot": "LightSpot",
   "DecalPaint2Logo4x1": "DecalPaint2Logo4x1",
 
-  "ChronoCheckpoint": "ScreenBack",
-  "ChronoFinish": "ScreenBack",
+  // timer screens behind the digits
+  "ChronoCheckpoint": "native",
+  "ChronoFinish": "native",
 
   // empty = left out
   "GrassFence": "",
