@@ -555,6 +555,12 @@ static string FormatReport(string source, ConversionReport report, IReadOnlyDict
         sb.AppendLine("Only walls, nothing to ice: the native wall stone stays (an item would be plain concrete).\n");
         foreach (var (name, n) in report.Walls) sb.AppendLine($"- {name} x{n}");
     }
+    if (report.TopsInBlock.Count > 0)
+    {
+        sb.AppendLine($"\n## Walls and concrete, tops iced in a custom block ({report.TopsInBlock.Values.Sum()})\n");
+        sb.AppendLine("A custom block of the native one: its wall material is ice where it faces up as placed, the rest as before.\n");
+        foreach (var (name, n) in report.TopsInBlock) sb.AppendLine($"- {name} x{n}");
+    }
     if (report.TopsIced.Count > 0)
     {
         sb.AppendLine($"\n## Walls and concrete, tops iced ({report.TopsIced.Values.Sum()})\n");

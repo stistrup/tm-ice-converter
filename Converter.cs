@@ -55,6 +55,7 @@ public sealed class ConversionReport
     public Dictionary<string, int> Concrete { get; } = [];
     public Dictionary<string, int> Walls { get; } = [];
     public Dictionary<string, int> TopsIced { get; } = [];
+    public Dictionary<string, int> TopsInBlock { get; } = [];
     public List<string> CameraClipsRemoved { get; } = [];
     public Dictionary<(string From, string To), int> EngineOff { get; } = []; // "" = removed
     public Dictionary<(string From, string To), int> SwappedItems { get; } = [];
@@ -87,6 +88,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         var rules = translations.For(map.MapName);
         keepList = rules.Keep;
         topped.Clear();
+        customsOn = rules.Options.CustomBlocks;
         keepItems = rules;
         shapes.Environment = items.Environment = collection;
         items.SnowOnZoneSides = rules.Options.SnowOnZoneSides;
@@ -133,13 +135,13 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             {
                 // flipped ice shows concrete: ice top
                 if (!name.Contains('\\'))
-                    IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report, Cover.TopOfIce);
+                    IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report, Cover.TopOfIce, customs);
                 continue;
             }
             if (IsOnKeepList(block)) { Bump(report.KeptByList, name); continue; }
             if (shapes.IsPillarBlock(name))
             {
-                IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report);
+                IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report, customs: customs);
                 continue;
             }
             if (shapes.IsTerrain(name)) continue;
@@ -172,10 +174,10 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
 
             // white deco = concrete, keep
             if (IsConcrete(block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block]))
-            { Bump(report.Concrete, name); IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report); continue; }
+            { Bump(report.Concrete, name); IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report, customs: customs); continue; }
             if (!WantsItem(name))
             {
-                IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report);
+                IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report, customs: customs);
                 continue;
             }
             // keep for the effect, ice around the pad
@@ -185,7 +187,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
                 continue;
             }
             if (IsWallOnly(block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block]))
-            { Bump(report.Walls, name); IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report); continue; }
+            { Bump(report.Walls, name); IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report, customs: customs); continue; }
             // deco set into the terrain stays native under a skin
             var inTerrain = !block.IsGround && !block.IsFree && name.StartsWith("Deco")
                 && cellsOf[block].Any(c => terrainTop.TryGetValue((c.X, c.Z), out var groundY) && c.Y <= groundY);
@@ -250,6 +252,9 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
     }
 
     private static readonly HashSet<int> NoClips = [];
+
+    // no clips in any environment
+    private const string Clipless = "StageTechnicsLight";
 
     // why a grid block became an item, not a custom block
     private string ItemReason(CGameCtnBlock block, bool inTerrain, ConvertOptions options)
@@ -541,6 +546,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
 
     private Translations keepItems = new();
     private readonly HashSet<CGameCtnBlock> topped = new(ReferenceEqualityComparer.Instance);
+    private bool customsOn;
 
     private bool IsOnKeepList(CGameCtnBlock block)
         => !block.IsFree && keepList.Contains(Translations.KeepKey(block.Name, block.Coord.X, block.Coord.Y, block.Coord.Z));
@@ -680,6 +686,11 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         => shapes.ClipSides(block.Name, false, VariantOf(block))
             .SelectMany(s => s.Clips.Where(c => !c.Vertical && !c.Anti).Select(c => MeshExport.ClipKey(s.Bit, c.Index))).ToHashSet();
 
+    // what the game draws on a free block, vertical (wall sides) included
+    private HashSet<int> DrawnFreeClips(CGameCtnBlock block)
+        => shapes.ClipSides(block.Name, false, VariantOf(block))
+            .SelectMany(s => s.Clips.Where(c => !c.Anti).Select(c => MeshExport.ClipKey(s.Bit, c.Index))).ToHashSet();
+
     // white deco with no ice version stays (concrete)
     private bool IsConcrete(CGameCtnBlock block, int variant, IReadOnlySet<int> clips)
         => block.Name.StartsWith("Deco") && block.Color == DifficultyColor.White
@@ -687,19 +698,35 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
                 && materials.Any(m => m.StartsWith("Deco") && !IsGroundFill(block, m)));
 
     // walls-only blocks stay native, ice on their upward faces (not gates or stands)
-    private void IceTops(CGameCtnChallenge map, CGameCtnBlock block, int variant, IReadOnlySet<int> clips, ConversionReport report, Cover cover = Cover.Top)
+    // with customs: a custom block with its tops iced in, the skin only if that fails
+    private void IceTops(CGameCtnChallenge map, CGameCtnBlock block, int variant, IReadOnlySet<int> clips, ConversionReport report, Cover cover = Cover.Top,
+        Dictionary<CGameCtnBlock, IceBlock>? customs = null)
     {
         if (block.Name.StartsWith("Gate") || block.Name.StartsWith("Stand") || IsGameplayBlock(block.Name)) return;
         // odd angles: rotation order unknown
         if (!QuarterTurns(Tilt(block))) return;
-        if (shapes.Materials(block.Name, block.IsGround, variant, MobilOf(block), clips) is { } materials && materials.Any(IsWallMaterial)
-            && PlaceItem(map, block, variant, clips, report, cover)
-            && topped.Add(block))
+        if (shapes.Materials(block.Name, block.IsGround, variant, MobilOf(block), clips) is not { } materials || !materials.Any(IsWallMaterial)) return;
+        // free blocks: on a clipless stand-in, their free clips iced into the body (the game would draw them over it)
+        var (archetype, baked) = block.IsFree && shapes.EnvironmentHas(Clipless) != false ? (Clipless, DrawnFreeClips(block)) : (block.Name, (IReadOnlySet<int>)NoClips);
+        // the game draws the placed variant's body
+        if (customs is not null && customsOn && shapes.Waypoint(block.Name) is null
+            && items.BlockFor(block.Name, archetype, block.IsGround, VariantOf(block), MobilOf(block), map.Collection!.Value, baked,
+                cover == Cover.TopOfIce ? Cover.TopOfIceBody : Cover.TopsBody, Tilt(block)) is { } iceBlock)
+        {
+            customs[block] = iceBlock;
+            topped.Add(block);
+            Bump(report.TopsInBlock, block.Name);
+            return;
+        }
+        if (PlaceItem(map, block, variant, clips, report, cover) && topped.Add(block))
             Bump(report.TopsIced, block.Name);
     }
 
+    // -180° and 180° are one turn: one item, one block
     private static Vector2 Tilt(CGameCtnBlock block)
-        => block.IsFree && block.YawPitchRoll is { } r && (MathF.Abs(r.Y) > 0.01f || MathF.Abs(r.Z) > 0.01f) ? new Vector2(r.Y, r.Z) : default;
+        => block.IsFree && block.YawPitchRoll is { } r && (MathF.Abs(r.Y) > 0.01f || MathF.Abs(r.Z) > 0.01f) ? new Vector2(HalfTurnUp(r.Y), HalfTurnUp(r.Z)) : default;
+
+    private static float HalfTurnUp(float a) => a < -MathF.PI + 0.01f ? a + 2 * MathF.PI : a;
 
     private static bool QuarterTurns(Vector2 tilt)
     {
