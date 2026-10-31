@@ -18,9 +18,13 @@
     "customWaypoints": true
   },
 
-  // per map: name, blocks, ignorePrefixes, options, keep, keepItems, removeItems ("Name x, y, z" for one placed item)
+  // per map: name, blocks, ignorePrefixes, options, keep ("Name x,y,z" grid cell, "Name x, y, z" free block position), keepItems, removeItems ("Name x, y, z" for one placed item)
   "maps": {
-    "Fall 2026 - 18": { "options": { "keepPlasticWalls": true } },
+    // the wallride wall stays plastic; the other plastic walls get ice
+    "Fall 2026 - 18": { "keep": [
+      "PlatformPlasticWallCurve2 1179.05, 64, 932.95", "PlatformPlasticWallCurve1 1179.05, 64, 1023.46",
+      "PlatformPlasticWallStraightSponsorsBottom 1133.8, 64, 932.95", "PlatformPlasticWallOutCurve1 1133.8, 64, 932.95",
+      "PlatformPlasticWallOutCurve0 1111.17, 64, 1000.83"] },
     "Fall 2026 - 02": { "options": { "snowOnZoneSides": false } },
     "Fall 2026 - 19": { "options": { "snowOnZoneSides": false } },
     // grass frame around the finish shapes the terrain

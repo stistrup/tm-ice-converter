@@ -58,11 +58,14 @@ public sealed class Translations
 
     public HashSet<string> RemoveItems { get; } = [];
 
-    public bool RemovesItem(string id, System.Numerics.Vector3 at) => RemoveItems.Any(entry =>
-        Regex.Match(entry, @"^(\S+)\s+(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)$") is { Success: true } m
+    public bool RemovesItem(string id, System.Numerics.Vector3 at) => RemoveItems.Any(entry => IsAt(entry, id, at) ?? Matches(id, entry));
+
+    // "Name x, y, z": that name within a metre of the point; null when the entry has no point
+    public static bool? IsAt(string entry, string id, System.Numerics.Vector3 at)
+        => Regex.Match(entry, @"^(\S+)\s+(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)$") is { Success: true } m
             ? Matches(id, m.Groups[1].Value) && System.Numerics.Vector3.Distance(at, new(float.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture),
                 float.Parse(m.Groups[3].Value, System.Globalization.CultureInfo.InvariantCulture), float.Parse(m.Groups[4].Value, System.Globalization.CultureInfo.InvariantCulture))) <= 1
-            : Matches(id, entry));
+            : null;
 
     private static bool Matches(string id, string pattern) => Regex.IsMatch(id, "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$");
 

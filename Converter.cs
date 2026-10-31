@@ -548,8 +548,11 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
     private readonly HashSet<CGameCtnBlock> topped = new(ReferenceEqualityComparer.Instance);
     private bool customsOn;
 
+    // grid blocks by cell, free blocks by position
     private bool IsOnKeepList(CGameCtnBlock block)
-        => !block.IsFree && keepList.Contains(Translations.KeepKey(block.Name, block.Coord.X, block.Coord.Y, block.Coord.Z));
+        => block.IsFree
+            ? block.AbsolutePositionInMap is { } p && keepList.Any(e => Translations.IsAt(e, block.Name, new Vector3(p.X, p.Y, p.Z)) == true)
+            : keepList.Contains(Translations.KeepKey(block.Name, block.Coord.X, block.Coord.Y, block.Coord.Z));
 
     private void KeepNeighbours(CGameCtnChallenge map, List<CGameCtnBlock> grid, List<ClipResolver.Placed> placed,
         List<HashSet<int>> target, HashSet<CGameCtnBlock> replaced, HashSet<CGameCtnBlock> renamed, HashSet<CGameCtnBlock> skinned, HashSet<CGameCtnBlock> customs, ConversionReport report)
