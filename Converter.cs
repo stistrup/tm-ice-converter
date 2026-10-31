@@ -202,7 +202,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             // waypoints as custom blocks need customWaypoints; free blocks too, the game turns and tilts them; ground blocks keep their ground plate.
             // the game draws the placed variant's body, not the resolver's no-pillar-below one
             var (variant, shown) = (VariantOf(block), block.IsFree ? FreeClips(block) : clipsOf[block]);
-            if (rules.Options.CustomBlocks && !inTerrain && !IsGameplayBlock(name)
+            if (rules.Options.CustomBlocks && !inTerrain
                 && (rules.Options.CustomWaypoints || shapes.Waypoint(name) is null)
                 && (items.BlockFor(name, name, block.IsGround, variant, MobilOf(block), map.Collection!.Value, NoClips)
                     ?? (SurfaceParent(name, variant, shown) is { } parent
@@ -256,7 +256,6 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         => !options.CustomBlocks ? "customBlocks off"
             : block.IsGround ? "ground"
             : inTerrain ? "in terrain"
-            : IsGameplayBlock(block.Name) ? "gameplay"
             : !options.CustomWaypoints && shapes.Waypoint(block.Name) is not null ? "waypoint (customWaypoints off)"
             : CustomBlocks.VariantId(false, 0, MobilOf(block)) is null ? "mobil row"
             : "no ice surface";
