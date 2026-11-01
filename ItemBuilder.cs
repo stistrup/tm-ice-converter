@@ -44,7 +44,7 @@ public interface IItemSource
     float SkinEdge { get; set; }
     IceItem? For(string block, bool ground, int variant, int mobil, IReadOnlySet<int> clips, Cover cover = Cover.None, Vector2 tilt = default);
     IceItem? ForItem(string itemId);
-    IceBlock? BlockFor(string block, string archetype, bool ground, int variant, int mobil, Id collection, IReadOnlySet<int> baked, Cover? cover = null, Vector2 tilt = default, bool lift = false);
+    IceBlock? BlockFor(string block, string archetype, bool ground, int variant, int mobil, Id collection, IReadOnlySet<int> baked, Cover? cover = null, Vector2 tilt = default, bool lift = false, int ramp = 0);
     IceBlock? SnowTerrainFor(string block, int variant, int mobil, Id collection) => null;
     IReadOnlyDictionary<string, string> Failures { get; }
 }
@@ -123,18 +123,19 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     }
 
     // the item's main body plus the baked clips in a custom block of the archetype; the game adds the other clips
-    public IceBlock? BlockFor(string block, string archetype, bool ground, int variant, int mobil, Id collection, IReadOnlySet<int> baked, Cover? cover = null, Vector2 tilt = default, bool lift = false)
+    // ramp: local footprint sides (bits -X, +X, -Z, +Z) whose ice rises by the skin lift to meet a skinned neighbour
+    public IceBlock? BlockFor(string block, string archetype, bool ground, int variant, int mobil, Id collection, IReadOnlySet<int> baked, Cover? cover = null, Vector2 tilt = default, bool lift = false, int ramp = 0)
     {
         if (CustomBlocks.VariantId(ground, variant, mobil) is not { } variantId
             || For(block, ground, variant, mobil, baked, cover ?? (ground ? lift ? Cover.StackedBody : Cover.GroundBody : Cover.None), tilt) is not { } item || item == IceItem.Nothing) return null;
         // no ice in it: clips draw the surface (penalty slopes), the game would keep them native
         if (File.Exists(item.FilePath) && !HasIceSurface(item.FilePath)) return null;
-        var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + (archetype == block ? "" : "_on_" + archetype) + (lift ? "_lift1" : "");
+        var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + (archetype == block ? "" : "_on_" + archetype) + (lift ? "_lift1" : "") + (ramp == 0 ? "" : $"_r{ramp}" + (SkinLift != DefaultSkinLift ? $"l{MathF.Round(SkinLift * 1000)}" : ""));
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
         if (!Planning && (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(item.FilePath)))
             CustomBlocks.Write(item.FilePath, path, ident, archetype, variantId, shapes.Waypoint(block) is not null ? shapes.Spawn(block, ground, variant, mobil) : null,
-                lift ? shapes.BlockSize(block, ground, variant) : null);
+                lift ? shapes.BlockSize(block, ground, variant) : null, ramp: ramp == 0 ? null : (ramp, SkinLift, shapes.BlockSize(block, ground, variant)));
         return new IceBlock(ident, path);
     }
 
@@ -394,7 +395,8 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
                 SkirtAngle = skinEdge,
                 Up = Vector3.TransformNormal(Vector3.UnitY, Matrix4x4.Transpose(tiltMatrix)),
                 KeepFace = top ? n => Vector3.TransformNormal(n, tiltMatrix).Y > TopMinY : null,
-                LipAs = top ? null : m => SwappedToIce(materialMap, m) ? (skin ? "" : "CustomConcrete") : null,
+                // the lip keeps the road's own look (its texture's dark edge), linked to the game material
+                LipAs = top ? null : m => SwappedToIce(materialMap, m) ? (skin ? "" : NativeLink(m, environment ?? Environment) is not null ? NativePrefix + m : "CustomConcrete") : null,
                 PlatformLayout = top,
             };
             clips ??= export.ClipSides(block, ground, variant)

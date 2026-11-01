@@ -23,7 +23,9 @@
     // native blocks keep their place under an ice skin instead of becoming custom blocks (smaller maps, one ice look)
     "skinsOnly": false,
     // starts, checkpoints and finishes stay native under an ice skin (the largest custom blocks)
-    "skinWaypoints": false
+    "skinWaypoints": false,
+    // custom blocks next to a skinned block lift their ice toward it, so the surfaces meet (experimental)
+    "rampToSkins": false
   },
 
   // per map: name, blocks, ignorePrefixes, options, keep ("Name x,y,z" grid cell, "Name x, y, z" free block position), keepItems, removeItems ("Name x, y, z" for one placed item),
@@ -39,9 +41,9 @@
     // the grass strip between the stands
     "Fall 2026 - 02": { "options": { "snowOnZoneSides": false }, "snowTerrain": [[47, 22, 53, 22]] },
     // grass gaps between road ends: after the S near the start, before the double U-turn;
-    // skins: the start and the second checkpoint
+    // skins: every checkpoint but the first, and the finish
     "Fall 2026 - 07": { "options": { "convertTrees": false, "convertScenery": false }, "snowTerrain": [[47, 21, 47, 21], [36, 44, 37, 44]],
-      "skinned": [[46, 12, 46, 12], [43, 19, 43, 19]] },
+      "skinned": [[43, 19, 43, 19], [42, 26, 42, 26], [34, 41, 34, 41], [34, 27, 34, 27]] },
     "Fall 2026 - 19": { "options": { "snowOnZoneSides": false } },
     // grass frame around the finish shapes the terrain
     "Fall 2026 - 12": { "keep": [

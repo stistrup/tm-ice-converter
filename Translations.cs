@@ -10,7 +10,7 @@ public sealed record Translation(
     byte? Variant = null,
     byte? SubVariant = null);
 
-public sealed record ConvertOptions(bool RemoveForcedCameras = false, bool KeepPlasticWalls = false, bool EngineOffToReset = false, bool EffectsToGate = false, bool EngineOffToPlain = false, bool SnowOnZoneSides = false, bool SnowOnGroundDeco = false, bool CustomBlocks = false, bool CustomWaypoints = false, bool ConvertTrees = false, bool ConvertScenery = false, bool SkinsOnly = false, bool SkinWaypoints = false)
+public sealed record ConvertOptions(bool RemoveForcedCameras = false, bool KeepPlasticWalls = false, bool EngineOffToReset = false, bool EffectsToGate = false, bool EngineOffToPlain = false, bool SnowOnZoneSides = false, bool SnowOnGroundDeco = false, bool CustomBlocks = false, bool CustomWaypoints = false, bool ConvertTrees = false, bool ConvertScenery = false, bool SkinsOnly = false, bool SkinWaypoints = false, bool RampToSkins = false)
 {
     public ConvertOptions With(string name, bool value) => name switch
     {
@@ -27,7 +27,8 @@ public sealed record ConvertOptions(bool RemoveForcedCameras = false, bool KeepP
         "convertScenery" => this with { ConvertScenery = value },
         "skinsOnly" => this with { SkinsOnly = value },
         "skinWaypoints" => this with { SkinWaypoints = value },
-        _ => throw new FormatException($"unknown option '{name}' (known: removeForcedCameras, keepPlasticWalls, engineOffToReset, effectsToGate, engineOffToPlain, snowOnZoneSides, snowOnGroundDeco, customBlocks, customWaypoints, convertTrees, convertScenery, skinsOnly, skinWaypoints)"),
+        "rampToSkins" => this with { RampToSkins = value },
+        _ => throw new FormatException($"unknown option '{name}' (known: removeForcedCameras, keepPlasticWalls, engineOffToReset, effectsToGate, engineOffToPlain, snowOnZoneSides, snowOnGroundDeco, customBlocks, customWaypoints, convertTrees, convertScenery, skinsOnly, skinWaypoints, rampToSkins)"),
     };
 }
 

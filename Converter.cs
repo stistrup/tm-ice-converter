@@ -67,6 +67,7 @@ public sealed class ConversionReport
     public Dictionary<string, int> SnowTerrain { get; } = [];
     public Dictionary<string, int> SceneryKept { get; } = [];
     public Dictionary<string, int> TerrainItems { get; } = [];
+    public Dictionary<string, int> Ramped { get; } = [];
     public Dictionary<string, int> IcedItems { get; } = [];
     public Dictionary<string, int> ItemsNotIced { get; } = [];
     public int FreeBlockOffsetsSkipped { get; set; }
@@ -247,14 +248,18 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             }
             if (rules.Options.CustomBlocks && !inTerrain
                 && (rules.Options.CustomWaypoints || shapes.Waypoint(name) is null)
-                && (items.BlockFor(name, name, block.IsGround, variant, MobilOf(block), map.Collection!.Value, NoClips, lift: stack)
-                    ?? (SurfaceParent(name, variant, shown) is { } parent
-                        ? items.BlockFor(name, parent.Name, block.IsGround, variant, MobilOf(block), map.Collection!.Value, parent.Baked, lift: stack) : null)) is { } iceBlock)
+                && (items.BlockFor(name, name, block.IsGround, variant, MobilOf(block), map.Collection!.Value, NoClips, lift: stack) is { } own
+                    ? (own, name, NoClips)
+                    : SurfaceParent(name, variant, shown) is { } parent
+                        && items.BlockFor(name, parent.Name, block.IsGround, variant, MobilOf(block), map.Collection!.Value, parent.Baked, lift: stack) is { } onParent
+                        ? (onParent, parent.Name, parent.Baked) : default((IceBlock, string, IReadOnlySet<int>)?)) is var (iceBlock, archetype, baked))
             {
                 customs[block] = iceBlock;
+                builtAs[block] = (archetype, baked, stack);
                 if (stack) stacked.Add(block);
-                else if (block.IsGround && ItemBuilder.OnTerrainShape(name) && items.For(name, true, variantOf[block], MobilOf(block), clipsOf[block], Cover.TerrainFaces) is { } terrain && terrain != IceItem.Nothing
-                    && PlaceItem(map, block, variantOf[block], clipsOf[block], report, Cover.TerrainFaces))
+                // only the body's own terrain: the game still draws the clips, terrain ones included
+                else if (block.IsGround && ItemBuilder.OnTerrainShape(name) && items.For(name, true, variant, MobilOf(block), baked, Cover.TerrainFaces) is { } terrain && terrain != IceItem.Nothing
+                    && PlaceItem(map, block, variant, baked, report, Cover.TerrainFaces))
                     Bump(report.TerrainItems, name);
                 Bump(report.ReplacedByBlock, name);
                 continue;
@@ -275,6 +280,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             Bump(report.ItemReasons, (name, ItemReason(block, inTerrain, rules.Options)));
         }
         KeepNeighbours(map, grid, placed, target, replaced, renamed, skinned, new HashSet<CGameCtnBlock>(customs.Keys, ReferenceEqualityComparer.Instance), report);
+        if (rules.Options.RampToSkins) RampToSkins(map, customs, skinned, cellsOf, report);
         var snow = new SnowSurfaces(map, replaced.Concat(customs.Keys), renamed, skinned, shapes, rules.Options.SnowOnZoneSides);
         var planted = customs.Keys.Where(b => !stacked.Contains(b)).Select(b => (Block: b, Name: b.Name, Trees: shapes.Trees(b.Name, b.IsGround, VariantOf(b), MobilOf(b), b.IsFree ? FreeClips(b) : clipsOf[b])))
             .Where(t => t.Trees.Count > 0).ToList();
@@ -311,6 +317,39 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
     }
 
     private static readonly HashSet<int> NoClips = [];
+
+    private readonly Dictionary<CGameCtnBlock, (string Archetype, IReadOnlySet<int> Baked, bool Lift)> builtAs = new(ReferenceEqualityComparer.Instance);
+
+    // skins sit above the native surface: a custom block sharing a cell face with one ramps its ice up at that side
+    private void RampToSkins(CGameCtnChallenge map, Dictionary<CGameCtnBlock, IceBlock> customs, IReadOnlySet<CGameCtnBlock> skinned,
+        Dictionary<CGameCtnBlock, List<Int3>> cellsOf, ConversionReport report)
+    {
+        var skinCells = skinned.Where(cellsOf.ContainsKey).SelectMany(b => cellsOf[b]).ToHashSet();
+        if (skinCells.Count == 0) return;
+        Int3[] steps = [new(-1, 0, 0), new(1, 0, 0), new(0, 0, -1), new(0, 0, 1)];
+        foreach (var block in customs.Keys.Where(b => builtAs.ContainsKey(b) && cellsOf.ContainsKey(b)).ToList())
+        {
+            var own = cellsOf[block].ToHashSet();
+            var size = shapes.Units(block.Name, block.IsGround, VariantOf(block)) is { Count: > 0 } units ? (X: units.Max(u => u.X) + 1, Z: units.Max(u => u.Z) + 1) : (X: 1, Z: 1);
+            Matrix4x4.Invert(Placement(block, size), out var toLocal);
+            var sides = 0;
+            foreach (var c in own)
+                foreach (var step in steps)
+                {
+                    var next = new Int3(c.X + step.X, c.Y, c.Z + step.Z);
+                    if (own.Contains(next) || !skinCells.Contains(next)) continue;
+                    // face middle in the block's frame → nearest footprint side
+                    var p = Vector3.Transform(new Vector3(c.X * 32 + 16 + step.X * 16, (c.Y - 8) * 8, c.Z * 32 + 16 + step.Z * 16), toLocal);
+                    float[] d = [MathF.Abs(p.X), MathF.Abs(size.X * 32 - p.X), MathF.Abs(p.Z), MathF.Abs(size.Z * 32 - p.Z)];
+                    sides |= 1 << Array.IndexOf(d, d.Min());
+                }
+            if (sides == 0) continue;
+            var (archetype, baked, lift) = builtAs[block];
+            if (items.BlockFor(block.Name, archetype, block.IsGround, VariantOf(block), MobilOf(block), map.Collection!.Value, baked, lift: lift, ramp: sides) is not { } ramped) continue;
+            customs[block] = ramped;
+            Bump(report.Ramped, block.Name);
+        }
+    }
 
     private const int GhostFlag = 0x10000000;
 

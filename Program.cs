@@ -536,6 +536,12 @@ static string FormatReport(string source, ConversionReport report, IReadOnlyDict
         sb.AppendLine();
     }
 
+    if (report.Ramped.Count > 0)
+    {
+        sb.AppendLine($"## Ice ramped up to a skinned neighbour ({report.Ramped.Values.Sum()})\n");
+        foreach (var (name, n) in report.Ramped.OrderByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n}");
+        sb.AppendLine();
+    }
     if (report.SpecialSkinned.Count > 0)
     {
         sb.AppendLine($"## Gameplay blocks, road iced around the pad ({report.SpecialSkinned.Values.Sum()})\n");

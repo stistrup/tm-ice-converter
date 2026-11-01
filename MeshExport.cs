@@ -706,7 +706,7 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
                 {
                     // the game gives the hidden lip no lightmap space
                     pieces.Add(WithProjectedLightmap(new MeshPiece($"_notcollidable_{label}_v{gi}_lip", lipAs!, Visible: true, Collidable: false,
-                        Lifted(worldPos, lip), stream.Normals is { } ln ? TransformNormals(ln, world) : null, null, null, lip)));
+                        Lifted(worldPos, lip), stream.Normals is { } ln ? TransformNormals(ln, world) : null, Uv(stream, 0), null, lip)));
                 }
                 if (idx.Length == 0) continue;
                 var positions = Lifted(worldPos, idx);

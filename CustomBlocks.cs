@@ -21,7 +21,7 @@ public static class CustomBlocks
 
     // block from a built ice item's mesh
     // lift: footprint in units; ice raised to sit over the same native block
-    public static void Write(string itemPath, string blockPath, Ident ident, string archetype, int variantId, (Vector3 At, float Pitch, float Roll)? spawn = null, (int X, int Z)? lift = null, float raise = 0, string? snowAs = null, IReadOnlyList<MeshPiece>? projectedLightmap = null)
+    public static void Write(string itemPath, string blockPath, Ident ident, string archetype, int variantId, (Vector3 At, float Pitch, float Roll)? spawn = null, (int X, int Z)? lift = null, float raise = 0, string? snowAs = null, IReadOnlyList<MeshPiece>? projectedLightmap = null, (int Sides, float Lift, (int X, int Z) Size)? ramp = null)
     {
         var mesh = ((CGameCommonItemEntityModel)Gbx.ParseNode<CGameItemModel>(itemPath).EntityModel!).StaticObject!;
         var folder = mesh.Mesh!.MaterialsFolderName ?? "";
@@ -39,6 +39,7 @@ public static class CustomBlocks
         }
         mesh.Mesh.MaterialsFolderName = null;
         if (lift is { } size) LiftIce(mesh.Mesh, size.X * 32, size.Z * 32);
+        if (ramp is { } r) RampIce(mesh, r.Sides, r.Lift, r.Size.X * 32, r.Size.Z * 32);
         if (projectedLightmap is not null) ProjectedLightmap(mesh.Mesh, projectedLightmap, ident.Id);
         if (raise != 0)
             foreach (var positions in (mesh.Mesh.Visuals ?? []).OfType<CPlugVisualIndexedTriangles>().Select(v => v.VertexStreams?.FirstOrDefault()?.Positions).OfType<Vec3[]>().Distinct())
@@ -94,6 +95,78 @@ public static class CustomBlocks
                 var d = sides.Where(s => s.On).Select(s => s.Dist(positions[i])).DefaultIfEmpty(16).Min();
                 positions[i] = positions[i] with { Y = positions[i].Y + IceLift * MathF.Sin(MathF.PI / 2 * Math.Clamp(d / 16, 0, 1)) };
             }
+    }
+
+    private const float RampLength = 16;
+
+    // a skinned neighbour sits higher: ice, its collision and whatever lies on it (pads, decals) rise to meet it at those sides, easing to zero inward
+    private static void RampIce(CPlugStaticObjectModel model, int sides, float height, float sizeX, float sizeZ)
+    {
+        var dist = new Func<float, float, float>[] { (x, _) => x, (x, _) => sizeX - x, (_, z) => z, (_, z) => sizeZ - z };
+        float Lift(float x, float z)
+        {
+            var d = Enumerable.Range(0, 4).Where(i => (sides >> i & 1) != 0).Min(i => dist[i](x, z));
+            return height * MathF.Cos(MathF.PI / 2 * Math.Clamp(d / RampLength, 0, 1));
+        }
+        var mesh = model.Mesh!;
+        var surface = model.Shape is CPlugSurface { Surf: CPlugSurface.Mesh { Vertices: { } verts, Triangles: { } tris } }
+            ? new IceSurface(verts, tris.Where(t => ((CPlugSurface.MaterialId)t.U02).ToString().Contains("Ice")).Select(t => t.Indices).ToList()) : null;
+        var ice = (mesh.ShadedGeoms ?? [])
+            .Where(g => mesh.CustomMaterials?[g.MaterialIndex].MaterialUserInst?.Link?.Contains("PlatformIce") == true)
+            .Select(g => mesh.Visuals?[g.VisualIndex]).OfType<CPlugVisualIndexedTriangles>()
+            .Select(v => v.VertexStreams?.FirstOrDefault()?.Positions).OfType<Vec3[]>().ToHashSet();
+        foreach (var positions in (mesh.Visuals ?? []).OfType<CPlugVisualIndexedTriangles>().Select(v => v.VertexStreams?.FirstOrDefault()?.Positions).OfType<Vec3[]>().Distinct().ToList())
+            for (int i = 0; i < positions.Length; i++)
+                if (Lift(positions[i].X, positions[i].Z) is var lift and > 0 && (ice.Contains(positions) || surface?.Rests(positions[i]) == true))
+                    positions[i] = positions[i] with { Y = positions[i].Y + lift };
+        if (surface is null) return;
+        foreach (var v in surface.Used) surface.Verts[v] = surface.Verts[v] with { Y = surface.Verts[v].Y + Lift(surface.Verts[v].X, surface.Verts[v].Z) };
+    }
+
+    private const float RestsWithin = 0.05f;
+
+    // ice collision looked up from above, before the ramp
+    private sealed class IceSurface
+    {
+        public readonly Vec3[] Verts;
+        public readonly HashSet<int> Used;
+        private readonly Dictionary<(int, int), List<(Vector3 A, Vector3 B, Vector3 C)>> cells = [];
+        private const float Cell = 4;
+
+        public IceSurface(Vec3[] verts, List<Int3> tris)
+        {
+            Verts = verts;
+            Used = tris.SelectMany(t => new[] { t.X, t.Y, t.Z }).ToHashSet();
+            foreach (var t in tris)
+            {
+                var (a, b, c) = (V(verts[t.X]), V(verts[t.Y]), V(verts[t.Z]));
+                // walls have no area seen from above
+                if (MathF.Abs(Cross(b - a, c - a)) < 1e-4f) continue;
+                for (var x = (int)MathF.Floor(Min(a.X, b.X, c.X) / Cell); x <= (int)MathF.Floor(Max(a.X, b.X, c.X) / Cell); x++)
+                    for (var z = (int)MathF.Floor(Min(a.Z, b.Z, c.Z) / Cell); z <= (int)MathF.Floor(Max(a.Z, b.Z, c.Z) / Cell); z++)
+                        (cells.TryGetValue((x, z), out var l) ? l : cells[(x, z)] = []).Add((a, b, c));
+            }
+        }
+
+        // on the surface or just above it
+        public bool Rests(Vec3 p)
+        {
+            if (!cells.TryGetValue(((int)MathF.Floor(p.X / Cell), (int)MathF.Floor(p.Z / Cell)), out var list)) return false;
+            foreach (var (a, b, c) in list)
+            {
+                var area = Cross(b - a, c - a);
+                var (u, v) = (Cross(new Vector3(p.X, 0, p.Z) - a, c - a) / area, Cross(b - a, new Vector3(p.X, 0, p.Z) - a) / area);
+                if (u < -1e-3f || v < -1e-3f || u + v > 1 + 1e-3f) continue;
+                var above = p.Y - (a.Y + u * (b.Y - a.Y) + v * (c.Y - a.Y));
+                if (above is > -0.005f and < RestsWithin) return true;
+            }
+            return false;
+        }
+
+        private static Vector3 V(Vec3 v) => new(v.X, v.Y, v.Z);
+        private static float Cross(Vector3 a, Vector3 b) => a.X * b.Z - a.Z * b.X;
+        private static float Min(float a, float b, float c) => MathF.Min(a, MathF.Min(b, c));
+        private static float Max(float a, float b, float c) => MathF.Max(a, MathF.Max(b, c));
     }
 
     // same bytes the game writes for a compiled custom block
