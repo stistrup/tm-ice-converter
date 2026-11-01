@@ -40,7 +40,7 @@ switch (args)
     default:
         Console.WriteLine($"""
             Usage:
-              convert [map.Gbx | folder]... [-o <out dir>] [-t <tag> | --final | --testrun | --release] [--set <option>=true|false]...
+              convert [map.Gbx | folder]... [-o <out dir>] [-t <tag> | --final | --testrun | --release] [--name <map name>] [--set <option>=true|false]...
                   Convert maps to ice. Without maps: everything in the drop folder that changed since its last
                   conversion. Output goes to Maps/ICE in progress as "<name> (ICE).Map.Gbx" ("(ice <tag>)" with -t);
                   --final writes to the finished folder (finishedFolder in data/local.jsonc). Options (removeForcedCameras, keepPlasticWalls)
@@ -86,6 +86,7 @@ int Convert(string[] rest)
     if ((final ? 1 : 0) + (testrun ? 1 : 0) + (release ? 1 : 0) > 1) return Fail("--final, --testrun and --release go to different folders; pick one");
     var outDir = Option(ref rest, "-o") ?? (final || release ? Paths.FinishedFolder : testrun ? Paths.TestrunFolder : Paths.OutFolder);
     var tag = Option(ref rest, "-t");
+    var mapName = Option(ref rest, "--name");
     if ((testrun || release) && tag is not null) return Fail("--testrun and --release make \"<name> - AN Ice\"; leave out -t");
     if (final && tag is not null) return Fail("--final makes \"<name> (ICE)\"; leave out -t");
     var settings = new List<(string, bool)>();
@@ -98,7 +99,8 @@ int Convert(string[] rest)
     var dropFolder = rest.Length == 0;
     var maps = dropFolder ? ChangedDropMaps(outDir, testrun || release ? TestrunSuffix() : Suffix(tag)) : ExpandMaps(rest).ToList();
     if (dropFolder && maps.Count == 0) Console.WriteLine($"Nothing new in {Paths.DropFolder}");
-    return ConvertAll(maps, outDir, tag, settings, testrun, release);
+    if (mapName is not null && maps.Count != 1) return Fail("--name takes one map");
+    return ConvertAll(maps, outDir, tag, settings, testrun, release, mapName);
 }
 
 // polling: the game writes maps in steps
@@ -134,7 +136,7 @@ List<string> ChangedDropMaps(string outDir, string suffix)
 }
 
 // release: the user as author, no times (validated by driving), its own UID apart from the test runs
-int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerable<(string, bool)>? settings = null, bool dummyTimes = false, bool release = false)
+int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerable<(string, bool)>? settings = null, bool dummyTimes = false, bool release = false, string? mapName = null)
 {
     var suffix = dummyTimes || release ? TestrunSuffix() : Suffix(tag);
     Directory.CreateDirectory(outDir);
@@ -163,9 +165,9 @@ int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerab
         {
             var gbx = Gbx.Parse<CGameCtnChallenge>(path);
             var report = converter.Convert(gbx.Node);
-            gbx.Node.MapName = translations.NameFor(Regex.Replace(gbx.Node.MapName, @"\s*\(ice[^)]*\)$", "", RegexOptions.IgnoreCase)) + suffix;
+            gbx.Node.MapName = mapName ?? translations.NameFor(Regex.Replace(gbx.Node.MapName, @"\s*\(ice[^)]*\)$", "", RegexOptions.IgnoreCase)) + suffix;
             // own UID, stable across reconverts
-            gbx.Node.MapUid = DerivedMapUid(gbx.Node.MapUid, dummyTimes ? $"{suffix}{Paths.TestrunAuthor.Login}#{Paths.TestrunGeneration}" : release ? $"{suffix}{Paths.TestrunAuthor.Login}#release{(Paths.ReleaseGeneration > 1 ? Paths.ReleaseGeneration : "")}" : suffix);
+            gbx.Node.MapUid = DerivedMapUid(gbx.Node.MapUid, (mapName is null ? "" : "#" + mapName) + (dummyTimes ? $"{suffix}{Paths.TestrunAuthor.Login}#{Paths.TestrunGeneration}" : release ? $"{suffix}{Paths.TestrunAuthor.Login}#release{(Paths.ReleaseGeneration > 1 ? Paths.ReleaseGeneration : "")}" : suffix));
             gbx.Node.Kind = CGameCtnChallenge.MapKind.InProgress;
             EnsureHeaderChunks(gbx.Node);
             ClearValidation(gbx.Node);
@@ -196,13 +198,13 @@ int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerab
                 });
             }
 
-            var outPath = OutputPath(path, outDir, suffix, translations);
+            var outPath = mapName is null ? OutputPath(path, outDir, suffix, translations) : Path.Combine(outDir, mapName + ".Map.Gbx");
             gbx.Save(outPath);
             // second save fixes the header's lightmap version
             Gbx.Parse<CGameCtnChallenge>(outPath).Save(outPath);
             File.WriteAllText(outPath[..^".Map.Gbx".Length] + ".report.md", FormatReport(path, report, items.Failures));
 
-            Console.WriteLine($"  {report.Swapped.Values.Sum()} swapped, {report.ReplacedByBlock.Values.Sum()} custom blocks, {report.ReplacedByItem.Values.Sum()} replaced by items, {report.Skinned.Values.Sum()} skinned, {report.Left} left as they were -> {outPath}");
+            Console.WriteLine($"  {report.Swapped.Values.Sum()} swapped, {report.ReplacedByBlock.Values.Sum()} custom blocks,{(report.SnowTerrain.Count > 0 ? $" {report.SnowTerrain.Values.Sum()} terrain in snow," : "")} {report.ReplacedByItem.Values.Sum()} replaced by items, {report.Skinned.Values.Sum()} skinned, {report.Left} left as they were -> {outPath}");
             Console.WriteLine(dummyTimes ? "  Validated with a dummy 1:00:00.000 author time; no shadows."
                 : "  In game: open it in the editor, compute shadows (Normal if the map is near 7.1 MB), validate, save.");
         }
@@ -564,6 +566,24 @@ static string FormatReport(string source, ConversionReport report, IReadOnlyDict
         sb.AppendLine($"\n## Items swapped ({report.SwappedItems.Values.Sum()})\n");
         sb.AppendLine("| Count | From | To |\n|---:|---|---|");
         foreach (var ((from, to), n) in report.SwappedItems.OrderByDescending(kv => kv.Value)) sb.AppendLine($"| {n} | {from} | {to} |");
+    }
+    if (report.TerrainItems.Count > 0)
+    {
+        sb.AppendLine($"\n## Hill/cliff terrain as items ({report.TerrainItems.Values.Sum()})\n");
+        sb.AppendLine("The block's visible terrain sits in an item beside its custom block: in the block, its light darkened the road after shadows.\n");
+        foreach (var (name, n) in report.TerrainItems.OrderByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n}");
+    }
+    if (report.SceneryKept.Count > 0)
+    {
+        sb.AppendLine($"\n## Scenery kept native ({report.SceneryKept.Values.Sum()})\n");
+        sb.AppendLine("convertScenery is off: deco blocks, pillars, concrete and walls stay as they are.\n");
+        foreach (var (name, n) in report.SceneryKept.OrderByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n}");
+    }
+    if (report.SnowTerrain.Count > 0)
+    {
+        sb.AppendLine($"\n## Terrain in snow ({report.SnowTerrain.Values.Sum()})\n");
+        sb.AppendLine("From the map's snowTerrain areas; cells with a block on them stay, water stays.\n");
+        foreach (var (name, n) in report.SnowTerrain.OrderByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n}");
     }
     if (report.KeptUnder.Count > 0)
     {

@@ -43,6 +43,9 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
 
     public Func<string, bool>? KeepMaterial { get; init; }
 
+    // skin skirt angle from the surface, degrees (90 = straight down)
+    public float SkirtAngle { get; init; } = 90;
+
     public float Lift { get; init; }
 
     public Vector3 Up { get; init; } = Vector3.UnitY;
@@ -712,7 +715,7 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
                     positions, stream.Normals is { } n ? TransformNormals(n, world) : null,
                     SnowLaidOut(source) ? PlainSnowUv(positions) : PlatformLayout || PlatformLaidOut.Contains(source) ? PlatformUv(positions) : Uv(stream, 0),
                     Uv(stream, 1), idx, Colors(stream));
-                if (Lift != 0) piece = WithSkirt(piece, worldPos);
+                if (Lift != 0) piece = WithSkirt(piece, worldPos, Lift / MathF.Tan(SkirtAngle * MathF.PI / 180));
                 pieces.Add(piece.Uv1 is null && !source.StartsWith("Decal") ? WithProjectedLightmap(piece) : piece);
             }
         }
@@ -893,8 +896,10 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
     }
 
     // closes the lift gap at open edges, facing out
-    private static MeshPiece WithSkirt(MeshPiece piece, float[] unlifted)
+    // reach: how far the skirt's foot lies outside the edge (0 = vertical)
+    private static MeshPiece WithSkirt(MeshPiece piece, float[] unlifted, float reach)
     {
+        if (reach < 0.0001f) reach = 0;
         var (pos, idx) = (piece.Positions, piece.Indices);
         Vector3 At(float[] p, int v) => new(p[3 * v], p[3 * v + 1], p[3 * v + 2]);
         (int, int, int) Key(int v) => ((int)MathF.Round(unlifted[3 * v] * 1000), (int)MathF.Round(unlifted[3 * v + 1] * 1000), (int)MathF.Round(unlifted[3 * v + 2] * 1000));
@@ -921,15 +926,18 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
             outward -= edge * Vector3.Dot(outward, edge) / edge.LengthSquared();
             outward = -Vector3.Normalize(outward);
             var first = positions.Count / 3;
-            foreach (var (v, p) in new[] { (a, ta), (b, tb), (b, At(unlifted, b)), (a, At(unlifted, a)) })
+            var (fa, fb) = (At(unlifted, a) + outward * reach, At(unlifted, b) + outward * reach);
+            var slope = Vector3.Normalize(Vector3.Cross(tb - ta, fa - ta));
+            if (Vector3.Dot(slope, outward) < 0) slope = -slope;
+            foreach (var (v, p) in new[] { (a, ta), (b, tb), (b, fb), (a, fa) })
             {
                 positions.AddRange([p.X, p.Y, p.Z]);
-                normals?.AddRange([outward.X, outward.Y, outward.Z]);
+                normals?.AddRange([slope.X, slope.Y, slope.Z]);
                 uv0?.AddRange(piece.Uv0!.AsSpan(2 * v, 2));
                 uv1?.AddRange(piece.Uv1!.AsSpan(2 * v, 2));
                 colors?.AddRange(piece.Colors!.AsSpan(4 * v, 4));
             }
-            var face = Vector3.Cross(tb - ta, At(unlifted, b) - ta);
+            var face = Vector3.Cross(tb - ta, fb - ta);
             indices.AddRange(Vector3.Dot(face, outward) >= 0 ? [first, first + 1, first + 2, first, first + 2, first + 3] : [first, first + 2, first + 1, first, first + 3, first + 2]);
         }
         return piece with

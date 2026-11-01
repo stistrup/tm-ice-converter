@@ -17,6 +17,9 @@
   "ChronoFinish": "native",
 
   // empty = left out
+  // per block: "<block pattern>|<material>"
+  // the black band where the tech road turns into the bump road; on ice both sides look alike
+  "*ToRoadBump*|DecalMarks": "",
   "GrassFence": "",
   "Water": "",
   "SeaFloor": "",

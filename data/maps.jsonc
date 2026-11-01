@@ -15,17 +15,33 @@
     // blocks that would become whole items become custom blocks instead (off: items)
     "customBlocks": true,
     // starts/checkpoints/finishes as custom blocks too
-    "customWaypoints": true
+    "customWaypoints": true,
+    // trees and plants become frozen/snowy ones (off: they stay as they are)
+    "convertTrees": true,
+    // deco blocks, pillars, concrete and walls get snow (off: they stay as they are; roads and platforms still convert)
+    "convertScenery": true,
+    // native blocks keep their place under an ice skin instead of becoming custom blocks (smaller maps, one ice look)
+    "skinsOnly": false,
+    // starts, checkpoints and finishes stay native under an ice skin (the largest custom blocks)
+    "skinWaypoints": false
   },
 
-  // per map: name, blocks, ignorePrefixes, options, keep ("Name x,y,z" grid cell, "Name x, y, z" free block position), keepItems, removeItems ("Name x, y, z" for one placed item)
+  // per map: name, blocks, ignorePrefixes, options, keep ("Name x,y,z" grid cell, "Name x, y, z" free block position), keepItems, removeItems ("Name x, y, z" for one placed item),
+  // snowTerrain ([x0, z0, x1, z1] grid cell areas whose terrain becomes snow; water and cells with a block on them stay),
+  // skinned ([x0, z0, x1, z1] grid cell areas whose blocks stay native under an ice skin instead of becoming custom blocks),
+  // skinLiftCm (skin height over the native surface; default 2), skinEdgeDeg (skin edge slope; default 90 = straight down)
   "maps": {
     // the wallride wall stays plastic; the other plastic walls get ice
     "Fall 2026 - 18": { "keep": [
       "PlatformPlasticWallCurve2 1179.05, 64, 932.95", "PlatformPlasticWallCurve1 1179.05, 64, 1023.46",
       "PlatformPlasticWallStraightSponsorsBottom 1133.8, 64, 932.95", "PlatformPlasticWallOutCurve1 1133.8, 64, 932.95",
       "PlatformPlasticWallOutCurve0 1111.17, 64, 1000.83"] },
-    "Fall 2026 - 02": { "options": { "snowOnZoneSides": false } },
+    // the grass strip between the stands
+    "Fall 2026 - 02": { "options": { "snowOnZoneSides": false }, "snowTerrain": [[47, 22, 53, 22]] },
+    // grass gaps between road ends: after the S near the start, before the double U-turn;
+    // skins: the start and the second checkpoint
+    "Fall 2026 - 07": { "options": { "convertTrees": false, "convertScenery": false }, "snowTerrain": [[47, 21, 47, 21], [36, 44, 37, 44]],
+      "skinned": [[46, 12, 46, 12], [43, 19, 43, 19]] },
     "Fall 2026 - 19": { "options": { "snowOnZoneSides": false } },
     // grass frame around the finish shapes the terrain
     "Fall 2026 - 12": { "keep": [

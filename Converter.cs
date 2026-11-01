@@ -64,6 +64,9 @@ public sealed class ConversionReport
     public Dictionary<(string Model, string Item), int> Trees { get; } = [];
     public Dictionary<string, int> TreesMissing { get; } = [];
     public Dictionary<string, int> KeptUnder { get; } = [];
+    public Dictionary<string, int> SnowTerrain { get; } = [];
+    public Dictionary<string, int> SceneryKept { get; } = [];
+    public Dictionary<string, int> TerrainItems { get; } = [];
     public Dictionary<string, int> IcedItems { get; } = [];
     public Dictionary<string, int> ItemsNotIced { get; } = [];
     public int FreeBlockOffsetsSkipped { get; set; }
@@ -95,9 +98,12 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         topped.Clear();
         customsOn = rules.Options.CustomBlocks;
         keepItems = rules;
+        sceneryKept.Clear();
         shapes.Environment = items.Environment = collection;
         items.SnowOnZoneSides = rules.Options.SnowOnZoneSides;
         items.SnowOnGroundDeco = rules.Options.SnowOnGroundDeco;
+        items.SkinLift = rules.SkinLift ?? ItemBuilder.DefaultSkinLift;
+        items.SkinEdge = rules.SkinEdge ?? ItemBuilder.DefaultSkinEdge;
         var resolver = new ClipResolver(shapes);
         // clips as in the original
         var grid = map.GetBlocks().Where(b => !b.IsFree).ToList();
@@ -111,6 +117,8 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         var cellsOf = new Dictionary<CGameCtnBlock, List<Int3>>(ReferenceEqualityComparer.Instance);
         for (int i = 0; i < grid.Count; i++) cellsOf[grid[i]] = resolver.UnitCells(placed[i]).ToList();
         var terrainTop = grid.Where(b => b.IsGround).SelectMany(b => cellsOf[b]).GroupBy(c => (c.X, c.Z)).ToDictionary(g => g.Key, g => g.Max(c => c.Y));
+        // cells where a placed block covers the terrain; pillars leave it showing
+        var builtOn = grid.Where(b => !shapes.IsTerrain(b.Name) && !shapes.IsPillarBlock(b.Name)).SelectMany(b => cellsOf[b]).ToHashSet();
         var replaced = new HashSet<CGameCtnBlock>(ReferenceEqualityComparer.Instance);
         var renamed = new HashSet<CGameCtnBlock>(ReferenceEqualityComparer.Instance);
         var skinned = new HashSet<CGameCtnBlock>(ReferenceEqualityComparer.Instance);
@@ -147,10 +155,26 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             if (IsOnKeepList(block)) { Bump(report.KeptByList, name); continue; }
             if (shapes.IsPillarBlock(name))
             {
+                if (!rules.Options.ConvertScenery) { { sceneryKept.Add(block); Bump(report.SceneryKept, name); continue; } }
                 IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report, customs: customs);
                 continue;
             }
-            if (shapes.IsTerrain(name)) continue;
+            if (shapes.IsTerrain(name))
+            {
+                // the native block goes, the game still draws the ground; placed as variant 0 of the archetype
+                if (rules.SnowsTerrainAt(block.Coord.X, block.Coord.Z) && !IsWater(name)
+                    && !builtOn.Any(c => c.X == block.Coord.X && c.Z == block.Coord.Z && c.Y <= block.Coord.Y + 1)
+                    && items.SnowTerrainFor(name, VariantOf(block), MobilOf(block), map.Collection!.Value) is { } snowBlock)
+                {
+                    customs[block] = snowBlock;
+                    block.Flags &= ~0xFFF & ~(0x3F << 21);
+                    Bump(report.SnowTerrain, name);
+                }
+                continue;
+            }
+
+            // scenery = what only gets dressed in snow: deco blocks, pillars, concrete and walls with iced tops
+            if (!rules.Options.ConvertScenery && name.StartsWith("Deco")) { { sceneryKept.Add(block); Bump(report.SceneryKept, name); continue; } }
 
             if (rules.Blocks.TryGetValue(name, out var t))
             {
@@ -180,9 +204,10 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
 
             // white deco = concrete, keep
             if (IsConcrete(block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block]))
-            { Bump(report.Concrete, name); IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report, customs: customs); continue; }
+            { if (!rules.Options.ConvertScenery) { { sceneryKept.Add(block); Bump(report.SceneryKept, name); continue; } } Bump(report.Concrete, name); IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report, customs: customs); continue; }
             if (!WantsItem(name))
             {
+                if (!rules.Options.ConvertScenery) { { sceneryKept.Add(block); Bump(report.SceneryKept, name); continue; } }
                 IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report, customs: customs);
                 continue;
             }
@@ -193,7 +218,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
                 continue;
             }
             if (IsWallOnly(block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block]))
-            { Bump(report.Walls, name); IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report, customs: customs); continue; }
+            { if (!rules.Options.ConvertScenery) { { sceneryKept.Add(block); Bump(report.SceneryKept, name); continue; } } Bump(report.Walls, name); IceTops(map, block, block.IsFree ? VariantOf(block) : variantOf[block], block.IsFree ? FreeClips(block) : clipsOf[block], report, customs: customs); continue; }
             // deco set into the terrain stays native under a skin
             var inTerrain = !block.IsGround && !block.IsFree && name.StartsWith("Deco")
                 && cellsOf[block].Any(c => terrainTop.TryGetValue((c.X, c.Z), out var groundY) && c.Y <= groundY);
@@ -210,9 +235,16 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             // waypoints as custom blocks need customWaypoints; free blocks too, the game turns and tilts them; ground blocks keep their ground plate.
             // the game draws the placed variant's body, not the resolver's no-pillar-below one
             var (variant, shown) = (VariantOf(block), block.IsFree ? FreeClips(block) : clipsOf[block]);
-            // vegetation and terrain only come from the native block: keep it under the iced body (not gates: two would trigger)
-            var stack = !block.IsFree && shapes.Waypoint(name) is null
-                && (block.IsGround && ItemBuilder.OnTerrainShape(name) || shapes.Trees(name, block.IsGround, variant, MobilOf(block), shown).Count > 0);
+            // vegetation only comes from the native block: keep it under the iced body (not gates: two would trigger);
+            // hill and cliff terrain goes into an item beside the body
+            var stack = !block.IsFree && shapes.Waypoint(name) is null && shapes.Trees(name, block.IsGround, variant, MobilOf(block), shown).Count > 0;
+            // native blocks under ice skins: smaller, and one look throughout
+            if ((rules.SkinsAt(block.Coord.X, block.Coord.Z) || rules.Options.SkinWaypoints && shapes.Waypoint(name) is not null) && !block.IsFree && !inTerrain)
+            {
+                if (PlaceItem(map, block, variantOf[block], clipsOf[block], report, block.IsGround ? Cover.None : Cover.Skin)) { skinned.Add(block); Bump(report.Skinned, name); }
+                else Bump(report.Unmatched, name);
+                continue;
+            }
             if (rules.Options.CustomBlocks && !inTerrain
                 && (rules.Options.CustomWaypoints || shapes.Waypoint(name) is null)
                 && (items.BlockFor(name, name, block.IsGround, variant, MobilOf(block), map.Collection!.Value, NoClips, lift: stack)
@@ -221,6 +253,9 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             {
                 customs[block] = iceBlock;
                 if (stack) stacked.Add(block);
+                else if (block.IsGround && ItemBuilder.OnTerrainShape(name) && items.For(name, true, variantOf[block], MobilOf(block), clipsOf[block], Cover.TerrainFaces) is { } terrain && terrain != IceItem.Nothing
+                    && PlaceItem(map, block, variantOf[block], clipsOf[block], report, Cover.TerrainFaces))
+                    Bump(report.TerrainItems, name);
                 Bump(report.ReplacedByBlock, name);
                 continue;
             }
@@ -278,6 +313,11 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
     private static readonly HashSet<int> NoClips = [];
 
     private const int GhostFlag = 0x10000000;
+
+    // convertScenery off: left alone by the neighbour and top passes too
+    private readonly HashSet<CGameCtnBlock> sceneryKept = new(ReferenceEqualityComparer.Instance);
+
+    private static bool IsWater(string terrain) => Regex.IsMatch(terrain, "Lake|Sea|Water|River");
 
     private static readonly Lazy<Vegetation> Vegetation = new(() => new Vegetation(Path.GetDirectoryName(Paths.ExtractedStadium)!));
 
@@ -404,8 +444,11 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             // "<Env>:<Item>" beats the bare id
             bool Find(Dictionary<string, string> table, out string to)
                 => table.TryGetValue($"{map.Collection}:{model.Id}", out to!) || table.TryGetValue(model.Id, out to!);
-            var always = Find(translations.Items, out var to);
-            if ((always || Find(translations.ItemsOnSnow, out to)) && VariantSwap(map, item, to) is var (target, variant)
+            // the swap tables are all vegetation
+            var trees = keepItems.Options.ConvertTrees;
+            var to = "";
+            var always = trees && Find(translations.Items, out to);
+            if ((always || trees && Find(translations.ItemsOnSnow, out to)) && VariantSwap(map, item, to) is var (target, variant)
                 && (always || snow.Touches(new Vector3(p.X, p.Y, p.Z), TreeHeight(target))))
             {
                 item.ItemModel = model with { Id = target, Collection = new Id(26) }; // Stadium2020
@@ -644,7 +687,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
                 var (block, i) = remaining[k];
                 if (OnlyTopsAppear(now[k], target[i]) && !(IsWallOnly(block, placed[i].Variant, target[i]) && AdapterAbove(block, replaced))
                     // stands: an end cap is fine
-                    || block.Name.StartsWith("Stand") || renamed.Contains(block) || customs.Contains(block) || skinned.Contains(block) || block.IsGround || shapes.IsPillarBlock(block.Name) || IsOnKeepList(block) || IsConcrete(block, placed[i].Variant, target[i])
+                    || block.Name.StartsWith("Stand") || sceneryKept.Contains(block) || renamed.Contains(block) || customs.Contains(block) || skinned.Contains(block) || block.IsGround || shapes.IsPillarBlock(block.Name) || IsOnKeepList(block) || IsConcrete(block, placed[i].Variant, target[i])
                     || IsWallOnly(block, placed[i].Variant, target[i]) && !(TopAppears(now[k], target[i]) && AdapterAbove(block, replaced))) continue;
                 if (!PlaceItem(map, block, placed[i].Variant, target[i], report)) continue;
                 replaced.Add(block);
@@ -676,7 +719,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         for (int k = 0; k < remaining.Count; k++)
         {
             var (block, i) = remaining[k];
-            if (topped.Contains(block) || replaced.Contains(block) || skinned.Contains(block) || customs.Contains(block) || !TopAppears(now[k], target[i])
+            if (topped.Contains(block) || sceneryKept.Contains(block) || replaced.Contains(block) || skinned.Contains(block) || customs.Contains(block) || !TopAppears(now[k], target[i])
                 || shapes.IsTerrain(block.Name) || IsOnKeepList(block)) continue;
             IceTops(map, block, placed[i].Variant, now[k], report, renamed.Contains(block) ? Cover.TopOfIce : Cover.Top);
         }

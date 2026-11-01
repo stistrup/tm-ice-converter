@@ -48,8 +48,9 @@ An in-game screenshot of the spot helps a lot, since the Blender scene isn't exa
 - Where native ice meets an item, the native block draws its border across the road.
 - Item undersides and pillar joints are lighter than native ones, and item lighting can look blotchy. Compute shadows at High.
 - Some end caps, borders and pillar poles differ from what the game would show, mostly vertical clips next to pillars.
-- Large maps go over the 7.1 MB room limit, and the game's shadow save makes them bigger still. Campaigns and solo play have no limit.
+- Large maps go over the room limit of 7 MB (likely 7 MiB, 7,340,032 bytes), and the game's shadow save makes them bigger still. Campaigns and solo play have no limit.
 - Frozen trees have other shapes than the originals.
 - The rink markings of the ice texture show on ice laid over roads.
+- Terrain in snow (`snowTerrain` in `data/maps.jsonc`) shows soft lighting steps where two cells meet, like native blocks on hills do.
 
 Built on [GBX.NET](https://github.com/BigBang1112/gbx-net). Written with extensive help from Claude, steered and tested by hand on best effort.
