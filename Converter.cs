@@ -30,6 +30,8 @@ public interface IBlockShapes
     IReadOnlyList<(Vector3 A, Vector3 B, Vector3 C, string Material)>? CollisionTriangles(string blockName, bool ground, int variantIndex, int mobil);
     // null = not extracted
     IReadOnlySet<string>? Materials(string blockName, bool ground, int variantIndex, int mobil, IReadOnlySet<int> clips);
+    // tree models the prefab places, in block space; empty if none or not extracted
+    IReadOnlyList<(string Model, Matrix4x4 Place)> Trees(string blockName, bool ground, int variantIndex, int mobil, IReadOnlySet<int> clips);
 }
 
 public sealed class ConversionReport
@@ -59,6 +61,9 @@ public sealed class ConversionReport
     public List<string> CameraClipsRemoved { get; } = [];
     public Dictionary<(string From, string To), int> EngineOff { get; } = []; // "" = removed
     public Dictionary<(string From, string To), int> SwappedItems { get; } = [];
+    public Dictionary<(string Model, string Item), int> Trees { get; } = [];
+    public Dictionary<string, int> TreesMissing { get; } = [];
+    public Dictionary<string, int> KeptUnder { get; } = [];
     public Dictionary<string, int> IcedItems { get; } = [];
     public Dictionary<string, int> ItemsNotIced { get; } = [];
     public int FreeBlockOffsetsSkipped { get; set; }
@@ -111,6 +116,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         var skinned = new HashSet<CGameCtnBlock>(ReferenceEqualityComparer.Instance);
         // renamed only at the end: clips and snow work on the native name
         var customs = new Dictionary<CGameCtnBlock, IceBlock>(ReferenceEqualityComparer.Instance);
+        var stacked = new HashSet<CGameCtnBlock>(ReferenceEqualityComparer.Instance);
         var engineOffGates = new List<CGameCtnBlock>();
         foreach (var block in map.GetBlocks())
         {
@@ -204,13 +210,17 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             // waypoints as custom blocks need customWaypoints; free blocks too, the game turns and tilts them; ground blocks keep their ground plate.
             // the game draws the placed variant's body, not the resolver's no-pillar-below one
             var (variant, shown) = (VariantOf(block), block.IsFree ? FreeClips(block) : clipsOf[block]);
+            // vegetation and terrain only come from the native block: keep it under the iced body (not gates: two would trigger)
+            var stack = !block.IsFree && shapes.Waypoint(name) is null
+                && (block.IsGround && ItemBuilder.OnTerrainShape(name) || shapes.Trees(name, block.IsGround, variant, MobilOf(block), shown).Count > 0);
             if (rules.Options.CustomBlocks && !inTerrain
                 && (rules.Options.CustomWaypoints || shapes.Waypoint(name) is null)
-                && (items.BlockFor(name, name, block.IsGround, variant, MobilOf(block), map.Collection!.Value, NoClips)
+                && (items.BlockFor(name, name, block.IsGround, variant, MobilOf(block), map.Collection!.Value, NoClips, lift: stack)
                     ?? (SurfaceParent(name, variant, shown) is { } parent
-                        ? items.BlockFor(name, parent.Name, block.IsGround, variant, MobilOf(block), map.Collection!.Value, parent.Baked) : null)) is { } iceBlock)
+                        ? items.BlockFor(name, parent.Name, block.IsGround, variant, MobilOf(block), map.Collection!.Value, parent.Baked, lift: stack) : null)) is { } iceBlock)
             {
                 customs[block] = iceBlock;
+                if (stack) stacked.Add(block);
                 Bump(report.ReplacedByBlock, name);
                 continue;
             }
@@ -231,8 +241,20 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         }
         KeepNeighbours(map, grid, placed, target, replaced, renamed, skinned, new HashSet<CGameCtnBlock>(customs.Keys, ReferenceEqualityComparer.Instance), report);
         var snow = new SnowSurfaces(map, replaced.Concat(customs.Keys), renamed, skinned, shapes, rules.Options.SnowOnZoneSides);
+        var planted = customs.Keys.Where(b => !stacked.Contains(b)).Select(b => (Block: b, Name: b.Name, Trees: shapes.Trees(b.Name, b.IsGround, VariantOf(b), MobilOf(b), b.IsFree ? FreeClips(b) : clipsOf[b])))
+            .Where(t => t.Trees.Count > 0).ToList();
+        foreach (var block in stacked)
+        {
+            var native = map.PlaceBlock(block.Name, block.Coord, block.Direction, block.IsGround, 0, 0);
+            (native.Flags, native.Color, native.LightmapQuality) = (block.Flags, block.Color, block.LightmapQuality);
+            // before the body, as the editor orders a cell
+            map.Blocks!.Remove(native);
+            map.Blocks.Insert(map.Blocks.IndexOf(block), native);
+            Bump(report.KeptUnder, block.Name);
+        }
         foreach (var (block, iceBlock) in customs)
         {
+            if (stacked.Contains(block)) block.Flags |= GhostFlag;
             block.Name = iceBlock.Ident.Id + "_CustomBlock";
             block.Flags |= CustomBlocks.CustomFlag;
             block.Author = iceBlock.Ident.Author;
@@ -246,12 +268,65 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
                 Bump(report.EngineOff, (gate.ItemModel!.Id, ""));
             }
         SwapItems(map, snow, report);
+        // after the swaps: the stand-ins stand on terrain, not ice
+        foreach (var (block, name, trees) in planted) PlantTrees(map, block, name, trees, collection, report);
         MatchPlatformColour(map, report);
         if (rules.Options.RemoveForcedCameras) RemoveForcedCameras(map, report);
         return report;
     }
 
     private static readonly HashSet<int> NoClips = [];
+
+    private const int GhostFlag = 0x10000000;
+
+    private static readonly Lazy<Vegetation> Vegetation = new(() => new Vegetation(Path.GetDirectoryName(Paths.ExtractedStadium)!));
+
+    // a custom body drops the trees its prefab placed; the environment's vegetation items go where they stood
+    private void PlantTrees(CGameCtnChallenge map, CGameCtnBlock block, string name, IReadOnlyList<(string Model, Matrix4x4 Place)> trees, string collection, ConversionReport report)
+    {
+        var place = block.IsFree
+            ? Matrix4x4.CreateFromYawPitchRoll(block.YawPitchRoll!.Value.X, block.YawPitchRoll.Value.Y, block.YawPitchRoll.Value.Z)
+                * Matrix4x4.CreateTranslation(block.AbsolutePositionInMap!.Value.X, block.AbsolutePositionInMap.Value.Y, block.AbsolutePositionInMap.Value.Z)
+            : Placement(block, shapes.Units(name, block.IsGround, VariantOf(block)) is { Count: > 0 } units ? (units.Max(u => u.X) + 1, units.Max(u => u.Z) + 1) : (1, 1));
+        place *= Matrix4x4.CreateTranslation(0, -EnvironmentDrop(collection), 0);
+        // the terrain it stands on doesn't count, the road over it does
+        var solid = shapes.CollisionTriangles(name, block.IsGround, VariantOf(block), MobilOf(block))?
+            .Where(t => ItemBuilder.ShaderOf(t.Material, collection) is null).ToList() ?? [];
+        foreach (var (model, local) in trees)
+        {
+            var w = local * place;
+            if (Vegetation.Value.For(collection, model, w.Translation, RoomAbove(solid, local.Translation)) is not { } stand) { Bump(report.TreesMissing, model); continue; }
+            // yaw, pitch, roll as CreateFromYawPitchRoll builds them
+            var (pitch, yaw, roll) = (MathF.Asin(Math.Clamp(-w.M32, -1, 1)), MathF.Atan2(w.M31, w.M33), MathF.Atan2(w.M12, w.M22));
+            var tree = map.PlaceAnchoredObject(new Ident(stand.Item, map.Collection!.Value, "Nadeo"), new Vec3(w.M41, w.M42, w.M43), new Vec3(yaw, pitch, roll), default);
+            tree.Flags = (short)(stand.Variant << 8);
+            tree.Scale = 1;
+            tree.BlockUnitCoord = new Byte3(255, 255, 255);
+            Bump(report.Trees, (model, stand.Item));
+        }
+    }
+
+    private static float RoomAbove(List<(Vector3 A, Vector3 B, Vector3 C, string Material)> tris, Vector3 o)
+    {
+        var room = float.PositiveInfinity;
+        foreach (var (a, b, c, _) in tris)
+        {
+            // Möller-Trumbore, ray straight up
+            var (e1, e2) = (b - a, c - a);
+            var p = Vector3.Cross(Vector3.UnitY, e2);
+            var det = Vector3.Dot(e1, p);
+            if (MathF.Abs(det) < 1e-6f) continue;
+            var s = o - a;
+            var u = Vector3.Dot(s, p) / det;
+            if (u is < 0 or > 1) continue;
+            var q = Vector3.Cross(s, e1);
+            var v = q.Y / det;
+            if (v < 0 || u + v > 1) continue;
+            var t = Vector3.Dot(e2, q) / det;
+            if (t > 0 && t < room) room = t;
+        }
+        return room;
+    }
 
     // no clips in any environment
     private const string Clipless = "StageTechnicsLight";

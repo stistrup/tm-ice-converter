@@ -517,6 +517,14 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
         => FindPlacedBlockParts(blockName, ground, variantIndex, mobil, clips) is { } parts
             ? Export(parts).Select(p => p.Material).ToHashSet() : null;
 
+    public IReadOnlyList<(string Model, Matrix4x4 Place)> Trees(string blockName, bool ground, int variantIndex, int mobil, IReadOnlySet<int> clips)
+    {
+        if (FindPlacedBlockParts(blockName, ground, variantIndex, mobil, clips) is not { } parts) return [];
+        var trees = new List<(string, Matrix4x4)>();
+        foreach (var (path, transform) in parts) if (LoadPrefab(path) is { } prefab) AddPrefab(prefab, path, transform, null, 0, trees);
+        return trees;
+    }
+
     public IReadOnlyList<Int3>? Units(string blockName, bool ground, int variantIndex)
     {
         if (!TryLoadBlock(blockName, out var block)) return null;
@@ -620,12 +628,13 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
         return pieces;
     }
 
-    private void AddPrefab(string path, Matrix4x4 transform, List<MeshPiece> pieces, int depth)
+    private void AddPrefab(string path, Matrix4x4 transform, List<MeshPiece>? pieces, int depth, List<(string, Matrix4x4)>? trees = null)
     {
-        if (LoadPrefab(path) is { } prefab) AddPrefab(prefab, path, transform, pieces, depth);
+        if (LoadPrefab(path) is { } prefab) AddPrefab(prefab, path, transform, pieces, depth, trees);
     }
 
-    private void AddPrefab(CPlugPrefab prefab, string path, Matrix4x4 transform, List<MeshPiece> pieces, int depth)
+    // pieces null: only collect trees
+    private void AddPrefab(CPlugPrefab prefab, string path, Matrix4x4 transform, List<MeshPiece>? pieces, int depth, List<(string, Matrix4x4)>? trees = null)
     {
         if (depth > 6) return;
         var ancestor = Gbx.ParseHeader(path).RefTable?.AncestorLevel ?? 0;
@@ -641,21 +650,23 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
             switch (ent.Model)
             {
                 case CPlugStaticObjectModel som:
-                    AddStaticObject(som, world, $"{label}_{i}", pieces);
+                    if (pieces is not null) AddStaticObject(som, world, $"{label}_{i}", pieces);
                     break;
                 case CPlugPrefab nested:
                     var nestedPath = ent.ModelFile is { } nf ? ResolveRef(path, ancestor, nf.FilePath) : path;
-                    AddPrefab(nested, nestedPath, world, pieces, depth + 1);
+                    AddPrefab(nested, nestedPath, world, pieces, depth + 1, trees);
                     break;
                 case null when ent.ModelFile is { } file:
                     var target = ResolveRef(path, ancestor, file.FilePath);
                     if (target.EndsWith(".Prefab.Gbx", StringComparison.OrdinalIgnoreCase))
-                        AddPrefab(target, world, pieces, depth + 1);
-                    else
+                        AddPrefab(target, world, pieces, depth + 1, trees);
+                    else if (target.EndsWith(".VegetTreeModel.Gbx", StringComparison.OrdinalIgnoreCase))
+                        trees?.Add((Path.GetFileName(target)[..^".VegetTreeModel.Gbx".Length], world));
+                    else if (pieces is not null)
                         Warnings.Add($"skipped {file.FilePath} (not a prefab)");
                     break;
                 case { } other:
-                    Warnings.Add($"skipped {label} entity {i}: {other.GetType().Name}");
+                    if (pieces is not null) Warnings.Add($"skipped {label} entity {i}: {other.GetType().Name}");
                     break;
             }
         }
@@ -827,7 +838,7 @@ public sealed class MeshExport(string stadiumDir, IReadOnlyDictionary<string, st
     }
 
     // closest point on a triangle (Ericson, Real-Time Collision Detection 5.1.5)
-    private static float DistanceToTriangle(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
+    internal static float DistanceToTriangle(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
     {
         var (ab, ac, ap) = (b - a, c - a, p - a);
         float d1 = Vector3.Dot(ab, ap), d2 = Vector3.Dot(ac, ap);

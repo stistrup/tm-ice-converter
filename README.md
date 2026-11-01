@@ -20,7 +20,7 @@ writes `out/folder/Map (ICE).Map.Gbx` and a `.report.md` next to it saying what 
 Restart the game if new items were built, then open the map in the editor.
 
 ```
-tools/ice-convert convert <maps or folders> [-o dir]   --final, --testrun, -t <tag>, --set opt=value
+tools/ice-convert convert <maps or folders> [-o dir]   --final, --testrun, --release, -t <tag>, --set opt=value
 tools/ice-convert view <map>                           Blender scene + renders of a map
 tools/ice-convert inspect <map>                        same scene with a panel to look up and mark blocks
 tools/ice-convert show <item>                          preview a built item

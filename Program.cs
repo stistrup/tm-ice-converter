@@ -40,13 +40,15 @@ switch (args)
     default:
         Console.WriteLine($"""
             Usage:
-              convert [map.Gbx | folder]... [-o <out dir>] [-t <tag> | --final | --testrun] [--set <option>=true|false]...
+              convert [map.Gbx | folder]... [-o <out dir>] [-t <tag> | --final | --testrun | --release] [--set <option>=true|false]...
                   Convert maps to ice. Without maps: everything in the drop folder that changed since its last
                   conversion. Output goes to Maps/ICE in progress as "<name> (ICE).Map.Gbx" ("(ice <tag>)" with -t);
                   --final writes to the finished folder (finishedFolder in data/local.jsonc). Options (removeForcedCameras, keepPlasticWalls)
                   default from "options" in data/maps.jsonc, per map from "maps"; --set overrides them for the run.
                   --testrun writes "<name> - AN Ice" to Maps/Ice testrun, validated with a 1:00:00.000 author time, ready
                   for a club campaign without driving them.
+                  --release writes "<name> - AN Ice" to the finished folder with you as author, no records and no times:
+                  compute shadows, validate by driving, save.
               watch [-o <out dir>] [-t <tag>]
                   Keep converting maps as they land in the drop folder.
               scan [folder]...
@@ -79,11 +81,12 @@ int Convert(string[] rest)
 {
     var final = rest.Contains("--final");
     var testrun = rest.Contains("--testrun");
-    rest = rest.Where(a => a is not ("--final" or "--testrun")).ToArray();
-    if (final && testrun) return Fail("--final and --testrun go to different folders; pick one");
-    var outDir = Option(ref rest, "-o") ?? (final ? Paths.FinishedFolder : testrun ? Paths.TestrunFolder : Paths.OutFolder);
+    var release = rest.Contains("--release");
+    rest = rest.Where(a => a is not ("--final" or "--testrun" or "--release")).ToArray();
+    if ((final ? 1 : 0) + (testrun ? 1 : 0) + (release ? 1 : 0) > 1) return Fail("--final, --testrun and --release go to different folders; pick one");
+    var outDir = Option(ref rest, "-o") ?? (final || release ? Paths.FinishedFolder : testrun ? Paths.TestrunFolder : Paths.OutFolder);
     var tag = Option(ref rest, "-t");
-    if (testrun && tag is not null) return Fail("--testrun makes \"<name> - AN Ice\"; leave out -t");
+    if ((testrun || release) && tag is not null) return Fail("--testrun and --release make \"<name> - AN Ice\"; leave out -t");
     if (final && tag is not null) return Fail("--final makes \"<name> (ICE)\"; leave out -t");
     var settings = new List<(string, bool)>();
     while (Option(ref rest, "--set") is { } set)
@@ -93,9 +96,9 @@ int Convert(string[] rest)
         settings.Add((name, on));
     }
     var dropFolder = rest.Length == 0;
-    var maps = dropFolder ? ChangedDropMaps(outDir, testrun ? TestrunSuffix() : Suffix(tag)) : ExpandMaps(rest).ToList();
+    var maps = dropFolder ? ChangedDropMaps(outDir, testrun || release ? TestrunSuffix() : Suffix(tag)) : ExpandMaps(rest).ToList();
     if (dropFolder && maps.Count == 0) Console.WriteLine($"Nothing new in {Paths.DropFolder}");
-    return ConvertAll(maps, outDir, tag, settings, testrun);
+    return ConvertAll(maps, outDir, tag, settings, testrun, release);
 }
 
 // polling: the game writes maps in steps
@@ -130,9 +133,10 @@ List<string> ChangedDropMaps(string outDir, string suffix)
     }).ToList();
 }
 
-int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerable<(string, bool)>? settings = null, bool dummyTimes = false)
+// release: the user as author, no times (validated by driving), its own UID apart from the test runs
+int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerable<(string, bool)>? settings = null, bool dummyTimes = false, bool release = false)
 {
-    var suffix = dummyTimes ? TestrunSuffix() : Suffix(tag);
+    var suffix = dummyTimes || release ? TestrunSuffix() : Suffix(tag);
     Directory.CreateDirectory(outDir);
     var shapes = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>());
     var items = new ItemBuilder(dataDir);
@@ -161,11 +165,12 @@ int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerab
             var report = converter.Convert(gbx.Node);
             gbx.Node.MapName = translations.NameFor(Regex.Replace(gbx.Node.MapName, @"\s*\(ice[^)]*\)$", "", RegexOptions.IgnoreCase)) + suffix;
             // own UID, stable across reconverts
-            gbx.Node.MapUid = DerivedMapUid(gbx.Node.MapUid, dummyTimes ? $"{suffix}{Paths.TestrunAuthor.Login}#{Paths.TestrunGeneration}" : suffix);
+            gbx.Node.MapUid = DerivedMapUid(gbx.Node.MapUid, dummyTimes ? $"{suffix}{Paths.TestrunAuthor.Login}#{Paths.TestrunGeneration}" : release ? $"{suffix}{Paths.TestrunAuthor.Login}#release{(Paths.ReleaseGeneration > 1 ? Paths.ReleaseGeneration : "")}" : suffix);
             gbx.Node.Kind = CGameCtnChallenge.MapKind.InProgress;
             EnsureHeaderChunks(gbx.Node);
             ClearValidation(gbx.Node);
-            if (dummyTimes) { DummyValidation(gbx.Node); AsTestrunAuthor(gbx.Node); }
+            if (dummyTimes) DummyValidation(gbx.Node);
+            if (dummyTimes || release) AsAuthor(gbx.Node);
             // clubs reject maps without a lightmap declared
             (gbx.Node.LightmapVersion, gbx.Node.LightmapFrames, gbx.Node.LightmapCache) = (null, null, null);
             if (report.UsedItems.Count + report.UsedBlocks.Count > 0)
@@ -476,7 +481,7 @@ static void DummyValidation(CGameCtnChallenge map)
     }
 }
 
-static void AsTestrunAuthor(CGameCtnChallenge map)
+static void AsAuthor(CGameCtnChallenge map)
 {
     var (login, nickname, zone) = Paths.TestrunAuthor;
     (map.AuthorLogin, map.AuthorNickname, map.AuthorZone) = (login, nickname, zone);
@@ -559,6 +564,19 @@ static string FormatReport(string source, ConversionReport report, IReadOnlyDict
         sb.AppendLine($"\n## Items swapped ({report.SwappedItems.Values.Sum()})\n");
         sb.AppendLine("| Count | From | To |\n|---:|---|---|");
         foreach (var ((from, to), n) in report.SwappedItems.OrderByDescending(kv => kv.Value)) sb.AppendLine($"| {n} | {from} | {to} |");
+    }
+    if (report.KeptUnder.Count > 0)
+    {
+        sb.AppendLine($"\n## Native kept under the custom block, for its vegetation/terrain ({report.KeptUnder.Values.Sum()})\n");
+        sb.AppendLine("The custom block is a ghost over the native one; its ice is drawn up to 1 cm higher (collision unchanged).\n");
+        foreach (var (name, n) in report.KeptUnder.OrderByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n}");
+    }
+    if (report.Trees.Count + report.TreesMissing.Count > 0)
+    {
+        sb.AppendLine($"\n## Trees of custom blocks, as vegetation items ({report.Trees.Values.Sum()})\n");
+        sb.AppendLine("| Count | Tree model | Item |\n|---:|---|---|");
+        foreach (var ((model, item), n) in report.Trees.OrderByDescending(kv => kv.Value)) sb.AppendLine($"| {n} | {model} | {item} |");
+        foreach (var (model, n) in report.TreesMissing.OrderByDescending(kv => kv.Value)) sb.AppendLine($"| {n} | {model} | (no item) |");
     }
 
     if (report.EngineOff.Count > 0)

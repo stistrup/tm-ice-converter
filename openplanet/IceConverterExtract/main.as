@@ -13,7 +13,59 @@ void RenderMenu()
     if (UI::MenuItem("\\$9cf" + Icons::Snowflake + "\\$z Extract the loaded map's environment folder", "", false, !g_running)) {
         startnew(RunEnvironment);
     }
+    if (UI::MenuItem("\\$9cf" + Icons::Snowflake + "\\$z Extract vegetation models (full size)", "", false, !g_running)) {
+        startnew(RunVeget);
+    }
     RenderShadowsMenu();
+}
+
+uint DiskSize(const string &in gamePath)
+{
+    string disk = OnDisk(gamePath);
+    if (!IO::FileExists(disk)) return 0;
+    IO::File f(disk, IO::FileMode::Read);
+    uint size = uint(f.Size());
+    f.Close();
+    return size;
+}
+
+// the plain extract cuts tree models at 4/8 KB; the hook method may not
+void RunVeget()
+{
+    g_running = true;
+    // pack folders list nothing until opened; look files up by path (veget-list.txt, one game path per line)
+    IO::File list(IO::FromDataFolder("Plugins/IceConverterExtract/veget-list.txt"), IO::FileMode::Read);
+    auto paths = list.ReadToEnd().Split("\n");
+    list.Close();
+    array<string> lines;
+    int full = 0, cut = 0;
+    {
+        for (uint i = 0; i < paths.Length; i++) {
+            string path = paths[i].Trim();
+            if (path.Length == 0) continue;
+            auto fid = Fids::GetGame(path);
+            if (fid is null) { lines.InsertLast(path + " NOT FOUND"); continue; }
+            if (IO::FileExists(OnDisk(path))) IO::Delete(OnDisk(path));
+            Fids::Extract(fid);
+            uint plain = DiskSize(path);
+            uint hooked = 0;
+            if (plain != fid.ByteSize) {
+                if (IO::FileExists(OnDisk(path))) IO::Delete(OnDisk(path));
+                Fids::Extract(fid, true);
+                hooked = DiskSize(path);
+            }
+            bool ok = (hooked > 0 ? hooked : plain) == fid.ByteSize;
+            if (ok) full++; else cut++;
+            lines.InsertLast(path + " bytesize=" + fid.ByteSize + " compressed=" + fid.Compressed + " plain=" + plain + " hook=" + hooked + (ok ? " ok" : " CUT"));
+            yield();
+        }
+    }
+    IO::File f(IO::FromDataFolder("Plugins/IceConverterExtract/veget-sizes.txt"), IO::FileMode::Write);
+    for (uint i = 0; i < lines.Length; i++) f.WriteLine(lines[i]);
+    f.Close();
+    print("DONE vegetation full=" + full + " cut=" + cut + " (veget-sizes.txt)");
+    UI::ShowNotification("Ice Converter", "Vegetation models: " + full + " full, " + cut + " cut");
+    g_running = false;
 }
 
 int g_ok = 0, g_failed = 0;

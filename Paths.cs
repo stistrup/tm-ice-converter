@@ -27,6 +27,8 @@ public static class Paths
     public static string TestrunFolder => Path.Combine(Maps, "Ice testrun");
     // bump for fresh test run UIDs
     public const int TestrunGeneration = 7;
+    // bump for new map IDs on re-released maps; 1 = the first releases
+    public const int ReleaseGeneration = 2;
 
     public static string LocalSettings { get; set; } = "local.jsonc";
 

@@ -20,7 +20,8 @@ public static class CustomBlocks
         => (mobil & 0x3F) == 0 ? (ground ? 0 : 1_000_000) + variant * 1000 + (mobil >> 6) : null;
 
     // block from a built ice item's mesh
-    public static void Write(string itemPath, string blockPath, Ident ident, string archetype, int variantId, (Vector3 At, float Pitch, float Roll)? spawn = null)
+    // lift: footprint in units; ice raised to sit over the same native block
+    public static void Write(string itemPath, string blockPath, Ident ident, string archetype, int variantId, (Vector3 At, float Pitch, float Roll)? spawn = null, (int X, int Z)? lift = null)
     {
         var mesh = ((CGameCommonItemEntityModel)Gbx.ParseNode<CGameItemModel>(itemPath).EntityModel!).StaticObject!;
         var folder = mesh.Mesh!.MaterialsFolderName ?? "";
@@ -35,10 +36,36 @@ public static class CustomBlocks
             inst.MaterialName = "";
         }
         mesh.Mesh.MaterialsFolderName = null;
+        if (lift is { } size) LiftIce(mesh.Mesh, size.X * 32, size.Z * 32);
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(ident.Id.Split('\\')[^1]));
         Directory.CreateDirectory(Path.GetDirectoryName(blockPath)!);
         // the game saves blocks uncompressed but loads compressed ones too: half the size
         new Gbx<CGameItemModel>(Container(ident, name, archetype, ident.Collection, [(variantId, mesh)], spawn)) { BodyCompression = GbxCompression.Compressed }.Save(blockPath);
+    }
+
+    private const float IceLift = 0.01f;
+
+    // coplanar with the native ice/dirt it covers: raise the ice, easing to zero where it meets the block edge so neighbours line up
+    private static void LiftIce(CPlugSolid2Model mesh, float sizeX, float sizeZ)
+    {
+        var streams = (mesh.ShadedGeoms ?? [])
+            .Where(g => mesh.CustomMaterials?[g.MaterialIndex].MaterialUserInst?.Link?.Contains("PlatformIce") == true)
+            .Select(g => mesh.Visuals?[g.VisualIndex]).OfType<CPlugVisualIndexedTriangles>()
+            .Select(v => v.VertexStreams?.FirstOrDefault()?.Positions).OfType<Vec3[]>().Distinct().ToList();
+        if (streams.Count == 0) return;
+        var all = streams.SelectMany(p => p).ToList();
+        const float touch = 0.05f;
+        var sides = new (bool On, Func<Vec3, float> Dist)[]
+        {
+            (all.Min(p => p.X) < touch, p => p.X), (all.Max(p => p.X) > sizeX - touch, p => sizeX - p.X),
+            (all.Min(p => p.Z) < touch, p => p.Z), (all.Max(p => p.Z) > sizeZ - touch, p => sizeZ - p.Z),
+        };
+        foreach (var positions in streams)
+            for (int i = 0; i < positions.Length; i++)
+            {
+                var d = sides.Where(s => s.On).Select(s => s.Dist(positions[i])).DefaultIfEmpty(16).Min();
+                positions[i] = positions[i] with { Y = positions[i].Y + IceLift * MathF.Sin(MathF.PI / 2 * Math.Clamp(d / 16, 0, 1)) };
+            }
     }
 
     // same bytes the game writes for a compiled custom block

@@ -77,9 +77,8 @@
   "CollisionIce": "PlatformIce_PlatformTech",
   "CollisionTurbo": "PlatformIce_PlatformTech",
   "RoadTechSubIce": "PlatformIce_PlatformTech",
-  // the library's TrackWall comes out wood/black
-  "TrackWall": "CustomConcrete",
-  "TrackWallClips": "CustomConcrete",
-  // the library's Structure renders black
-  "Structure": "CustomConcrete"
+  // the library's TrackWall/Structure render wood/black; the game's own look right
+  "TrackWall": "native",
+  "TrackWallClips": "native",
+  "Structure": "native"
 }

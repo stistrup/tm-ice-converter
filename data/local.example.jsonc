@@ -9,8 +9,10 @@
     "game": "",
     // only needed on Linux
     "importerWinePrefix": "~/.local/share/tm-ice-wine",
-    // where --final writes, under Maps
-    "finishedFolder": "ICE finished"
+    // where --final and --release write, under Maps
+    "finishedFolder": "ICE finished",
+    // optional: the uploader also mirrors each upload to <releaseCopy>/<version>
+    "releaseCopy": ""
   },
   // only for --testrun
   "testrunAuthor": { "login": "", "nickname": "", "zone": "World|<continent>|<country>" }
