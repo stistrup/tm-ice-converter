@@ -236,9 +236,12 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             // waypoints as custom blocks need customWaypoints; free blocks too, the game turns and tilts them; ground blocks keep their ground plate.
             // the game draws the placed variant's body, not the resolver's no-pillar-below one
             var (variant, shown) = (VariantOf(block), block.IsFree ? FreeClips(block) : clipsOf[block]);
-            // vegetation only comes from the native block: keep it under the iced body (not gates: two would trigger);
-            // hill and cliff terrain goes into an item beside the body
-            var stack = !block.IsFree && shapes.Waypoint(name) is null && shapes.Trees(name, block.IsGround, variant, MobilOf(block), shown).Count > 0;
+            // vegetation and blended hill/cliff terrain only come from the native block: keep it under the iced body
+            // (not gates: two would trigger; their terrain goes into an item beside the body)
+            // terrain only from clips: the game keeps drawing those, so a plain body will do
+            var stack = !block.IsFree && shapes.Waypoint(name) is null
+                && (block.IsGround && ItemBuilder.OnTerrainShape(name) && items.For(name, true, variant, MobilOf(block), NoClips, Cover.TerrainFaces) is { } ownFaces && ownFaces != IceItem.Nothing
+                    || shapes.Trees(name, block.IsGround, variant, MobilOf(block), shown).Count > 0);
             // native blocks under ice skins: smaller, and one look throughout
             if ((rules.SkinsAt(block.Coord.X, block.Coord.Z) || rules.Options.SkinWaypoints && shapes.Waypoint(name) is not null) && !block.IsFree && !inTerrain)
             {

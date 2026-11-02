@@ -141,8 +141,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
 
     // snow terrain: the terrain block's own shape on a ground block that clears the native grass (a terrain archetype crashes the game)
     private const string SnowTerrainArchetype = "DecoPlatformBase";
-    // the game draws the native ground anyway
-    private const float SnowTerrainRaise = 0.02f;
+    private const float SnowTerrainRaise = 0f;
     // WhiteShore's snow ground, with its frosted grass decals; loads in other environments too
     private const string SnowTerrainMaterial = @"WhiteShore\Media\Material\Land";
 

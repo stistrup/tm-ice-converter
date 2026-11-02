@@ -42,7 +42,7 @@
     "Fall 2026 - 02": { "options": { "snowOnZoneSides": false }, "snowTerrain": [[47, 22, 53, 22]] },
     // grass gaps between road ends: after the S near the start, before the double U-turn;
     // skins: every checkpoint but the first, and the finish
-    "Fall 2026 - 07": { "options": { "convertTrees": false, "convertScenery": false }, "snowTerrain": [[47, 21, 47, 21], [36, 44, 37, 44]],
+    "Fall 2026 - 07": { "options": { "convertTrees": false, "convertScenery": false, "rampToSkins": true }, "snowTerrain": [[47, 21, 47, 21], [36, 44, 37, 44]],
       "skinned": [[43, 19, 43, 19], [42, 26, 42, 26], [34, 41, 34, 41], [34, 27, 34, 27]] },
     "Fall 2026 - 19": { "options": { "snowOnZoneSides": false } },
     // grass frame around the finish shapes the terrain

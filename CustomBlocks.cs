@@ -38,7 +38,7 @@ public static class CustomBlocks
             inst.MaterialName = "";
         }
         mesh.Mesh.MaterialsFolderName = null;
-        if (lift is { } size) LiftIce(mesh.Mesh, size.X * 32, size.Z * 32);
+        if (lift is { } size) LiftIce(mesh, size.X * 32, size.Z * 32);
         if (ramp is { } r) RampIce(mesh, r.Sides, r.Lift, r.Size.X * 32, r.Size.Z * 32);
         if (projectedLightmap is not null) ProjectedLightmap(mesh.Mesh, projectedLightmap, ident.Id);
         if (raise != 0)
@@ -74,13 +74,11 @@ public static class CustomBlocks
 
     private const float IceLift = 0.01f;
 
-    // coplanar with the native ice/dirt it covers: raise the ice, easing to zero where it meets the block edge so neighbours line up
-    private static void LiftIce(CPlugSolid2Model mesh, float sizeX, float sizeZ)
+    // coplanar with the native ice/dirt it covers: raise the ice and what lies on it, easing to zero where it meets the block edge so neighbours line up
+    private static void LiftIce(CPlugStaticObjectModel model, float sizeX, float sizeZ)
     {
-        var streams = (mesh.ShadedGeoms ?? [])
-            .Where(g => mesh.CustomMaterials?[g.MaterialIndex].MaterialUserInst?.Link?.Contains("PlatformIce") == true)
-            .Select(g => mesh.Visuals?[g.VisualIndex]).OfType<CPlugVisualIndexedTriangles>()
-            .Select(v => v.VertexStreams?.FirstOrDefault()?.Positions).OfType<Vec3[]>().Distinct().ToList();
+        var mesh = model.Mesh!;
+        var streams = IceStreams(mesh);
         if (streams.Count == 0) return;
         var all = streams.SelectMany(p => p).ToList();
         const float touch = 0.05f;
@@ -89,13 +87,23 @@ public static class CustomBlocks
             (all.Min(p => p.X) < touch, p => p.X), (all.Max(p => p.X) > sizeX - touch, p => sizeX - p.X),
             (all.Min(p => p.Z) < touch, p => p.Z), (all.Max(p => p.Z) > sizeZ - touch, p => sizeZ - p.Z),
         };
-        foreach (var positions in streams)
+        var surface = IceSurface.Of(model);
+        foreach (var positions in AllStreams(mesh))
             for (int i = 0; i < positions.Length; i++)
-            {
-                var d = sides.Where(s => s.On).Select(s => s.Dist(positions[i])).DefaultIfEmpty(16).Min();
-                positions[i] = positions[i] with { Y = positions[i].Y + IceLift * MathF.Sin(MathF.PI / 2 * Math.Clamp(d / 16, 0, 1)) };
-            }
+                if (streams.Contains(positions) || surface?.Rests(positions[i]) == true)
+                {
+                    var d = sides.Where(s => s.On).Select(s => s.Dist(positions[i])).DefaultIfEmpty(16).Min();
+                    positions[i] = positions[i] with { Y = positions[i].Y + IceLift * MathF.Sin(MathF.PI / 2 * Math.Clamp(d / 16, 0, 1)) };
+                }
     }
+
+    private static HashSet<Vec3[]> IceStreams(CPlugSolid2Model mesh) => (mesh.ShadedGeoms ?? [])
+        .Where(g => mesh.CustomMaterials?[g.MaterialIndex].MaterialUserInst?.Link?.Contains("PlatformIce") == true)
+        .Select(g => mesh.Visuals?[g.VisualIndex]).OfType<CPlugVisualIndexedTriangles>()
+        .Select(v => v.VertexStreams?.FirstOrDefault()?.Positions).OfType<Vec3[]>().ToHashSet();
+
+    private static List<Vec3[]> AllStreams(CPlugSolid2Model mesh) => (mesh.Visuals ?? []).OfType<CPlugVisualIndexedTriangles>()
+        .Select(v => v.VertexStreams?.FirstOrDefault()?.Positions).OfType<Vec3[]>().Distinct().ToList();
 
     private const float RampLength = 16;
 
@@ -109,13 +117,9 @@ public static class CustomBlocks
             return height * MathF.Cos(MathF.PI / 2 * Math.Clamp(d / RampLength, 0, 1));
         }
         var mesh = model.Mesh!;
-        var surface = model.Shape is CPlugSurface { Surf: CPlugSurface.Mesh { Vertices: { } verts, Triangles: { } tris } }
-            ? new IceSurface(verts, tris.Where(t => ((CPlugSurface.MaterialId)t.U02).ToString().Contains("Ice")).Select(t => t.Indices).ToList()) : null;
-        var ice = (mesh.ShadedGeoms ?? [])
-            .Where(g => mesh.CustomMaterials?[g.MaterialIndex].MaterialUserInst?.Link?.Contains("PlatformIce") == true)
-            .Select(g => mesh.Visuals?[g.VisualIndex]).OfType<CPlugVisualIndexedTriangles>()
-            .Select(v => v.VertexStreams?.FirstOrDefault()?.Positions).OfType<Vec3[]>().ToHashSet();
-        foreach (var positions in (mesh.Visuals ?? []).OfType<CPlugVisualIndexedTriangles>().Select(v => v.VertexStreams?.FirstOrDefault()?.Positions).OfType<Vec3[]>().Distinct().ToList())
+        var surface = IceSurface.Of(model);
+        var ice = IceStreams(mesh);
+        foreach (var positions in AllStreams(mesh))
             for (int i = 0; i < positions.Length; i++)
                 if (Lift(positions[i].X, positions[i].Z) is var lift and > 0 && (ice.Contains(positions) || surface?.Rests(positions[i]) == true))
                     positions[i] = positions[i] with { Y = positions[i].Y + lift };
@@ -132,6 +136,11 @@ public static class CustomBlocks
         public readonly HashSet<int> Used;
         private readonly Dictionary<(int, int), List<(Vector3 A, Vector3 B, Vector3 C)>> cells = [];
         private const float Cell = 4;
+        // points on a cell border find triangles from both sides
+        private const float Margin = 0.01f;
+
+        public static IceSurface? Of(CPlugStaticObjectModel model) => model.Shape is CPlugSurface { Surf: CPlugSurface.Mesh { Vertices: { } verts, Triangles: { } tris } }
+            ? new IceSurface(verts, tris.Where(t => ((CPlugSurface.MaterialId)t.U02).ToString().Contains("Ice")).Select(t => t.Indices).ToList()) : null;
 
         public IceSurface(Vec3[] verts, List<Int3> tris)
         {
@@ -142,8 +151,8 @@ public static class CustomBlocks
                 var (a, b, c) = (V(verts[t.X]), V(verts[t.Y]), V(verts[t.Z]));
                 // walls have no area seen from above
                 if (MathF.Abs(Cross(b - a, c - a)) < 1e-4f) continue;
-                for (var x = (int)MathF.Floor(Min(a.X, b.X, c.X) / Cell); x <= (int)MathF.Floor(Max(a.X, b.X, c.X) / Cell); x++)
-                    for (var z = (int)MathF.Floor(Min(a.Z, b.Z, c.Z) / Cell); z <= (int)MathF.Floor(Max(a.Z, b.Z, c.Z) / Cell); z++)
+                for (var x = (int)MathF.Floor((Min(a.X, b.X, c.X) - Margin) / Cell); x <= (int)MathF.Floor((Max(a.X, b.X, c.X) + Margin) / Cell); x++)
+                    for (var z = (int)MathF.Floor((Min(a.Z, b.Z, c.Z) - Margin) / Cell); z <= (int)MathF.Floor((Max(a.Z, b.Z, c.Z) + Margin) / Cell); z++)
                         (cells.TryGetValue((x, z), out var l) ? l : cells[(x, z)] = []).Add((a, b, c));
             }
         }
