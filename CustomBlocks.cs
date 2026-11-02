@@ -21,7 +21,7 @@ public static class CustomBlocks
 
     // block from a built ice item's mesh
     // lift: footprint in units; ice raised to sit over the same native block
-    public static void Write(string itemPath, string blockPath, Ident ident, string archetype, int variantId, (Vector3 At, float Pitch, float Roll)? spawn = null, (int X, int Z)? lift = null, float raise = 0, string? snowAs = null, IReadOnlyList<MeshPiece>? projectedLightmap = null, (int Sides, float Lift, (int X, int Z) Size)? ramp = null)
+    public static void Write(string itemPath, string blockPath, Ident ident, string archetype, int variantId, (Vector3 At, float Pitch, float Roll)? spawn = null, (int X, int Z)? lift = null, float raise = 0, string? snowAs = null, IReadOnlyList<MeshPiece>? projectedLightmap = null, (int Sides, float Lift, (int X, int Z) Size)? ramp = null, bool lightmapFromAbove = false)
     {
         var mesh = ((CGameCommonItemEntityModel)Gbx.ParseNode<CGameItemModel>(itemPath).EntityModel!).StaticObject!;
         var folder = mesh.Mesh!.MaterialsFolderName ?? "";
@@ -41,6 +41,7 @@ public static class CustomBlocks
         if (lift is { } size) LiftIce(mesh, size.X * 32, size.Z * 32);
         if (ramp is { } r) RampIce(mesh, r.Sides, r.Lift, r.Size.X * 32, r.Size.Z * 32);
         if (projectedLightmap is not null) ProjectedLightmap(mesh.Mesh, projectedLightmap, ident.Id);
+        if (lightmapFromAbove) LightmapFromAbove(mesh.Mesh);
         if (raise != 0)
             foreach (var positions in (mesh.Mesh.Visuals ?? []).OfType<CPlugVisualIndexedTriangles>().Select(v => v.VertexStreams?.FirstOrDefault()?.Positions).OfType<Vec3[]>().Distinct())
                 for (int i = 0; i < positions.Length; i++) positions[i] = positions[i] with { Y = positions[i].Y + raise };
@@ -70,6 +71,17 @@ public static class CustomBlocks
         var uvs = (mesh.Visuals ?? []).OfType<CPlugVisualIndexedTriangles>().SelectMany(v => v.VertexStreams?.FirstOrDefault()?.UVs?.GetValueOrDefault(1) ?? []).ToList();
         if (mesh.PreLightGenerator is { } gen && uvs.Count > 0)
             (gen.U04, gen.U05, gen.U06, gen.U07) = (uvs.Min(u => u.X), uvs.Min(u => u.Y), uvs.Max(u => u.X), uvs.Max(u => u.Y));
+    }
+
+    // every vertex at xz/32, steep faces too; U02 = metres per lightmap UV, what sizes the solid's share of the lightmap
+    private static void LightmapFromAbove(CPlugSolid2Model mesh)
+    {
+        foreach (var stream in (mesh.Visuals ?? []).OfType<CPlugVisualIndexedTriangles>().Select(v => v.VertexStreams?.FirstOrDefault()).OfType<CPlugVertexStream>().Distinct())
+        {
+            if (stream.Positions is not { } positions || stream.UVs is null || !stream.UVs.TryGetValue(1, out var uv)) continue;
+            for (int i = 0; i < positions.Length; i++) uv[i] = new Vec2(positions[i].X / 32, positions[i].Z / 32);
+        }
+        if (mesh.PreLightGenerator is { } gen) (gen.U02, gen.U04, gen.U05, gen.U06, gen.U07) = (32, 0, 0, 1, 1);
     }
 
     private const float IceLift = 0.01f;

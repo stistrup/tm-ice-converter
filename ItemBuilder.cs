@@ -149,12 +149,11 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     {
         if (For(block, true, variant, mobil, new HashSet<int>(), Cover.GroundBody) is not { } item || item == IceItem.Nothing) return null;
         var itemName = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath));
-        var name = itemName + "_snowterrain";
+        var name = itemName + "_snowland";
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
         if (!Planning && (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(item.FilePath)))
-            CustomBlocks.Write(item.FilePath, path, ident, SnowTerrainArchetype, 0, raise: SnowTerrainRaise, snowAs: SnowTerrainMaterial,
-                projectedLightmap: LoadJsonc<List<MeshPiece>>(Path.Combine(Paths.Work, "Mesh", itemName + ".pieces.json")));
+            CustomBlocks.Write(item.FilePath, path, ident, SnowTerrainArchetype, 0, raise: SnowTerrainRaise, snowAs: SnowTerrainMaterial, lightmapFromAbove: true);
         return new IceBlock(ident, path);
     }
 
