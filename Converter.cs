@@ -14,6 +14,7 @@ public sealed record IceItem(Ident Ident, string FilePath, (int X, int Z) Size)
 
 public interface IBlockShapes
 {
+    (int X, int Z) BlockSize(string blockName, bool ground, int variantIndex) => (1, 1);
     string? Environment { get; set; }
     bool RecordMissing { get; set; }
     IReadOnlyList<Int3>? Units(string blockName, bool ground, int variantIndex);
@@ -118,6 +119,14 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
         var cellsOf = new Dictionary<CGameCtnBlock, List<Int3>>(ReferenceEqualityComparer.Instance);
         for (int i = 0; i < grid.Count; i++) cellsOf[grid[i]] = resolver.UnitCells(placed[i]).ToList();
         var terrainTop = grid.Where(b => b.IsGround).SelectMany(b => cellsOf[b]).GroupBy(c => (c.X, c.Z)).ToDictionary(g => g.Key, g => g.Max(c => c.Y));
+        var snowDecoFootprint = grid.Where(b => !b.IsGround && b.Name.StartsWith("Deco") && rules.SnowsTerrainAt(b.Coord.X, b.Coord.Z)
+            && cellsOf[b].Any(c => terrainTop.TryGetValue((c.X, c.Z), out var groundY) && c.Y <= groundY)).SelectMany(b =>
+        {
+            var size = shapes.BlockSize(b.Name, false, VariantOf(b));
+            var (sx, sz) = b.Direction is Direction.East or Direction.West ? (size.Z, size.X) : (size.X, size.Z);
+            // one cell can't reach over another
+            return sx * sz == 1 ? [] : Enumerable.Range(0, sx).SelectMany(dx => Enumerable.Range(0, sz).Select(dz => (b.Coord.X + dx, b.Coord.Z + dz)));
+        }).ToHashSet();
         // cells where a placed block covers the terrain; pillars leave it showing
         var builtOn = grid.Where(b => !shapes.IsTerrain(b.Name) && !shapes.IsPillarBlock(b.Name)).SelectMany(b => cellsOf[b]).ToHashSet();
         var replaced = new HashSet<CGameCtnBlock>(ReferenceEqualityComparer.Instance);
@@ -165,7 +174,7 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
                 // the native block goes, the game still draws the ground; placed as variant 0 of the archetype
                 if (rules.SnowsTerrainAt(block.Coord.X, block.Coord.Z) && !IsWater(name)
                     && !builtOn.Any(c => c.X == block.Coord.X && c.Z == block.Coord.Z && c.Y <= block.Coord.Y + 1)
-                    && items.SnowTerrainFor(name, VariantOf(block), MobilOf(block), map.Collection!.Value) is { } snowBlock)
+                    && items.SnowTerrainFor(name, VariantOf(block), MobilOf(block), map.Collection!.Value, snowDecoFootprint.Contains((block.Coord.X, block.Coord.Z))) is { } snowBlock)
                 {
                     customs[block] = snowBlock;
                     block.Flags &= ~0xFFF & ~(0x3F << 21);
@@ -223,6 +232,13 @@ public sealed partial class Converter(HashSet<string> knownBlocks, Translations 
             // deco set into the terrain stays native under a skin
             var inTerrain = !block.IsGround && !block.IsFree && name.StartsWith("Deco")
                 && cellsOf[block].Any(c => terrainTop.TryGetValue((c.X, c.Z), out var groundY) && c.Y <= groundY);
+            if (inTerrain && rules.SnowsTerrainAt(block.Coord.X, block.Coord.Z)
+                && items.SnowDecoFor(name, VariantOf(block), MobilOf(block), map.Collection!.Value) is { } snowDeco)
+            {
+                customs[block] = snowDeco;
+                Bump(report.SnowTerrain, name);
+                continue;
+            }
             // only a block keeps the ground away; grass grows through a skin on deco, not on ice
             if ((block.IsGround || inTerrain) && ItemBuilder.IsWholeOnGround(name, collection) && rules.Options.SnowOnGroundDeco
                 && "PlatformIce" + name["DecoPlatform".Length..] is var twin && knownBlocks.Contains(twin) && translations.IsAvailable(twin, collection) && shapes.EnvironmentHas(twin) != false

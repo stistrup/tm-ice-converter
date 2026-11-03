@@ -29,7 +29,7 @@
   },
 
   // per map: name, blocks, ignorePrefixes, options, keep ("Name x,y,z" grid cell, "Name x, y, z" free block position), keepItems, removeItems ("Name x, y, z" for one placed item),
-  // snowTerrain ([x0, z0, x1, z1] grid cell areas whose terrain becomes snow; water and cells with a block on them stay),
+  // snowTerrain ([x0, z0, x1, z1] grid cell areas whose terrain, and deco set into it, becomes snow; water and cells with a block on them stay),
   // skinned ([x0, z0, x1, z1] grid cell areas whose blocks stay native under an ice skin instead of becoming custom blocks),
   // skinLiftCm (skin height over the native surface; default 2), skinEdgeDeg (skin edge slope; default 90 = straight down)
   "maps": {
@@ -38,6 +38,8 @@
       "PlatformPlasticWallCurve2 1179.05, 64, 932.95", "PlatformPlasticWallCurve1 1179.05, 64, 1023.46",
       "PlatformPlasticWallStraightSponsorsBottom 1133.8, 64, 932.95", "PlatformPlasticWallOutCurve1 1133.8, 64, 932.95",
       "PlatformPlasticWallOutCurve0 1111.17, 64, 1000.83"] },
+    // grass deco before the finish gate
+    "Fall 2026 - 14": { "snowTerrain": [[33, 45, 33, 45], [34, 45, 35, 46]] },
     // the grass strip between the stands
     "Fall 2026 - 02": { "options": { "snowOnZoneSides": false }, "snowTerrain": [[47, 22, 53, 22]] },
     // grass gaps between road ends: after the S near the start, before the double U-turn;

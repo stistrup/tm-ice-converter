@@ -45,7 +45,8 @@ public interface IItemSource
     IceItem? For(string block, bool ground, int variant, int mobil, IReadOnlySet<int> clips, Cover cover = Cover.None, Vector2 tilt = default);
     IceItem? ForItem(string itemId);
     IceBlock? BlockFor(string block, string archetype, bool ground, int variant, int mobil, Id collection, IReadOnlySet<int> baked, Cover? cover = null, Vector2 tilt = default, bool lift = false, int ramp = 0);
-    IceBlock? SnowTerrainFor(string block, int variant, int mobil, Id collection) => null;
+    IceBlock? SnowTerrainFor(string block, int variant, int mobil, Id collection, bool underDeco = false) => null;
+    IceBlock? SnowDecoFor(string block, int variant, int mobil, Id collection) => null;
     IReadOnlyDictionary<string, string> Failures { get; }
 }
 
@@ -142,18 +143,33 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     // snow terrain: the terrain block's own shape on a ground block that clears the native grass (a terrain archetype crashes the game)
     private const string SnowTerrainArchetype = "DecoPlatformBase";
     private const float SnowTerrainRaise = 0f;
+    // under a deco block reaching over its cell: level with it in places, it would flicker and bake dark
+    private const float SnowUnderDecoRaise = -1f;
     // WhiteShore's snow ground, with its frosted grass decals; loads in other environments too
     private const string SnowTerrainMaterial = @"WhiteShore\Media\Material\Land";
 
-    public IceBlock? SnowTerrainFor(string block, int variant, int mobil, Id collection)
+    public IceBlock? SnowTerrainFor(string block, int variant, int mobil, Id collection, bool underDeco = false)
     {
         if (For(block, true, variant, mobil, new HashSet<int>(), Cover.GroundBody) is not { } item || item == IceItem.Nothing) return null;
         var itemName = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath));
-        var name = itemName + "_snowland";
+        var name = itemName + (underDeco ? "_snowhollow" : "_snowland");
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
         if (!Planning && (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(item.FilePath)))
-            CustomBlocks.Write(item.FilePath, path, ident, SnowTerrainArchetype, 0, raise: SnowTerrainRaise, snowAs: SnowTerrainMaterial, lightmapFromAbove: true);
+            CustomBlocks.Write(item.FilePath, path, ident, SnowTerrainArchetype, 0, raise: underDeco ? SnowUnderDecoRaise : SnowTerrainRaise, snowAs: SnowTerrainMaterial, lightmapFromAbove: true, hollow: underDeco);
+        return new IceBlock(ident, path);
+    }
+
+    // deco in a snow terrain area: its own archetype keeps the ground away, its deco surface in the same snow
+    public IceBlock? SnowDecoFor(string block, int variant, int mobil, Id collection)
+    {
+        if (CustomBlocks.VariantId(false, variant, mobil) is not { } variantId
+            || For(block, false, variant, mobil, new HashSet<int>(), Cover.None) is not { } item || item == IceItem.Nothing) return null;
+        var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + "_decosnow2";
+        var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
+        var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
+        if (!Planning && (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(item.FilePath)))
+            CustomBlocks.Write(item.FilePath, path, ident, block, variantId, snowAs: SnowTerrainMaterial, lightmapFromAbove: true);
         return new IceBlock(ident, path);
     }
 

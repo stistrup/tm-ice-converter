@@ -21,7 +21,7 @@ public static class CustomBlocks
 
     // block from a built ice item's mesh
     // lift: footprint in units; ice raised to sit over the same native block
-    public static void Write(string itemPath, string blockPath, Ident ident, string archetype, int variantId, (Vector3 At, float Pitch, float Roll)? spawn = null, (int X, int Z)? lift = null, float raise = 0, string? snowAs = null, IReadOnlyList<MeshPiece>? projectedLightmap = null, (int Sides, float Lift, (int X, int Z) Size)? ramp = null, bool lightmapFromAbove = false)
+    public static void Write(string itemPath, string blockPath, Ident ident, string archetype, int variantId, (Vector3 At, float Pitch, float Roll)? spawn = null, (int X, int Z)? lift = null, float raise = 0, string? snowAs = null, IReadOnlyList<MeshPiece>? projectedLightmap = null, (int Sides, float Lift, (int X, int Z) Size)? ramp = null, bool lightmapFromAbove = false, bool hollow = false)
     {
         var mesh = ((CGameCommonItemEntityModel)Gbx.ParseNode<CGameItemModel>(itemPath).EntityModel!).StaticObject!;
         var folder = mesh.Mesh!.MaterialsFolderName ?? "";
@@ -41,7 +41,8 @@ public static class CustomBlocks
         if (lift is { } size) LiftIce(mesh, size.X * 32, size.Z * 32);
         if (ramp is { } r) RampIce(mesh, r.Sides, r.Lift, r.Size.X * 32, r.Size.Z * 32);
         if (projectedLightmap is not null) ProjectedLightmap(mesh.Mesh, projectedLightmap, ident.Id);
-        if (lightmapFromAbove) LightmapFromAbove(mesh.Mesh);
+        if (hollow) Hollow(mesh.Mesh);
+        if (lightmapFromAbove) LightmapFromAbove(mesh.Mesh, snowAs);
         if (raise != 0)
             foreach (var positions in (mesh.Mesh.Visuals ?? []).OfType<CPlugVisualIndexedTriangles>().Select(v => v.VertexStreams?.FirstOrDefault()?.Positions).OfType<Vec3[]>().Distinct())
                 for (int i = 0; i < positions.Length; i++) positions[i] = positions[i] with { Y = positions[i].Y + raise };
@@ -73,15 +74,34 @@ public static class CustomBlocks
             (gen.U04, gen.U05, gen.U06, gen.U07) = (uvs.Min(u => u.X), uvs.Min(u => u.Y), uvs.Max(u => u.X), uvs.Max(u => u.Y));
     }
 
-    // every vertex at xz/32, steep faces too; U02 = metres per lightmap UV, what sizes the solid's share of the lightmap
-    private static void LightmapFromAbove(CPlugSolid2Model mesh)
+    // nothing to see or bake, the block still keeps the terrain away: a 3 cm speck at the cell's middle, its floor
+    private static void Hollow(CPlugSolid2Model mesh)
     {
         foreach (var stream in (mesh.Visuals ?? []).OfType<CPlugVisualIndexedTriangles>().Select(v => v.VertexStreams?.FirstOrDefault()).OfType<CPlugVertexStream>().Distinct())
+            if (stream.Positions is { } positions)
+                for (int i = 0; i < positions.Length; i++) positions[i] = new Vec3(16 + (positions[i].X - 16) / 1000, positions[i].Y / 1000, 16 + (positions[i].Z - 16) / 1000);
+    }
+
+    // every vertex at xz over the block's footprint, steep faces too; U02 = metres per lightmap UV, what sizes the solid's share of the lightmap
+    private static void LightmapFromAbove(CPlugSolid2Model mesh, string? snowLink = null)
+    {
+        var streams = (mesh.Visuals ?? []).OfType<CPlugVisualIndexedTriangles>().Select(v => v.VertexStreams?.FirstOrDefault()).OfType<CPlugVertexStream>().Distinct().ToList();
+        var extent = streams.SelectMany(s => s.Positions ?? []).Select(p => Math.Max(p.X, p.Z)).DefaultIfEmpty(0).Max();
+        // 1 m slack: terrain overhangs its cell a little
+        var size = 32 * Math.Max(1, (int)Math.Ceiling((extent - 1) / 32));
+        foreach (var stream in streams)
         {
             if (stream.Positions is not { } positions || stream.UVs is null || !stream.UVs.TryGetValue(1, out var uv)) continue;
-            for (int i = 0; i < positions.Length; i++) uv[i] = new Vec2(positions[i].X / 32, positions[i].Z / 32);
+            for (int i = 0; i < positions.Length; i++) uv[i] = new Vec2(positions[i].X / size, positions[i].Z / size);
         }
-        if (mesh.PreLightGenerator is { } gen) (gen.U02, gen.U04, gen.U05, gen.U06, gen.U07) = (32, 0, 0, 1, 1);
+        if (mesh.PreLightGenerator is { } gen) (gen.U02, gen.U04, gen.U05, gen.U06, gen.U07) = (size, 0, 0, 1, 1);
+        // borders under the snow would share its texels and bake dark into it: one texel for them
+        if (snowLink is null) return;
+        var visuals = mesh.Visuals ?? [];
+        foreach (var geom in mesh.ShadedGeoms ?? [])
+            if (mesh.CustomMaterials?.ElementAtOrDefault(geom.MaterialIndex)?.MaterialUserInst?.Link != snowLink
+                && visuals.ElementAtOrDefault(geom.VisualIndex) is CPlugVisualIndexedTriangles { VertexStreams: [var stream, ..] } && stream.UVs?.TryGetValue(1, out var uv) == true)
+                Array.Fill(uv, new Vec2(0.002f, 0.002f));
     }
 
     private const float IceLift = 0.01f;
