@@ -2,11 +2,14 @@ import { defineStore } from 'pinia'
 import { computed, ref, shallowRef } from 'vue'
 import { fetchGeometry, fetchMaps, fetchScene, type InstanceInfo, type MapEntry, type SceneManifest } from '../api'
 import { categoryOf, type Category } from '../viewer/categories'
+import type { MapScene } from '../viewer/MapScene'
 
 export interface LoadedScene {
   manifest: SceneManifest
   geometry: ArrayBuffer
 }
+
+const MAP_KEY = 'current-map'
 
 export const useMapStore = defineStore('map', () => {
   const maps = ref<MapEntry[]>([])
@@ -16,11 +19,28 @@ export const useMapStore = defineStore('map', () => {
   const status = ref('')
   const loadError = ref('')
   const hovered = ref<number | null>(null)
-  const selected = ref<number[]>([])
+  const selected = ref<number | null>(null)
+  const view = shallowRef<MapScene | null>(null)
+  const textureLoads = ref(0)
   const hidden = ref<Category[]>(['terrain'])
-  const focusRequest = ref(0)
 
   let loadId = 0
+
+  function rememberMap(path: string) {
+    try {
+      sessionStorage.setItem(MAP_KEY, path)
+    } catch {
+      // only a convenience
+    }
+  }
+
+  function rememberedMap(): string | null {
+    try {
+      return sessionStorage.getItem(MAP_KEY)
+    } catch {
+      return null
+    }
+  }
 
   // instances, then placeholders, then boxes: the order MapScene numbers them in
   const infos = computed<InstanceInfo[]>(() => {
@@ -29,19 +49,20 @@ export const useMapStore = defineStore('map', () => {
     return [...manifest.instances, ...manifest.placeholders, ...manifest.boxes].map((i) => i.info)
   })
 
-  const pieceNames = computed(() => {
-    const counts = new Map<string, { name: string; category: Category; indices: number[] }>()
-    infos.value.forEach((info, index) => {
-      const entry = counts.get(info.name)
-      if (entry) entry.indices.push(index)
-      else counts.set(info.name, { name: info.name, category: categoryOf(info), indices: [index] })
-    })
-    return [...counts.values()].sort((a, b) => b.indices.length - a.indices.length)
+  const categoryCounts = computed(() => {
+    const counts = new Map<Category, number>()
+    for (const info of infos.value) {
+      const category = categoryOf(info)
+      counts.set(category, (counts.get(category) ?? 0) + 1)
+    }
+    return counts
   })
 
   async function loadMaps() {
     try {
       maps.value = await fetchMaps()
+      const remembered = maps.value.find((map) => map.path === rememberedMap())
+      if (remembered && !currentMap.value) void openMap(remembered)
     } catch (error) {
       mapsError.value = String(error)
     }
@@ -50,8 +71,9 @@ export const useMapStore = defineStore('map', () => {
   async function openMap(map: MapEntry, rebuild = false) {
     const id = ++loadId
     currentMap.value = map
+    rememberMap(map.path)
     scene.value = null
-    selected.value = []
+    selected.value = null
     hovered.value = null
     loadError.value = ''
     try {
@@ -88,9 +110,10 @@ export const useMapStore = defineStore('map', () => {
     hovered,
     selected,
     hidden,
-    focusRequest,
     infos,
-    pieceNames,
+    categoryCounts,
+    view,
+    textureLoads,
     loadMaps,
     openMap,
     toggleCategory,

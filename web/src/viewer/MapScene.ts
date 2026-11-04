@@ -1,4 +1,5 @@
 import {
+  Box3,
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
@@ -10,6 +11,7 @@ import {
   Matrix4,
   Mesh,
   MeshBasicMaterial,
+  MOUSE,
   PerspectiveCamera,
   PlaneGeometry,
   Raycaster,
@@ -34,11 +36,17 @@ interface Placed {
 }
 
 const CELL = { x: 32, y: 8, z: 32 }
-const SKY = 0x101820
+const SKY = 0x393939
 
 export interface MapSceneEvents {
   hover: (index: number | null) => void
   select: (index: number | null) => void
+  textureLoaded: () => void
+}
+
+export interface PieceParts {
+  geometries: BufferGeometry[]
+  materials: Material[]
 }
 
 // plain three.js, nothing in here is reactive
@@ -56,7 +64,7 @@ export class MapScene {
   private readonly resize: ResizeObserver
   private readonly keys = new Set<string>()
   private readonly hoverMaterial = highlightMaterial(0xffffff, 0.3)
-  private readonly selectMaterial = highlightMaterial(0x7cc8f0, 0.55)
+  private readonly selectMaterial = highlightMaterial(0xe5912f, 0.6)
   private materials: SceneMaterials | null = null
   private picker: Picker | null = null
   private hoverOverlay: InstancedMesh[] = []
@@ -77,6 +85,7 @@ export class MapScene {
     this.scene.background = new Color(SKY)
     this.scene.fog = new Fog(SKY, 4000, 12000)
     this.controls = new OrbitControls(this.camera, canvas)
+    this.controls.mouseButtons = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.ROTATE }
     this.controls.zoomToCursor = true
     this.controls.screenSpacePanning = false
     this.controls.maxPolarAngle = Math.PI * 0.98
@@ -95,7 +104,10 @@ export class MapScene {
   }
 
   load(manifest: SceneManifest, buffer: ArrayBuffer) {
-    this.materials = new SceneMaterials(manifest.materials, this.renderer, this.invalidate)
+    this.materials = new SceneMaterials(manifest.materials, this.renderer, () => {
+      this.invalidate()
+      this.events.textureLoaded()
+    })
     const pieces = manifest.meshes.map((mesh) =>
       mesh.pieces.map((piece) => ({
         geometry: this.pieceGeometry(buffer, piece.offset, piece.vertices, piece.indices),
@@ -147,21 +159,38 @@ export class MapScene {
     this.invalidate()
   }
 
-  setSelection(indices: number[]) {
-    this.selectOverlay = this.replaceOverlay(this.selectOverlay, indices, this.selectMaterial)
+  setSelection(index: number | null) {
+    this.selectOverlay = this.replaceOverlay(this.selectOverlay, index === null ? [] : [index], this.selectMaterial)
     this.invalidate()
   }
 
-  focus(indices: number[]) {
-    if (!this.picker || indices.length === 0) return
-    const sphere = this.picker.sphereOf(indices[0]).clone()
-    for (const index of indices) sphere.union(this.picker.sphereOf(index))
+  focus(index: number) {
+    if (!this.picker) return
+    const { center, radius } = this.picker.sphereOf(index)
     const offset = this.camera.position.clone().sub(this.controls.target)
-    offset.setLength(Math.max(sphere.radius * 2.6, 40))
-    this.controls.target.copy(sphere.center)
-    this.camera.position.copy(sphere.center).add(offset)
+    offset.setLength(Math.max(radius * 2.6, 40))
+    this.controls.target.copy(center)
+    this.camera.position.copy(center).add(offset)
     this.controls.update()
     this.invalidate()
+  }
+
+  // null without a real mesh: boxes and cones stand in for those
+  partsOf(index: number): PieceParts | null {
+    const placed = this.placed[index]
+    if (!placed || placed.meshKey.startsWith('placeholder:') || placed.meshKey.startsWith('box:')) return null
+    return placed
+  }
+
+  sizeOf(index: number): Vector3 | null {
+    const placed = this.placed[index]
+    if (!placed) return null
+    const box = new Box3()
+    for (const geometry of placed.geometries) {
+      if (!geometry.boundingBox) geometry.computeBoundingBox()
+      box.union(geometry.boundingBox!)
+    }
+    return box.getSize(new Vector3())
   }
 
   frameAll() {

@@ -1,46 +1,142 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { MapEntry } from '../api'
 import { useMapStore } from '../stores/map'
 
+interface Folder {
+  path: string
+  name: string
+  folders: Map<string, Folder>
+  maps: MapEntry[]
+  count: number
+}
+
+type Row =
+  | { kind: 'folder'; key: string; folder: Folder; depth: number; open: boolean }
+  | { kind: 'map'; key: string; map: MapEntry; depth: number }
+
+const STORAGE_KEY = 'open-map-folders'
+
 const store = useMapStore()
 const search = ref('')
+const openFolders = ref(new Set<string>(readOpenFolders()))
 
-const folders = computed(() => {
-  const needle = search.value.trim().toLowerCase()
-  const groups = new Map<string, MapEntry[]>()
-  for (const map of store.maps) {
-    if (needle && !`${map.folder} ${map.name}`.toLowerCase().includes(needle)) continue
-    const group = groups.get(map.folder)
-    if (group) group.push(map)
-    else groups.set(map.folder, [map])
+function readOpenFolders(): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]')
+  } catch {
+    return []
   }
-  return [...groups].map(([name, maps]) => ({ name: name || 'Maps', maps }))
+}
+
+watch(
+  openFolders,
+  (open) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify([...open]))
+    } catch {
+      // only a convenience
+    }
+  },
+  { deep: true },
+)
+
+// a reopened map's row has to be visible
+watch(
+  () => store.currentMap,
+  (map) => {
+    let path = ''
+    for (const part of map?.folder.split(/[\\/]/).filter(Boolean) ?? []) {
+      path += `/${part}`
+      openFolders.value.add(path)
+    }
+  },
+)
+
+const needle = computed(() => search.value.trim().toLowerCase())
+
+const tree = computed(() => {
+  const root: Folder = { path: '', name: '', folders: new Map(), maps: [], count: 0 }
+  for (const map of store.maps) {
+    if (needle.value && !`${map.folder} ${map.name}`.toLowerCase().includes(needle.value)) continue
+    let folder = root
+    folder.count++
+    for (const part of map.folder.split(/[\\/]/).filter(Boolean)) {
+      let next = folder.folders.get(part)
+      if (!next) {
+        next = { path: `${folder.path}/${part}`, name: part, folders: new Map(), maps: [], count: 0 }
+        folder.folders.set(part, next)
+      }
+      next.count++
+      folder = next
+    }
+    folder.maps.push(map)
+  }
+  return root
 })
+
+const rows = computed(() => {
+  const list: Row[] = []
+  const add = (folder: Folder, depth: number) => {
+    for (const child of [...folder.folders.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+      const open = Boolean(needle.value) || openFolders.value.has(child.path)
+      list.push({ kind: 'folder', key: `f:${child.path}`, folder: child, depth, open })
+      if (open) add(child, depth + 1)
+    }
+    for (const map of folder.maps) list.push({ kind: 'map', key: `m:${map.path}`, map, depth })
+  }
+  add(tree.value, 0)
+  return list
+})
+
+function toggle(path: string) {
+  if (needle.value) return
+  if (openFolders.value.has(path)) openFolders.value.delete(path)
+  else openFolders.value.add(path)
+}
+
+function indent(depth: number) {
+  return { paddingLeft: `${6 + depth * 12}px` }
+}
 </script>
 
 <template>
   <aside :class="$style.panel">
     <header :class="$style.header">
-      <h1 :class="$style.title">Ice Converter</h1>
-      <input v-model="search" type="search" placeholder="Search maps" aria-label="Search maps" />
+      <span>Maps</span>
+      <span :class="$style.count">{{ store.maps.length || '' }}</span>
     </header>
+    <div :class="$style.search">
+      <input v-model="search" type="search" placeholder="Search" aria-label="Search maps" />
+    </div>
     <p v-if="store.mapsError" :class="$style.error">{{ store.mapsError }}</p>
-    <div :class="$style.list">
-      <section v-for="folder in folders" :key="folder.name">
-        <h2 :class="$style.folder">{{ folder.name }}</h2>
+    <div :class="$style.tree">
+      <template v-for="row in rows" :key="row.key">
         <button
-          v-for="map in folder.maps"
-          :key="map.path"
+          v-if="row.kind === 'folder'"
           type="button"
-          :class="[$style.map, { [$style.current]: map.path === store.currentMap?.path }]"
-          :title="map.path"
-          @click="store.openMap(map)"
+          :class="[$style.row, $style.folder]"
+          :style="indent(row.depth)"
+          :aria-expanded="row.open"
+          @click="toggle(row.folder.path)"
         >
-          {{ map.name }}
+          <span :class="[$style.arrow, { [$style.open]: row.open }]" />
+          <span :class="$style.name">{{ row.folder.name }}</span>
+          <span :class="$style.count">{{ row.folder.count }}</span>
         </button>
-      </section>
-      <p v-if="store.maps.length && !folders.length" :class="$style.empty">No maps match.</p>
+        <button
+          v-else
+          type="button"
+          :class="[$style.row, { [$style.current]: row.map.path === store.currentMap?.path }]"
+          :style="indent(row.depth)"
+          :title="row.map.path"
+          @click="store.openMap(row.map)"
+        >
+          <span :class="$style.spacer" />
+          <span :class="$style.name">{{ row.map.name }}</span>
+        </button>
+      </template>
+      <p v-if="store.maps.length && !rows.length" :class="$style.empty">No matches</p>
     </div>
   </aside>
 </template>
@@ -51,65 +147,90 @@ const folders = computed(() => {
   flex-direction: column;
   min-height: 0;
   background: var(--panel);
-  border-right: 1px solid var(--line);
 }
 
 .header {
-  padding: 12px;
-  border-bottom: 1px solid var(--line);
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  height: 24px;
+  padding: 0 8px;
+  color: var(--strong);
+  background: var(--header);
 }
 
-.title {
-  margin: 0 0 10px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--accent);
+.search {
+  flex: none;
+  padding: 4px;
 }
 
-.list {
+.tree {
   flex: 1;
   min-height: 0;
-  padding-bottom: 12px;
   overflow-y: auto;
 }
 
-.folder {
-  position: sticky;
-  top: 0;
-  margin: 0;
-  padding: 10px 12px 4px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-  background: var(--panel);
-}
-
-.map {
-  display: block;
+.row {
+  display: flex;
+  gap: 4px;
+  align-items: center;
   width: 100%;
-  padding: 4px 12px;
-  overflow: hidden;
+  height: 21px;
+  padding-right: 8px;
   text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
+  cursor: default;
   background: none;
   border: 0;
 }
 
-.map:hover {
-  background: var(--panel-raised);
+.row:hover {
+  background: var(--hover);
+}
+
+.folder {
+  color: var(--strong);
 }
 
 .current,
 .current:hover {
-  background: var(--accent-dim);
+  color: var(--strong);
+  background: var(--selected);
+}
+
+.arrow,
+.spacer {
+  flex: none;
+  width: 10px;
+}
+
+.arrow {
+  height: 10px;
+  background: var(--muted);
+  clip-path: polygon(25% 10%, 80% 50%, 25% 90%);
+}
+
+.open {
+  transform: rotate(90deg);
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.count {
+  flex: none;
+  color: var(--muted);
 }
 
 .error,
 .empty {
   margin: 0;
-  padding: 12px;
+  padding: 6px 8px;
   color: var(--muted);
 }
 
