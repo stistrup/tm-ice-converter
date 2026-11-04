@@ -12,10 +12,10 @@ public sealed class ClipResolver(IBlockShapes shapes)
 
     public Placed Of(CGameCtnBlock block)
     {
-        var variant = Converter.VariantOf(block);
+        var variant = BlockFlags.VariantOf(block);
         var units = shapes.Units(block.Name, block.IsGround, variant) ?? [new Int3(0, 0, 0)];
         return new Placed(block.Name, block.IsGround, variant,
-            Converter.Placement(block, (units.Max(u => u.X) + 1, units.Max(u => u.Z) + 1)));
+            Placement.Of(block, (units.Max(u => u.X) + 1, units.Max(u => u.Z) + 1)));
     }
 
     // nothing under it: no-pillar-below variant
@@ -159,7 +159,7 @@ public sealed class ClipResolver(IBlockShapes shapes)
         return a.Group == b.Group || a.Group == b.SymmetricGroup || a.SymmetricGroup == b.Group;
     }
 
-    private static Int3 Cell(Vector3 point, Matrix4x4 place) => Converter.CellAt(Vector3.Transform(point, place));
+    private static Int3 Cell(Vector3 point, Matrix4x4 place) => Placement.CellAt(Vector3.Transform(point, place));
 
     private static Int3 Neg(Int3 v) => new(-v.X, -v.Y, -v.Z);
 }

@@ -18,7 +18,7 @@ public static class ClipTurns
 
     public static string Key(string blockName, int bit, string clipName) => $"{blockName}|{bit}|{clipName}";
 
-    // game direction of a placement (Converter.Placement turns by -90° per step)
+    // game direction of a placement (Placement.Of turns by -90° per step)
     public static int DirOf(Matrix4x4 place)
     {
         var x = Vector3.TransformNormal(Vector3.UnitX, place);
@@ -37,7 +37,7 @@ public static class ClipTurns
             for (int i = 0; i < grid.Count; i++)
                 foreach (var side in shapes.ClipSides(placed[i].Name, placed[i].Ground, placed[i].Variant).Where(s => s.Bit % 6 >= 4))
                 {
-                    var cell = Converter.CellAt(Vector3.Transform(side.Probe, placed[i].Place));
+                    var cell = Placement.CellAt(Vector3.Transform(side.Probe, placed[i].Place));
                     // one baked clip of that name in the cell, or it can't be told apart
                     foreach (var clip in side.Clips)
                         if (baked.TryGetValue((clip.Name, cell), out var dirs) && dirs.Count == 1)

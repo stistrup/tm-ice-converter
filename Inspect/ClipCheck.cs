@@ -23,7 +23,7 @@ public static class ClipCheck
         for (int i = 0; i < grid.Count; i++)
             foreach (var side in shapes.ClipSides(placed[i].Name, placed[i].Ground, placed[i].Variant))
             {
-                var cell = Converter.CellAt(Vector3.Transform(side.Probe, placed[i].Place));
+                var cell = Placement.CellAt(Vector3.Transform(side.Probe, placed[i].Place));
                 foreach (var c in side.Clips.Where(c => c.Type.StartsWith("FreeClip")))
                 {
                     var key = (c.Name, cell);

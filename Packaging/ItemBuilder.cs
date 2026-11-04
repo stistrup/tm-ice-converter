@@ -352,7 +352,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
     // the effect's ice collision material says which gameplay; Turbo has none (the mesh's own)
     private static string? PadGameplayOf(string block)
     {
-        if (Converter.Effect(block) is not { } effect) return null;
+        if (BlockNames.Effect(block) is not { } effect) return null;
         var path = Path.Combine(Paths.ExtractedStadium, "Media", "Modifier", effect, "CollisionRoadIce.Material.Gbx");
         return File.Exists(path) && Gbx.ParseNode<GBX.NET.Engines.Plug.CPlugMaterial>(path) is { GameplayId: { } g } ? g.ToString() : null;
     }
@@ -416,11 +416,11 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
             var native = materialMap.Where(kv => kv.Value == "native").Select(kv => kv.Key).ToHashSet();
             foreach (var key in native) materialMap.Remove(key);
             if (skin || top) native.Clear();
-            if (Converter.Effect(block) is { } effect) foreach (var (k, v) in EffectLook(effect)) materialMap[k] = v;
+            if (BlockNames.Effect(block) is { } effect) foreach (var (k, v) in EffectLook(effect)) materialMap[k] = v;
             var export = new MeshExport(Paths.ExtractedStadium, materialMap)
             {
                 Environment = environment ?? Environment,
-                KeepMaterial = top ? Converter.IsWallMaterial : topsBody ? m => !Converter.IsWallMaterial(m) : cover == Cover.Gated ? m => !IsPadLook(m) : skin ? m => SkinCovers(block, m, zoneSides) : ground && !body && !IsWholeOnGround(block, environment ?? Environment) ? m => !m.StartsWith("Deco") : null,
+                KeepMaterial = top ? BlockNames.IsWallMaterial : topsBody ? m => !BlockNames.IsWallMaterial(m) : cover == Cover.Gated ? m => !IsPadLook(m) : skin ? m => SkinCovers(block, m, zoneSides) : ground && !body && !IsWholeOnGround(block, environment ?? Environment) ? m => !m.StartsWith("Deco") : null,
                 Lift = skin ? skinLift : 0,
                 SkirtAngle = skinEdge,
                 Up = Vector3.TransformNormal(Vector3.UnitY, Matrix4x4.Transpose(tiltMatrix)),
@@ -440,9 +440,9 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
             {
                 bool Up(Vector3 n) => Vector3.TransformNormal(n, tiltMatrix).Y > TopMinY;
                 var tops = new MeshExport(Paths.ExtractedStadium, MaterialMap("top:"))
-                    { Environment = export.Environment, KeepMaterial = Converter.IsWallMaterial, Up = export.Up, KeepFace = Up, PlatformLayout = true };
+                    { Environment = export.Environment, KeepMaterial = BlockNames.IsWallMaterial, Up = export.Up, KeepFace = Up, PlatformLayout = true };
                 var sides = new MeshExport(Paths.ExtractedStadium, materialMap)
-                    { Environment = export.Environment, KeepMaterial = Converter.IsWallMaterial, Up = export.Up, KeepFace = n => !Up(n), LipAs = export.LipAs };
+                    { Environment = export.Environment, KeepMaterial = BlockNames.IsWallMaterial, Up = export.Up, KeepFace = n => !Up(n), LipAs = export.LipAs };
                 var iced = tops.Export(parts);
                 var area = iced.Where(p => p.Visible).Sum(Area);
                 if (area == 0 || cover == Cover.TopOfIceBody && area < TopOfIceMinArea) return NothingToCover;
@@ -452,8 +452,8 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
             if (!terrainSnow && OnTerrain(block, ground, cover)) pieces = WithoutFoot(pieces);
             // terrain layer masks: another environment's terrain material reads them as its own layers
             if (body && export.IsTerrain(block)) pieces = pieces.Select(p => p with { Colors = null }).ToList();
-            if (skin && Converter.IsGameplayBlock(block)) pieces = AroundPad(pieces, new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = environment ?? Environment }.Export(parts), PadGameplayOf(block), skinLift);
-            else if (Converter.IsGameplayBlock(block)) pieces = IcyPads(pieces, PadGameplayOf(block));
+            if (skin && BlockNames.IsGameplayBlock(block)) pieces = AroundPad(pieces, new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>()) { Environment = environment ?? Environment }.Export(parts), PadGameplayOf(block), skinLift);
+            else if (BlockNames.IsGameplayBlock(block)) pieces = IcyPads(pieces, PadGameplayOf(block));
             if (stacked) pieces = pieces.Where(p => !p.Material.StartsWith("Deco") && !p.Material.StartsWith(TerrainShader) && ShaderOf(p.Material, export.Environment) is null).ToList();
             else if (body && OnTerrainShape(block))
             {
@@ -467,7 +467,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
             pieces = pieces.Select(p => (native.Contains(p.Material) || body && !materialMap.ContainsKey(p.Material) && !(MaterialLibSurface(p.Material) is { } own && !NotIce.Contains(own)))
                 && NativeLink(p.Material, export.Environment) is not null ? p with { Material = NativePrefix + p.Material } : p).ToList();
             lock (Missing) Missing.UnionWith(export.Missing);
-            if (pieces.Count == 0) return export.Missing.Count > 0 ? "its prefab isn't extracted yet" : top || skin && Converter.IsGameplayBlock(block) ? NothingToCover : "no geometry found";
+            if (pieces.Count == 0) return export.Missing.Count > 0 ? "its prefab isn't extracted yet" : top || skin && BlockNames.IsGameplayBlock(block) ? NothingToCover : "no geometry found";
             if (cover == Cover.TopOfIce && pieces.Where(p => p.Visible).Sum(Area) < TopOfIceMinArea) return NothingToCover;
             if (waypoint is not null) pieces.AddRange(MeshExport.WaypointPieces(waypoint, pieces).ToList());
             // tilt baked into the mesh; custom blocks are tilted by the game

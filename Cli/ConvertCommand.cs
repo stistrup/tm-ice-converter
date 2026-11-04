@@ -85,7 +85,7 @@ internal sealed class ConvertCommand(string dataDir)
         var items = new ItemBuilder(dataDir) { RewriteBlocks = job.RewriteBlocks };
         var translations = Translations.Load(dataDir);
         translations.RunSettings.AddRange(job.Settings ?? []);
-        var converter = new Converter(KnownBlocks(), translations, shapes, items);
+        var converter = new MapConverter(KnownBlocks(), translations, shapes, items);
 
         BuildItems(maps, converter, items);
 
@@ -111,7 +111,7 @@ internal sealed class ConvertCommand(string dataDir)
     }
 
     // dry runs to collect items, build them in parallel; built items can show new tops, so repeat
-    private static void BuildItems(IReadOnlyList<string> maps, Converter converter, ItemBuilder items)
+    private static void BuildItems(IReadOnlyList<string> maps, MapConverter converter, ItemBuilder items)
     {
         items.Planning = true;
         for (var round = 0; round < 5; round++)
@@ -124,7 +124,7 @@ internal sealed class ConvertCommand(string dataDir)
         items.Planning = false;
     }
 
-    private static void ConvertMap(string path, Job job, Converter converter, Translations translations, ItemBuilder items)
+    private static void ConvertMap(string path, Job job, MapConverter converter, Translations translations, ItemBuilder items)
     {
         var gbx = Gbx.Parse<CGameCtnChallenge>(path);
         var report = converter.Convert(gbx.Node);

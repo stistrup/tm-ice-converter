@@ -58,19 +58,19 @@ public sealed class MapView(MeshExport shapes)
             {
                 var (p, r) = (block.AbsolutePositionInMap ?? default, block.YawPitchRoll ?? default);
                 var free = Matrix4x4.CreateFromYawPitchRoll(r.X, r.Y, r.Z) * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
-                var all = shapes.ClipSides(name, block.IsGround, Converter.VariantOf(block))
+                var all = shapes.ClipSides(name, block.IsGround, BlockFlags.VariantOf(block))
                     .SelectMany(s => s.Clips.Where(c => !c.Vertical).Select(c => MeshExport.ClipKey(s.Bit, c.Index))).ToHashSet();
-                Add(block, name, block.IsGround, Converter.VariantOf(block), Converter.MobilOf(block), free, all, Info(block, p));
+                Add(block, name, block.IsGround, BlockFlags.VariantOf(block), BlockFlags.MobilOf(block), free, all, Info(block, p));
                 continue;
             }
 
             // draw from the block above
-            var (meshName, ground, variant, mobil) = (name, block.IsGround, Converter.VariantOf(block), Converter.MobilOf(block));
+            var (meshName, ground, variant, mobil) = (name, block.IsGround, BlockFlags.VariantOf(block), BlockFlags.MobilOf(block));
             if (name.EndsWith("Pillar") && shapes.FindPlacedBlockParts(name, ground, variant, mobil, new HashSet<int>()) is null
                 && shapes.ClipSides(name, ground, variant).Count == 0)
                 (meshName, ground, variant, mobil) = (name[..^"Pillar".Length], false, 0, 0);
             var units = shapes.Units(meshName, ground, variant) ?? [new Int3(0, 0, 0)];
-            var place = Converter.Placement(block, (units.Max(u => u.X) + 1, units.Max(u => u.Z) + 1));
+            var place = Placement.Of(block, (units.Max(u => u.X) + 1, units.Max(u => u.Z) + 1));
             grid.Add((block, new ClipResolver.Placed(meshName, ground, variant, place), mobil));
         }
 
@@ -81,13 +81,13 @@ public sealed class MapView(MeshExport shapes)
                 grid[i] = grid[i] with { Placed = grid[i].Placed with { Variant = asShown[i].Variant } };
 
         var shown = resolver.Resolve(grid.Select(g => g.Placed).ToList());
-        var drop = Matrix4x4.CreateTranslation(0, -Converter.EnvironmentDrop(map.Collection?.ToString()), 0);
+        var drop = Matrix4x4.CreateTranslation(0, -Placement.EnvironmentDrop(map.Collection?.ToString()), 0);
         for (int i = 0; i < grid.Count; i++)
         {
             var (block, placed, mobil) = grid[i];
             var info = Info(block, null);
             if (placed.Name != block.Name) info["drawnAs"] = placed.Name;
-            if (placed.Variant != Converter.VariantOf(block)) info["shownVariant"] = placed.Variant;
+            if (placed.Variant != BlockFlags.VariantOf(block)) info["shownVariant"] = placed.Variant;
             Add(block, placed.Name, placed.Ground, placed.Variant, mobil, placed.Place * drop, shown[i], info);
         }
     }
@@ -99,8 +99,8 @@ public sealed class MapView(MeshExport shapes)
             ["kind"] = "block",
             ["name"] = block.Name,
             ["direction"] = block.Direction.ToString(),
-            ["variant"] = Converter.VariantOf(block),
-            ["mobil"] = Converter.MobilOf(block),
+            ["variant"] = BlockFlags.VariantOf(block),
+            ["mobil"] = BlockFlags.MobilOf(block),
             ["flags"] = $"0x{block.Flags:X8}",
         };
         if (freePosition is { } p) info["position"] = new[] { p.X, p.Y, p.Z };
