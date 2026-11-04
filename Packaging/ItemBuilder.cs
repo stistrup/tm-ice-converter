@@ -1,13 +1,8 @@
 using System.Numerics;
-using System.Reflection;
-using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
-using System.Text.RegularExpressions;
 using GBX.NET;
 using GBX.NET.Engines.GameData;
-using GBX.NET.Engines.Plug;
 
 namespace TmIceConverter;
 
@@ -86,19 +81,19 @@ public sealed class ItemBuilder(string dataDir)
     // ramp: local footprint sides (bits -X, +X, -Z, +Z) whose ice rises by the skin lift to meet a skinned neighbour
     public IceBlock? BlockFor(string block, string archetype, bool ground, int variant, int mobil, Id collection, IReadOnlySet<int> baked, ItemKind? kind = null, Vector2 tilt = default, bool lift = false, int ramp = 0)
     {
-        if (CustomBlocks.VariantId(ground, variant, mobil) is not { } variantId
+        if (CustomBlockWriter.VariantId(ground, variant, mobil) is not { } variantId
             || For(block, ground, variant, mobil, baked, kind ?? (ground ? lift ? ItemKind.StackedBody : ItemKind.GroundBody : ItemKind.None), tilt) is not { } item || item == IceItem.Nothing) return null;
         // no ice in it: clips draw the surface (penalty slopes), the game would keep them native
         if (File.Exists(item.FilePath) && !HasIceSurface(item.FilePath)) return null;
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + (archetype == block ? "" : "_on_" + archetype) + (lift ? "_lift1" : "") + (ramp == 0 ? "" : $"_r{ramp}" + (Style.SkinLift != ItemStyle.DefaultSkinLift ? $"l{MathF.Round(Style.SkinLift * 1000)}" : ""));
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
-        WriteBlock(path, item.FilePath, to => CustomBlocks.Write(item.FilePath, to, ident, archetype, variantId, shapes.Waypoint(block) is not null ? shapes.Spawn(block, ground, variant, mobil) : null,
+        WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, archetype, variantId, shapes.Waypoint(block) is not null ? shapes.Spawn(block, ground, variant, mobil) : null,
                 lift ? shapes.BlockSize(block, ground, variant) : null, ramp: ramp == 0 ? null : (ramp, Style.SkinLift, shapes.BlockSize(block, ground, variant))));
         return new IceBlock(ident, path);
     }
 
-    private void WriteBlock(string path, string itemPath, Action<string> write)
+    internal void WriteBlock(string path, string itemPath, Action<string> write)
     {
         if (Planning) return;
         if (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(itemPath)) write(path);
@@ -110,47 +105,6 @@ public sealed class ItemBuilder(string dataDir)
             if (File.ReadAllBytes(fresh).SequenceEqual(File.ReadAllBytes(path))) File.Delete(fresh);
             else File.Move(fresh, path, true);
         }
-    }
-
-    // snow terrain: the terrain block's own shape on a ground block that clears the native grass (a terrain archetype crashes the game)
-    private const string SnowTerrainArchetype = "DecoPlatformBase";
-    private const float SnowTerrainRaise = 0f;
-    // under a deco block reaching over its cell: level with it in places, it would flicker and bake dark
-    private const float SnowUnderDecoRaise = -1f;
-    // WhiteShore's snow ground, with its frosted grass decals; loads in other environments too
-    private const string SnowTerrainMaterial = @"WhiteShore\Media\Material\Land";
-
-    public IceBlock? SnowTerrainFor(string block, int variant, int mobil, Id collection, bool underDeco = false)
-    {
-        if (For(block, true, variant, mobil, new HashSet<int>(), ItemKind.GroundBody) is not { } item || item == IceItem.Nothing) return null;
-        var itemName = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath));
-        var name = itemName + (underDeco ? "_snowhollow" : "_snowland");
-        var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
-        var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
-        WriteBlock(path, item.FilePath, to => CustomBlocks.Write(item.FilePath, to, ident, SnowTerrainArchetype, 0, raise: underDeco ? SnowUnderDecoRaise : SnowTerrainRaise, snowAs: SnowTerrainMaterial, lightmapFromAbove: true, hollow: underDeco));
-        return new IceBlock(ident, path);
-    }
-
-    // deco in a snow terrain area: its own archetype keeps the ground away, its deco surface in the same snow
-    public IceBlock? SnowDecoFor(string block, int variant, int mobil, Id collection)
-    {
-        if (CustomBlocks.VariantId(false, variant, mobil) is not { } variantId
-            || For(block, false, variant, mobil, new HashSet<int>(), ItemKind.None) is not { } item || item == IceItem.Nothing) return null;
-        var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + "_decosnow2";
-        var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
-        var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
-        WriteBlock(path, item.FilePath, to => CustomBlocks.Write(item.FilePath, to, ident, block, variantId, snowAs: SnowTerrainMaterial, lightmapFromAbove: true));
-        return new IceBlock(ident, path);
-    }
-
-    // terrain-only item: lightmap UVs back to the exported projection, as terrain shaders read them
-    private static void ProjectedTerrainLight(string itemName)
-    {
-        var path = Path.Combine(Paths.Items, itemName + ".Item.gbx");
-        var gbx = Gbx.Parse<CGameItemModel>(path);
-        var mesh = ((CGameCommonItemEntityModel)gbx.Node.EntityModel!).StaticObject!.Mesh!;
-        CustomBlocks.ProjectedLightmap(mesh, Jsonc.Load<List<MeshPiece>>(Path.Combine(Paths.Work, "Mesh", itemName + ".pieces.json")), itemName);
-        gbx.Save(path);
     }
 
     private static bool HasIceSurface(string itemPath)
@@ -250,7 +204,7 @@ public sealed class ItemBuilder(string dataDir)
             if (made.Error is not null) return made.Error;
             var name = ItemRecipe.ItemName(r, made.Catalog);
             var result = Finish(name, made.Pieces, made.Waypoint, made.Catalog, builtFrom, log);
-            if (result is null && r.Kind == ItemKind.TerrainFaces) ProjectedTerrainLight(name);
+            if (result is null && r.Kind == ItemKind.TerrainFaces) Lightmaps.BackToProjection(name);
             return result;
         }
         catch (Exception e)

@@ -59,7 +59,7 @@ public sealed class MapConverter(HashSet<string> knownBlocks, Translations trans
         {
             if (run.Stacked.Contains(block)) block.Flags |= BlockFlags.Ghost;
             block.Name = iceBlock.Ident.Id + "_CustomBlock";
-            block.Flags |= CustomBlocks.CustomFlag;
+            block.Flags |= CustomBlockWriter.CustomFlag;
             block.Author = iceBlock.Ident.Author;
             run.Report.UsedBlocks.Add(iceBlock);
         }

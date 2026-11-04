@@ -2,7 +2,6 @@ using System.Numerics;
 using System.Text.Json;
 using GBX.NET;
 using GBX.NET.Engines.Game;
-using GBX.NET.Engines.GameData;
 
 namespace TmIceConverter;
 

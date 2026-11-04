@@ -212,7 +212,7 @@ internal static partial class BlockRules
             : block.IsGround ? "ground"
             : inTerrain ? "in terrain"
             : !options.CustomWaypoints && run.Shapes.Waypoint(block.Name) is not null ? "waypoint (customWaypoints off)"
-            : CustomBlocks.VariantId(false, 0, MobilOf(block)) is null ? "mobil row"
+            : CustomBlockWriter.VariantId(false, 0, MobilOf(block)) is null ? "mobil row"
             : "no ice surface";
 
     [GeneratedRegex("Tech(?!nics)|Dirt|Grass|Plastic|Bump")]

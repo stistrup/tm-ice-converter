@@ -30,6 +30,23 @@ The Blender tools are buggy, experimental and janky, but they somewhat work: `vi
 
 Options and per-map exceptions live in `data/maps.jsonc`, block and item swaps in `data/swaps.jsonc`, material mappings in `data/ice-materials.jsonc`.
 
+## The code
+
+```
+Cli/           the commands; ConvertCommand is the conversion workflow
+Rules/         options and per-map settings
+Game/          what the extracted game data says: blocks, clips, placement
+Conversion/    what happens to a map; BlockRules holds the order every block goes through
+Meshes/        a block's mesh pieces; ItemRecipe says what each kind of item takes
+Packaging/     pieces to items and custom blocks: Blender, NadeoImporter, the block writer
+Experimental/  still moving: snow terrain, skins, ramps, shadows
+Inspect/       Blender scene export, clip check
+```
+
+A conversion goes through `MapConverter`: each block runs through the rule list in `BlockRules` until one deals with it, then come the passes over the whole map. New behaviour is usually one more rule in that list.
+
+`tools/snapshot <maps folder> <dir>` converts a folder and compares the hashes of the output with the first run. Same hashes mean the same maps, items and custom blocks, so a refactor can be checked without driving. It doesn't rerun the steps after import unless an item's mesh data changed.
+
 ## Working on it with an AI
 
 This is how it was mostly built. Drive the converted map, and when something looks wrong, either in code or the result you can:

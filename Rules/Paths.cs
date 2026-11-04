@@ -34,13 +34,13 @@ public static class Paths
 
     public static (string Login, string Nickname, string Zone) TestrunAuthor => testrunAuthor.Value;
 
-    private static readonly Lazy<(string, string, string)> testrunAuthor = new(() =>
-        Local.Value.TestrunAuthor is { } a ? (a.Login, a.Nickname, a.Zone)
-            : throw new InvalidOperationException($"--testrun needs \"testrunAuthor\" in {LocalSettings}"));
-
     private static readonly Lazy<LocalFile> Local = new(() => File.Exists(LocalSettings)
         ? Jsonc.Load<LocalFile>(LocalSettings)
         : throw new InvalidOperationException($"no {LocalSettings}: copy data/local.example.jsonc and fill in your folders"));
+
+    private static readonly Lazy<(string, string, string)> testrunAuthor = new(() =>
+        Local.Value.TestrunAuthor is { } a ? (a.Login, a.Nickname, a.Zone)
+            : throw new InvalidOperationException($"--testrun needs \"testrunAuthor\" in {LocalSettings}"));
 
     private sealed record LocalFile(Dictionary<string, string>? Paths, Author? TestrunAuthor)
     {
