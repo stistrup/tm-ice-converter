@@ -85,7 +85,8 @@ public sealed class ItemBuilder(string dataDir)
             || For(block, ground, variant, mobil, baked, kind ?? (ground ? lift ? ItemKind.StackedBody : ItemKind.GroundBody : ItemKind.None), tilt) is not { } item || item == IceItem.Nothing) return null;
         // no ice in it: clips draw the surface (penalty slopes), the game would keep them native
         if (File.Exists(item.FilePath) && !HasIceSurface(item.FilePath)) return null;
-        var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + (archetype == block ? "" : "_on_" + archetype) + (lift ? "_lift1" : "") + (ramp == 0 ? "" : $"_r{ramp}" + (Style.SkinLift != ItemStyle.DefaultSkinLift ? $"l{MathF.Round(Style.SkinLift * 1000)}" : ""));
+        var rampKey = ramp == 0 ? "" : $"_r{ramp}" + (Style.SkinLift != ItemStyle.DefaultSkinLift ? $"l{MathF.Round(Style.SkinLift * 1000)}" : "");
+        var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + (archetype == block ? "" : "_on_" + archetype) + (lift ? "_lift1" : "") + rampKey;
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
         WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, archetype, variantId, shapes.Waypoint(block) is not null ? shapes.Spawn(block, ground, variant, mobil) : null,

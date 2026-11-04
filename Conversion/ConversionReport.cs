@@ -9,8 +9,6 @@ public sealed class ConversionReport
     public Dictionary<string, int> Unmatched { get; } = [];
     public Dictionary<string, int> ReplacedByItem { get; } = [];
     public Dictionary<string, int> Skinned { get; } = [];
-    public Dictionary<string, int> SpecialKept { get; } = [];
-    public Dictionary<string, int> SpecialSkinned { get; } = [];
     public Dictionary<string, int> KeptByList { get; } = [];
     public Dictionary<string, int> RemovedByList { get; } = [];
     public Dictionary<string, int> Recoloured { get; } = [];
@@ -40,7 +38,7 @@ public sealed class ConversionReport
     public Dictionary<string, int> ItemsNotIced { get; } = [];
     public int FreeBlockOffsetsSkipped { get; set; }
 
-    public int Left => Unmatched.Values.Sum() + SpecialKept.Values.Sum();
+    public int Left => Unmatched.Values.Sum();
 }
 
 internal static class Counts

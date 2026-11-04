@@ -23,7 +23,8 @@ internal static class Neighbours
                 var (block, i) = remaining[k];
                 if (IceTops.OnlyTopsAppear(now[k], target[i]) && !(BlockKinds.IsWallOnly(run, block, placed[i].Variant, target[i]) && AdapterAbove(run, block))
                     // stands: an end cap is fine
-                    || block.Name.StartsWith("Stand") || run.SceneryKept.Contains(block) || run.Renamed.Contains(block) || run.Customs.ContainsKey(block) || run.Skinned.Contains(block) || block.IsGround || run.Shapes.IsPillarBlock(block.Name) || run.OnKeepList(block) || BlockKinds.IsConcrete(run, block, placed[i].Variant, target[i])
+                    || block.Name.StartsWith("Stand") || run.SceneryKept.Contains(block) || run.Renamed.Contains(block) || run.Customs.ContainsKey(block) || run.Skinned.Contains(block)
+                    || block.IsGround || run.Shapes.IsPillarBlock(block.Name) || run.OnKeepList(block) || BlockKinds.IsConcrete(run, block, placed[i].Variant, target[i])
                     || BlockKinds.IsWallOnly(run, block, placed[i].Variant, target[i]) && !(IceTops.TopAppears(now[k], target[i]) && AdapterAbove(run, block))) continue;
                 if (!ItemPlacer.Place(run, block, placed[i].Variant, target[i])) continue;
                 replaced.Add(block);

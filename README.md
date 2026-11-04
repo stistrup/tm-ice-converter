@@ -39,7 +39,7 @@ Game/          what the extracted game data says: blocks, clips, placement
 Conversion/    what happens to a map; BlockRules holds the order every block goes through
 Meshes/        a block's mesh pieces; ItemRecipe says what each kind of item takes
 Packaging/     pieces to items and custom blocks: Blender, NadeoImporter, the block writer
-Experimental/  still moving: snow terrain, skins, ramps, shadows
+Experimental/  still moving: snow terrain, hill and cliff terrain, skins, ramps, shadows
 Inspect/       Blender scene export, clip check
 ```
 

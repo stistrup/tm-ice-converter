@@ -21,7 +21,19 @@ public static class CustomBlockWriter
 
     // block from a built ice item's mesh
     // lift: footprint in units; ice raised to sit over the same native block
-    public static void Write(string itemPath, string blockPath, Ident ident, string archetype, int variantId, (Vector3 At, float Pitch, float Roll)? spawn = null, (int X, int Z)? lift = null, float raise = 0, string? snowAs = null, (int Sides, float Lift, (int X, int Z) Size)? ramp = null, bool lightmapFromAbove = false, bool hollow = false)
+    public static void Write(
+        string itemPath,
+        string blockPath,
+        Ident ident,
+        string archetype,
+        int variantId,
+        (Vector3 At, float Pitch, float Roll)? spawn = null,
+        (int X, int Z)? lift = null,
+        float raise = 0,
+        string? snowAs = null,
+        (int Sides, float Lift, (int X, int Z) Size)? ramp = null,
+        bool lightmapFromAbove = false,
+        bool hollow = false)
     {
         var mesh = ((CGameCommonItemEntityModel)Gbx.ParseNode<CGameItemModel>(itemPath).EntityModel!).StaticObject!;
         var folder = mesh.Mesh!.MaterialsFolderName ?? "";

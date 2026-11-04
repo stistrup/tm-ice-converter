@@ -137,7 +137,9 @@ internal sealed class ConvertCommand(string dataDir)
         MapOutput.Save(gbx, outPath);
         File.WriteAllText(outPath[..^".Map.Gbx".Length] + ".report.md", ReportWriter.Format(path, report, items.Failures));
 
-        Console.WriteLine($"  {report.Swapped.Values.Sum()} swapped, {report.ReplacedByBlock.Values.Sum()} custom blocks,{(report.SnowTerrain.Count > 0 ? $" {report.SnowTerrain.Values.Sum()} terrain in snow," : "")} {report.ReplacedByItem.Values.Sum()} replaced by items, {report.Skinned.Values.Sum()} skinned, {report.Left} left as they were -> {outPath}");
+        var snow = report.SnowTerrain.Count > 0 ? $" {report.SnowTerrain.Values.Sum()} terrain in snow," : "";
+        Console.WriteLine($"  {report.Swapped.Values.Sum()} swapped, {report.ReplacedByBlock.Values.Sum()} custom blocks,{snow}"
+            + $" {report.ReplacedByItem.Values.Sum()} replaced by items, {report.Skinned.Values.Sum()} skinned, {report.Left} left as they were -> {outPath}");
         Console.WriteLine(job.Testrun ? "  Validated with a dummy 1:00:00.000 author time; no shadows."
             : "  In game: open it in the editor, compute shadows (Normal if the map is near 7.1 MB), validate, save.");
     }

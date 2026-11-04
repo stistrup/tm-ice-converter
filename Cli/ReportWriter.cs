@@ -39,21 +39,13 @@ internal static class ReportWriter
             foreach (var (name, n) in report.Ramped.OrderByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n}");
             sb.AppendLine();
         }
-        if (report.SpecialSkinned.Count > 0)
-        {
-            sb.AppendLine($"## Gameplay blocks, road iced around the pad ({report.SpecialSkinned.Values.Sum()})\n");
-            sb.AppendLine("The block stays for its effect; an ice skin covers its road, the native pad shows through.\n");
-            foreach (var (name, n) in report.SpecialSkinned.OrderByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n}");
-            sb.AppendLine();
-        }
 
         if (report.Left > 0)
         {
             sb.AppendLine($"## Left as they were ({report.Left})\n");
             foreach (var (name, n) in report.Unmatched.OrderByDescending(kv => kv.Value))
                 sb.AppendLine($"- {name} x{n}: {(itemFailures.TryGetValue(name, out var why) ? FirstLine(why) : "no ice version")}");
-            foreach (var (name, n) in report.SpecialKept) sb.AppendLine($"- {name} x{n}: gameplay or pillar block, kept on purpose");
-            sb.AppendLine("\nA block with a known ice equivalent can go in `blocks` in data/swaps.jsonc.\n");
+                sb.AppendLine("\nA block with a known ice equivalent can go in `blocks` in data/swaps.jsonc.\n");
         }
 
         if (report.FreeBlockOffsetsSkipped > 0)
