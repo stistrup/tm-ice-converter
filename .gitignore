@@ -1,6 +1,8 @@
 bin/
 obj/
 __pycache__/
+node_modules/
+web/dist/
 
 # Kept local, never published: this machine's user and the working notes.
 # Your account (convert --testrun); format in data/local.example.jsonc.

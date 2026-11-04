@@ -29,22 +29,15 @@ public sealed class MapView(BlockCatalog shapes)
     public IReadOnlyDictionary<string, int> Skipped => skipped;
 
     public void Write(CGameCtnChallenge map, string scenePath)
+        => File.WriteAllText(scenePath, JsonSerializer.Serialize(Build(map), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+
+    public SceneData Build(CGameCtnChallenge map)
     {
         AddBlocks(map);
         AddItems(map);
-        var scene = new
-        {
-            Map = map.MapName,
-            Environment = map.Collection?.ToString(),
-            Meshes = meshes.Where(kv => kv.Value is { Count: > 0 }).ToDictionary(kv => kv.Key, kv => kv.Value),
-            Instances = instances,
-            Placeholders = placeholders,
-            Boxes = boxes,
-            Waypoints = waypoints,
-            Materials = materials,
-            Skipped = skipped,
-        };
-        File.WriteAllText(scenePath, JsonSerializer.Serialize(scene, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+        return new SceneData(map.MapName, map.Collection?.ToString(),
+            meshes.Where(kv => kv.Value is { Count: > 0 }).ToDictionary(kv => kv.Key, kv => kv.Value!),
+            instances, placeholders, boxes, waypoints, materials, skipped);
     }
 
     private void AddBlocks(CGameCtnChallenge map)
@@ -68,7 +61,8 @@ public sealed class MapView(BlockCatalog shapes)
             if (name.EndsWith("Pillar") && shapes.FindPlacedBlockParts(name, ground, variant, mobil, new HashSet<int>()) is null
                 && shapes.ClipSides(name, ground, variant).Count == 0)
                 (meshName, ground, variant, mobil) = (name[..^"Pillar".Length], false, 0, 0);
-            var units = shapes.Units(meshName, ground, variant) ?? [new Int3(0, 0, 0)];
+            var custom = CustomBlockMesh.Parse(meshName);
+            var units = (custom is null ? shapes.Units(meshName, ground, variant) : shapes.Units(custom.Source, ground, custom.Variant)) ?? [new Int3(0, 0, 0)];
             var place = Placement.Of(block, (units.Max(u => u.X) + 1, units.Max(u => u.Z) + 1));
             grid.Add((block, new ClipResolver.Placed(meshName, ground, variant, place), mobil));
         }
@@ -118,6 +112,7 @@ public sealed class MapView(BlockCatalog shapes)
     private void Add(CGameCtnBlock block, string meshName, bool ground, int variant, int mobil, Matrix4x4 place, HashSet<int> clips,
         Dictionary<string, object> info)
     {
+        if (AddCustomBlock(meshName, place, info)) return;
         if (shapes.IsTerrain(meshName)) info["tags"] = info.TryGetValue("tags", out var t) ? $"{t}, terrain" : "terrain";
         var key = $"{meshName}|{(ground ? "g" : "a")}{variant}.{mobil}|{ClipKey.OfSet(clips)}";
         if (!meshes.ContainsKey(key))
@@ -137,6 +132,24 @@ public sealed class MapView(BlockCatalog shapes)
         if (meshes[key]!.Count == 0) return;
         instances.Add(new SceneInstance(key, Flatten(place), info));
         if (shapes.Waypoint(block.Name) is { } w) waypoints.Add(new SceneWaypoint(w, key, Flatten(place)));
+    }
+
+    private bool AddCustomBlock(string blockName, Matrix4x4 place, Dictionary<string, object> info)
+    {
+        if (CustomBlockMesh.Parse(blockName) is not { } custom) return false;
+        var key = "item:" + custom.Item;
+        if (!meshes.ContainsKey(key))
+        {
+            var json = Path.Combine(Paths.Work, "Mesh", custom.Item + ".pieces.json");
+            meshes[key] = File.Exists(json) ? Pieces(Jsonc.Load<List<MeshPiece>>(json), null) : null;
+        }
+        if (meshes[key] is not { Count: > 0 }) return false;
+        info["kind"] = "custom block";
+        info["sourceBlock"] = custom.Source;
+        if (shapes.IsTerrain(custom.Source)) info["tags"] = info.TryGetValue("tags", out var t) ? $"{t}, terrain" : "terrain";
+        instances.Add(new SceneInstance(key, Flatten(place), info));
+        if (shapes.Waypoint(custom.Source) is { } w) waypoints.Add(new SceneWaypoint(w, key, Flatten(place)));
+        return true;
     }
 
     private void AddItems(CGameCtnChallenge map)
@@ -252,6 +265,17 @@ public sealed class MapView(BlockCatalog shapes)
 
     private static void Bump(Dictionary<string, int> counts, string key) => counts[key] = counts.GetValueOrDefault(key) + 1;
 }
+
+public sealed record SceneData(
+    string Map,
+    string? Environment,
+    Dictionary<string, List<ScenePiece>> Meshes,
+    List<SceneInstance> Instances,
+    List<SceneInstance> Placeholders,
+    List<SceneInstance> Boxes,
+    List<SceneWaypoint> Waypoints,
+    Dictionary<string, SceneMaterial> Materials,
+    Dictionary<string, int> Skipped);
 
 public sealed record ScenePiece(string Material, float[] Positions, float[]? Normals, float[]? Uv0, int[] Indices, float[]? Colors);
 

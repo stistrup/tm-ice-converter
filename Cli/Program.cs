@@ -12,6 +12,8 @@ var inspect = new InspectCommands(dataDir);
 
 switch (args)
 {
+    case ["gui", .. var rest]:
+        return new GuiCommand(dataDir).Run(rest);
     case ["convert", .. var rest]:
         return new ConvertCommand(dataDir).Run(rest);
     case ["watch", .. var rest]:
@@ -35,6 +37,8 @@ switch (args)
     default:
         Console.WriteLine($"""
             Usage:
+              gui [--port <n>] [--no-open]
+                  Local web interface: browse maps and look through them in 3D. Build the page first: npm run build in web/.
               convert [map.Gbx | folder]... [-o <out dir>] [-t <tag> | --final | --testrun | --release] [--name <map name>] [--set <option>=true|false]... [--rewrite-blocks]
                   Convert maps to ice. Without maps: everything in the drop folder that changed since its last
                   conversion. Output goes to Maps/ICE in progress as "<name> (ICE).Map.Gbx" ("(ice <tag>)" with -t);

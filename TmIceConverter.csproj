@@ -5,7 +5,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <DefaultItemExcludes>$(DefaultItemExcludes);archive/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);archive/**;web/**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

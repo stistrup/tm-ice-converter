@@ -1,0 +1,49 @@
+:root {
+  color-scheme: dark;
+  --bg: #0d1218;
+  --panel: #141b23;
+  --panel-raised: #1b242e;
+  --line: #2a3541;
+  --text: #dfe8ef;
+  --muted: #8796a5;
+  --accent: #7cc8f0;
+  --accent-dim: #1f4258;
+  --warn: #e8b86a;
+  --error: #ef8a80;
+  font: 13px/1.45 system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+input {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+input:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}

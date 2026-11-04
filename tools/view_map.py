@@ -303,7 +303,7 @@ def describe(obj, info, mesh_key):
 track = bpy.data.collections.new("Map")
 scene.collection.children.link(track)
 groups = {}
-for kind, label in (("block", "Blocks"), ("ice item", "Ice items"), ("item", "Items")):
+for kind, label in (("block", "Blocks"), ("custom block", "Custom blocks"), ("ice item", "Ice items"), ("item", "Items")):
     groups[kind] = bpy.data.collections.new(label)
     track.children.link(groups[kind])
 # hidden at first: rough, covers the track

@@ -1,0 +1,21 @@
+{
+  "name": "ice-converter-gui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build"
+  },
+  "dependencies": {
+    "pinia": "^4.1.0",
+    "three": "^0.187.0",
+    "vue": "^3.5.44"
+  },
+  "devDependencies": {
+    "@types/three": "^0.187.0",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "typescript": "5.9",
+    "vite": "^8.3.5",
+    "vue-tsc": "^3.3.14"
+  }
+}
