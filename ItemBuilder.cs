@@ -83,6 +83,11 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
 
     public float SkinEdge { get; set; } = DefaultSkinEdge;
 
+    // once per run: the stale check only sees the item, not the block writer
+    public bool RewriteBlocks { get; init; }
+
+    private readonly HashSet<string> rewritten = [];
+
     private readonly Dictionary<string, Request> planned = [];
     // incomplete items never turn current: build once per run
     private readonly HashSet<string> built = [];
@@ -134,10 +139,23 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + (archetype == block ? "" : "_on_" + archetype) + (lift ? "_lift1" : "") + (ramp == 0 ? "" : $"_r{ramp}" + (SkinLift != DefaultSkinLift ? $"l{MathF.Round(SkinLift * 1000)}" : ""));
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
-        if (!Planning && (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(item.FilePath)))
-            CustomBlocks.Write(item.FilePath, path, ident, archetype, variantId, shapes.Waypoint(block) is not null ? shapes.Spawn(block, ground, variant, mobil) : null,
-                lift ? shapes.BlockSize(block, ground, variant) : null, ramp: ramp == 0 ? null : (ramp, SkinLift, shapes.BlockSize(block, ground, variant)));
+        WriteBlock(path, item.FilePath, to => CustomBlocks.Write(item.FilePath, to, ident, archetype, variantId, shapes.Waypoint(block) is not null ? shapes.Spawn(block, ground, variant, mobil) : null,
+                lift ? shapes.BlockSize(block, ground, variant) : null, ramp: ramp == 0 ? null : (ramp, SkinLift, shapes.BlockSize(block, ground, variant))));
         return new IceBlock(ident, path);
+    }
+
+    private void WriteBlock(string path, string itemPath, Action<string> write)
+    {
+        if (Planning) return;
+        if (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(itemPath)) write(path);
+        else if (RewriteBlocks && rewritten.Add(path))
+        {
+            // an unchanged block keeps its date: the map's embedded zip stores it
+            var fresh = path + ".new";
+            write(fresh);
+            if (File.ReadAllBytes(fresh).SequenceEqual(File.ReadAllBytes(path))) File.Delete(fresh);
+            else File.Move(fresh, path, true);
+        }
     }
 
     // snow terrain: the terrain block's own shape on a ground block that clears the native grass (a terrain archetype crashes the game)
@@ -155,8 +173,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
         var name = itemName + (underDeco ? "_snowhollow" : "_snowland");
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
-        if (!Planning && (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(item.FilePath)))
-            CustomBlocks.Write(item.FilePath, path, ident, SnowTerrainArchetype, 0, raise: underDeco ? SnowUnderDecoRaise : SnowTerrainRaise, snowAs: SnowTerrainMaterial, lightmapFromAbove: true, hollow: underDeco);
+        WriteBlock(path, item.FilePath, to => CustomBlocks.Write(item.FilePath, to, ident, SnowTerrainArchetype, 0, raise: underDeco ? SnowUnderDecoRaise : SnowTerrainRaise, snowAs: SnowTerrainMaterial, lightmapFromAbove: true, hollow: underDeco));
         return new IceBlock(ident, path);
     }
 
@@ -168,8 +185,7 @@ public sealed class ItemBuilder(string dataDir) : IItemSource
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + "_decosnow2";
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
-        if (!Planning && (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(item.FilePath)))
-            CustomBlocks.Write(item.FilePath, path, ident, block, variantId, snowAs: SnowTerrainMaterial, lightmapFromAbove: true);
+        WriteBlock(path, item.FilePath, to => CustomBlocks.Write(item.FilePath, to, ident, block, variantId, snowAs: SnowTerrainMaterial, lightmapFromAbove: true));
         return new IceBlock(ident, path);
     }
 

@@ -39,7 +39,7 @@
       "PlatformPlasticWallStraightSponsorsBottom 1133.8, 64, 932.95", "PlatformPlasticWallOutCurve1 1133.8, 64, 932.95",
       "PlatformPlasticWallOutCurve0 1111.17, 64, 1000.83"] },
     // grass deco before the finish gate
-    "Fall 2026 - 14": { "snowTerrain": [[33, 45, 33, 45], [34, 45, 35, 46]] },
+    "Fall 2026 - 14": { "snowTerrain": [[33, 45, 35, 45], [34, 46, 34, 46]] },
     // the grass strip between the stands
     "Fall 2026 - 02": { "options": { "snowOnZoneSides": false }, "snowTerrain": [[47, 22, 53, 22]] },
     // grass gaps between road ends: after the S near the start, before the double U-turn;

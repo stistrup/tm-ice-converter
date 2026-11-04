@@ -40,13 +40,14 @@ switch (args)
     default:
         Console.WriteLine($"""
             Usage:
-              convert [map.Gbx | folder]... [-o <out dir>] [-t <tag> | --final | --testrun | --release] [--name <map name>] [--set <option>=true|false]...
+              convert [map.Gbx | folder]... [-o <out dir>] [-t <tag> | --final | --testrun | --release] [--name <map name>] [--set <option>=true|false]... [--rewrite-blocks]
                   Convert maps to ice. Without maps: everything in the drop folder that changed since its last
                   conversion. Output goes to Maps/ICE in progress as "<name> (ICE).Map.Gbx" ("(ice <tag>)" with -t);
                   --final writes to the finished folder (finishedFolder in data/local.jsonc). Options (removeForcedCameras, keepPlasticWalls)
                   default from "options" in data/maps.jsonc, per map from "maps"; --set overrides them for the run.
                   --testrun writes "<name> - AN Ice" to Maps/Ice testrun, validated with a 1:00:00.000 author time, ready
                   for a club campaign without driving them.
+                  --rewrite-blocks writes the custom blocks again, for changes to the block writer.
                   --release writes "<name> - AN Ice" to the finished folder with you as author, no records and no times:
                   compute shadows, validate by driving, save.
               watch [-o <out dir>] [-t <tag>]
@@ -82,7 +83,8 @@ int Convert(string[] rest)
     var final = rest.Contains("--final");
     var testrun = rest.Contains("--testrun");
     var release = rest.Contains("--release");
-    rest = rest.Where(a => a is not ("--final" or "--testrun" or "--release")).ToArray();
+    var rewriteBlocks = rest.Contains("--rewrite-blocks");
+    rest = rest.Where(a => a is not ("--final" or "--testrun" or "--release" or "--rewrite-blocks")).ToArray();
     if ((final ? 1 : 0) + (testrun ? 1 : 0) + (release ? 1 : 0) > 1) return Fail("--final, --testrun and --release go to different folders; pick one");
     var outDir = Option(ref rest, "-o") ?? (final || release ? Paths.FinishedFolder : testrun ? Paths.TestrunFolder : Paths.OutFolder);
     var tag = Option(ref rest, "-t");
@@ -100,7 +102,7 @@ int Convert(string[] rest)
     var maps = dropFolder ? ChangedDropMaps(outDir, testrun || release ? TestrunSuffix() : Suffix(tag)) : ExpandMaps(rest).ToList();
     if (dropFolder && maps.Count == 0) Console.WriteLine($"Nothing new in {Paths.DropFolder}");
     if (mapName is not null && maps.Count != 1) return Fail("--name takes one map");
-    return ConvertAll(maps, outDir, tag, settings, testrun, release, mapName);
+    return ConvertAll(maps, outDir, tag, settings, testrun, release, mapName, rewriteBlocks);
 }
 
 // polling: the game writes maps in steps
@@ -136,12 +138,12 @@ List<string> ChangedDropMaps(string outDir, string suffix)
 }
 
 // release: the user as author, no times (validated by driving), its own UID apart from the test runs
-int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerable<(string, bool)>? settings = null, bool dummyTimes = false, bool release = false, string? mapName = null)
+int ConvertAll(IReadOnlyList<string> maps, string outDir, string? tag, IEnumerable<(string, bool)>? settings = null, bool dummyTimes = false, bool release = false, string? mapName = null, bool rewriteBlocks = false)
 {
     var suffix = dummyTimes || release ? TestrunSuffix() : Suffix(tag);
     Directory.CreateDirectory(outDir);
     var shapes = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>());
-    var items = new ItemBuilder(dataDir);
+    var items = new ItemBuilder(dataDir) { RewriteBlocks = rewriteBlocks };
     var translations = Translations.Load(dataDir);
     translations.RunSettings.AddRange(settings ?? []);
     var converter = new Converter(KnownBlocks(), translations, shapes, items);
