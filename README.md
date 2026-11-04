@@ -45,7 +45,7 @@ Inspect/       Blender scene export, clip check
 
 A conversion goes through `MapConverter`: each block runs through the rule list in `BlockRules` until one deals with it, then come the passes over the whole map. New behaviour is usually one more rule in that list.
 
-`tools/snapshot <maps folder> <dir>` converts a folder and compares the hashes of the output with the first run. Same hashes mean the same maps, items and custom blocks, so a refactor can be checked without driving. It doesn't rerun the steps after import unless an item's mesh data changed.
+`tools/snapshot <maps folder> <dir>` converts a folder and compares the hashes of the output with the first run. Same hashes mean the same maps, items and custom blocks, so a refactor can be checked without driving. It doesn't rerun the steps after import unless an item's mesh data changed, and an item that really rebuilds shows as different even when nothing is wrong: the importer doesn't produce the same bytes twice.
 
 ## Working on it with an AI
 
