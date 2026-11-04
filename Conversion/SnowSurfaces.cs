@@ -35,7 +35,7 @@ internal sealed class SnowSurfaces
             foreach (var (a, b, c, material) in tris)
             {
                 if (material.StartsWith("Deco") && !block.Name.StartsWith("Deco") && swapped.Contains(block)) continue;
-                if (skinned.Contains(block) && !ItemBuilder.SkinCovers(block.Name, material, zoneSides)) continue;
+                if (skinned.Contains(block) && !MaterialLib.SkinCovers(block.Name, material, zoneSides)) continue;
                 var t = (A: Vector3.Transform(a, place), B: Vector3.Transform(b, place), C: Vector3.Transform(c, place));
                 if (Vector3.Normalize(Vector3.Cross(t.B - t.A, t.C - t.A)) is { } n && MathF.Abs(n.Y) < 0.3f) continue;
                 var (x0, x1) = ((int)MathF.Floor(MathF.Min(t.A.X, MathF.Min(t.B.X, t.C.X)) / 32), (int)MathF.Floor(MathF.Max(t.A.X, MathF.Max(t.B.X, t.C.X)) / 32));

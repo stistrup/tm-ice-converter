@@ -25,7 +25,7 @@ internal static class BlockKinds
     public static bool IsWallOnly(ConversionRun run, CGameCtnBlock block, int variant, IReadOnlySet<int> clips)
         => run.Shapes.Materials(block.Name, block.IsGround, variant, MobilOf(block), clips) is { Count: > 0 } materials
             && materials.Any(BlockNames.IsWallMaterial)
-            && !materials.Any(m => m != "Underwater" && !IsGroundFill(block, m) && ItemBuilder.SkinCovers(block.Name, m, run.Items.SnowOnZoneSides));
+            && !materials.Any(m => m != "Underwater" && !IsGroundFill(block, m) && MaterialLib.SkinCovers(block.Name, m, run.Rules.Options.SnowOnZoneSides));
 
     public static bool IsGroundFill(CGameCtnBlock block, string material)
         => block.IsGround && block.Name.StartsWith("DecoWall") && material.StartsWith("Deco");

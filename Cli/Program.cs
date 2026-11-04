@@ -19,7 +19,7 @@ switch (args)
     case ["scan", .. var rest]:
         return ToolCommands.Scan(rest.Length > 0 ? rest : [Paths.Maps], Path.Combine(dataDir, "known-blocks.txt"));
     case ["make-item", var block]:
-        return new ItemBuilder(dataDir).Build(block) is { } error ? CliArgs.Fail(error) : 0;
+        return new ItemBuilder(dataDir).BuildOne(block) is { } error ? CliArgs.Fail(error) : 0;
     case ["show", .. var rest] when rest.Length > 0:
         return inspect.Show(rest);
     case ["view", .. var rest] when rest.Length > 0:

@@ -72,7 +72,7 @@ internal static class Gates
             surface = surface is { } s ? MathF.Max(s, h) : h;
         }
         if (surface is not { } y) return false;
-        if (!ItemPlacer.Place(run, block, variant, clips, Cover.Gated)) return false;
+        if (!ItemPlacer.Place(run, block, variant, clips, ItemKind.Gated)) return false;
         var units = run.Shapes.Units(block.Name, block.IsGround, variant) ?? [new Int3(0, 0, 0)];
         var at = Vector3.Transform(new Vector3(middle.X, y, middle.Y), Placement.Of(block, (units.Max(u => u.X) + 1, units.Max(u => u.Z) + 1)))
             - new Vector3(0, Placement.EnvironmentDrop(run.Map.Collection?.ToString()), 0);

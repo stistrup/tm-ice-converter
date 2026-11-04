@@ -46,7 +46,7 @@ internal static partial class BlockRules
     {
         if (!block.Name.Contains("Ice") && !block.Name.Contains('\\')) return false;
         // flipped ice shows concrete: ice top
-        if (!block.Name.Contains('\\')) IceTops.Add(run, block, run.Variant(block), run.Clips(block), Cover.TopOfIce, inBlock: true);
+        if (!block.Name.Contains('\\')) IceTops.Add(run, block, run.Variant(block), run.Clips(block), ItemKind.TopOfIce, inBlock: true);
         return true;
     }
 
@@ -105,7 +105,7 @@ internal static partial class BlockRules
         block.Name = twin;
         run.Renamed.Add(block);
         Bump(run.Report.Swapped, (name, twin, Source.Rule));
-        IceTops.Add(run, block, run.Variant(block), run.Clips(block), Cover.TopOfIce);
+        IceTops.Add(run, block, run.Variant(block), run.Clips(block), ItemKind.TopOfIce);
         return true;
     }
 
@@ -147,9 +147,9 @@ internal static partial class BlockRules
     private static bool SnowOverIceTwin(CGameCtnBlock block, ConversionRun run)
     {
         var name = block.Name;
-        if (!(block.IsGround || run.InTerrain(block)) || !ItemBuilder.IsWholeOnGround(name, run.Collection) || !run.Rules.Options.SnowOnGroundDeco) return false;
+        if (!(block.IsGround || run.InTerrain(block)) || !BlockNames.IsWholeOnGround(name, run.Collection) || !run.Rules.Options.SnowOnGroundDeco) return false;
         var twin = "PlatformIce" + name["DecoPlatform".Length..];
-        if (!Available(twin, run) || !ItemPlacer.Place(run, block, run.Variant(block), run.Clips(block), Cover.OverTwin)) return false;
+        if (!Available(twin, run) || !ItemPlacer.Place(run, block, run.Variant(block), run.Clips(block), ItemKind.OverTwin)) return false;
         block.Name = twin;
         run.Renamed.Add(block);
         Bump(run.Report.Swapped, (name, twin, Source.Rule));
@@ -174,8 +174,8 @@ internal static partial class BlockRules
         run.BuiltAs[block] = (archetype, baked, stack);
         if (stack) run.Stacked.Add(block);
         // only the body's own terrain: the game still draws the clips, terrain ones included
-        else if (block.IsGround && ItemBuilder.OnTerrainShape(name) && items.For(name, true, variant, mobil, baked, Cover.TerrainFaces) is { } terrain && terrain != IceItem.Nothing
-            && ItemPlacer.Place(run, block, variant, baked, Cover.TerrainFaces))
+        else if (block.IsGround && BlockNames.OnTerrainShape(name) && items.For(name, true, variant, mobil, baked, ItemKind.TerrainFaces) is { } terrain && terrain != IceItem.Nothing
+            && ItemPlacer.Place(run, block, variant, baked, ItemKind.TerrainFaces))
             Bump(run.Report.TerrainItems, name);
         Bump(run.Report.ReplacedByBlock, name);
         return true;
@@ -188,14 +188,14 @@ internal static partial class BlockRules
     {
         var (name, variant, mobil) = (block.Name, VariantOf(block), MobilOf(block));
         return !block.IsFree && run.Shapes.Waypoint(name) is null
-            && (block.IsGround && ItemBuilder.OnTerrainShape(name) && run.Items.For(name, true, variant, mobil, ConversionRun.NoClips, Cover.TerrainFaces) is { } ownFaces && ownFaces != IceItem.Nothing
+            && (block.IsGround && BlockNames.OnTerrainShape(name) && run.Items.For(name, true, variant, mobil, ConversionRun.NoClips, ItemKind.TerrainFaces) is { } ownFaces && ownFaces != IceItem.Nothing
                 || run.Shapes.Trees(name, block.IsGround, variant, mobil, run.Clips(block)).Count > 0);
     }
 
     private static bool AsItem(CGameCtnBlock block, ConversionRun run)
     {
         var inTerrain = run.InTerrain(block);
-        if (!ItemPlacer.Place(run, block, run.Variant(block), run.Clips(block), inTerrain ? Cover.InTerrain : Cover.None))
+        if (!ItemPlacer.Place(run, block, run.Variant(block), run.Clips(block), inTerrain ? ItemKind.InTerrain : ItemKind.None))
         {
             Bump(run.Report.Unmatched, block.Name);
             return true;

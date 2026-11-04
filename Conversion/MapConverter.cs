@@ -16,10 +16,7 @@ public sealed class MapConverter(HashSet<string> knownBlocks, Translations trans
         var collection = map.Collection?.ToString() ?? "Stadium2020";
         var rules = translations.For(map.MapName);
         shapes.Environment = items.Environment = collection;
-        items.SnowOnZoneSides = rules.Options.SnowOnZoneSides;
-        items.SnowOnGroundDeco = rules.Options.SnowOnGroundDeco;
-        items.SkinLift = rules.SkinLift ?? ItemBuilder.DefaultSkinLift;
-        items.SkinEdge = rules.SkinEdge ?? ItemBuilder.DefaultSkinEdge;
+        items.Style = new ItemStyle(rules.Options.SnowOnZoneSides, rules.Options.SnowOnGroundDeco, rules.SkinLift ?? ItemStyle.DefaultSkinLift, rules.SkinEdge ?? ItemStyle.DefaultSkinEdge);
         var run = new ConversionRun(map, collection, rules, translations, knownBlocks, shapes, items, surfaceParents, flatTops);
 
         foreach (var block in map.GetBlocks()) BlockRules.Decide(block, run);

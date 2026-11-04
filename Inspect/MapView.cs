@@ -159,7 +159,7 @@ public sealed class MapView(BlockCatalog shapes)
                 if (!meshes.ContainsKey(key))
                 {
                     var json = Path.Combine(Paths.Work, "Mesh", name + ".pieces.json");
-                    meshes[key] = File.Exists(json) ? Pieces(ItemBuilder.LoadJsonc<List<MeshPiece>>(json), null) : null;
+                    meshes[key] = File.Exists(json) ? Pieces(Jsonc.Load<List<MeshPiece>>(json), null) : null;
                 }
                 waypoint = shapes.Waypoint(name[..name.IndexOf("_Ice")]);
                 info["kind"] = "ice item";

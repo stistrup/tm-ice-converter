@@ -10,7 +10,7 @@ internal static class SkinRules
     {
         var options = run.Rules.Options;
         if (!(run.Rules.SkinsAt(block.Coord.X, block.Coord.Z) || options.SkinWaypoints && run.Shapes.Waypoint(block.Name) is not null) || block.IsFree || run.InTerrain(block)) return false;
-        Skin(block, run, block.IsGround ? Cover.None : Cover.Skin);
+        Skin(block, run, block.IsGround ? ItemKind.None : ItemKind.Skin);
         return true;
     }
 
@@ -18,14 +18,14 @@ internal static class SkinRules
     public static bool OnGround(CGameCtnBlock block, ConversionRun run)
     {
         var inTerrain = run.InTerrain(block);
-        if (!(block.IsGround || inTerrain) || ItemBuilder.IsWholeOnGround(block.Name, run.Collection)) return false;
-        Skin(block, run, inTerrain ? Cover.InTerrain : Cover.None);
+        if (!(block.IsGround || inTerrain) || BlockNames.IsWholeOnGround(block.Name, run.Collection)) return false;
+        Skin(block, run, inTerrain ? ItemKind.InTerrain : ItemKind.None);
         return true;
     }
 
-    private static void Skin(CGameCtnBlock block, ConversionRun run, Cover cover)
+    private static void Skin(CGameCtnBlock block, ConversionRun run, ItemKind kind)
     {
-        if (ItemPlacer.Place(run, block, run.Variant(block), run.Clips(block), cover))
+        if (ItemPlacer.Place(run, block, run.Variant(block), run.Clips(block), kind))
         {
             run.Skinned.Add(block);
             Bump(run.Report.Skinned, block.Name);

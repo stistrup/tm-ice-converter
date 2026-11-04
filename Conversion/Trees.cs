@@ -26,7 +26,7 @@ internal static class Trees
         place *= Matrix4x4.CreateTranslation(0, -Placement.EnvironmentDrop(run.Collection), 0);
         // the terrain it stands on doesn't count, the road over it does
         var solid = run.Shapes.CollisionTriangles(name, block.IsGround, VariantOf(block), MobilOf(block))?
-            .Where(t => ItemBuilder.ShaderOf(t.Material, run.Collection) is null).ToList() ?? [];
+            .Where(t => TerrainFaces.ShaderOf(t.Material, run.Collection) is null).ToList() ?? [];
         foreach (var (model, local) in trees)
         {
             var w = local * place;

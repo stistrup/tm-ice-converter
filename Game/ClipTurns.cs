@@ -12,7 +12,7 @@ public static class ClipTurns
     public static string FilePath => Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Paths.LocalSettings))!, "clip-turns.jsonc");
 
     private static readonly Lazy<Dictionary<string, int>> table = new(() => File.Exists(FilePath)
-        ? ItemBuilder.LoadJsonc<Dictionary<string, int>>(FilePath) : []);
+        ? Jsonc.Load<Dictionary<string, int>>(FilePath) : []);
 
     public static int? Learned(string blockName, int bit, string clipName) => table.Value.TryGetValue(Key(blockName, bit, clipName), out var turn) ? turn : null;
 

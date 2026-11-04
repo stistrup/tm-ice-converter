@@ -23,7 +23,7 @@ internal sealed class InspectCommands(string dataDir)
             {
                 var name = Path.GetFileName(pieces)[..^".pieces.json".Length];
                 var png = Path.Combine(outDir, name + ".png");
-                if (ItemBuilder.RunQuiet("blender", ["--background", "--factory-startup", "--python-exit-code", "1", "--python", script, "--", pieces, png], out var log))
+                if (Importer.RunQuiet("blender", ["--background", "--factory-startup", "--python-exit-code", "1", "--python", script, "--", pieces, png], out var log))
                     Console.WriteLine(png);
                 else { failed++; Console.Error.WriteLine($"{name}: Blender failed:\n{log}"); }
             }
@@ -58,7 +58,7 @@ internal sealed class InspectCommands(string dataDir)
 
         var script = Path.Combine(dataDir, "..", "tools", "view_map.py");
         string[] width = blendOnly ? ["0"] : [];
-        if (!ItemBuilder.RunQuiet("blender", ["--background", "--factory-startup", "--python-exit-code", "1", "--python", script, "--", scene, outDir, .. width], out var log))
+        if (!Importer.RunQuiet("blender", ["--background", "--factory-startup", "--python-exit-code", "1", "--python", script, "--", scene, outDir, .. width], out var log))
             return Fail("Blender failed:\n" + log);
         foreach (var line in log.Split('\n').Where(l => l.StartsWith("wrote ") || l.StartsWith("view: "))) Console.WriteLine("  " + line);
         return 0;

@@ -39,7 +39,7 @@ public static class Paths
             : throw new InvalidOperationException($"--testrun needs \"testrunAuthor\" in {LocalSettings}"));
 
     private static readonly Lazy<LocalFile> Local = new(() => File.Exists(LocalSettings)
-        ? ItemBuilder.LoadJsonc<LocalFile>(LocalSettings)
+        ? Jsonc.Load<LocalFile>(LocalSettings)
         : throw new InvalidOperationException($"no {LocalSettings}: copy data/local.example.jsonc and fill in your folders"));
 
     private sealed record LocalFile(Dictionary<string, string>? Paths, Author? TestrunAuthor)
