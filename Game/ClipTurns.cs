@@ -25,7 +25,7 @@ public static class ClipTurns
         return ((int)MathF.Round(MathF.Atan2(x.Z, x.X) / (MathF.PI / 2)) % 4 + 4) % 4;
     }
 
-    public static Dictionary<string, Dictionary<int, int>> Learn(IEnumerable<CGameCtnChallenge> maps, IBlockShapes shapes)
+    public static Dictionary<string, Dictionary<int, int>> Learn(IEnumerable<CGameCtnChallenge> maps, BlockCatalog shapes)
     {
         var seen = new Dictionary<string, Dictionary<int, int>>();
         foreach (var map in maps)

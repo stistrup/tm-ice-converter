@@ -55,7 +55,7 @@ internal static class ToolCommands
 
     public static int LearnClipTurns(string[] rest)
     {
-        var shapes = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>());
+        var shapes = new BlockCatalog(Paths.ExtractedStadium);
         var seen = ClipTurns.Learn(ExpandMaps(rest).Select(p => Gbx.ParseNode<CGameCtnChallenge>(p)), shapes);
         ClipTurns.Write(seen);
         var mixed = seen.Count(kv => kv.Value.Count > 1);

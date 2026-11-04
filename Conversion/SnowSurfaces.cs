@@ -13,7 +13,7 @@ internal sealed class SnowSurfaces
     private readonly Dictionary<(int, int), List<(Vector3 A, Vector3 B, Vector3 C)>> columns = [];
 
     public SnowSurfaces(CGameCtnChallenge map, IEnumerable<CGameCtnBlock> items, IReadOnlySet<CGameCtnBlock> swapped,
-        IReadOnlySet<CGameCtnBlock> skinned, IBlockShapes shapes, bool zoneSides)
+        IReadOnlySet<CGameCtnBlock> skinned, BlockCatalog shapes, bool zoneSides)
     {
         var drop = Placement.EnvironmentDrop(map.Collection?.ToString());
         foreach (var block in items.Concat(swapped).Concat(skinned))

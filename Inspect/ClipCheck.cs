@@ -11,7 +11,7 @@ public static class ClipCheck
 
     public sealed record Result(List<Clip> GameOnly, List<Clip> OursOnly, Dictionary<string, int> Baked);
 
-    public static Result Compare(CGameCtnChallenge map, IBlockShapes shapes)
+    public static Result Compare(CGameCtnChallenge map, BlockCatalog shapes)
     {
         shapes.Environment = map.Collection?.ToString() ?? "Stadium2020";
         var grid = map.GetBlocks().Where(b => !b.IsFree).ToList();
@@ -28,7 +28,7 @@ public static class ClipCheck
                 {
                     var key = (c.Name, cell);
                     possible.TryAdd(key, new Clip(c.Name, cell, KindOf(side.Bit, c), grid[i].Name, new Int3(grid[i].Coord.X, grid[i].Coord.Y, grid[i].Coord.Z)));
-                    if (shown[i].Any(k => (k & 0xFFFF) == MeshExport.ClipKey(side.Bit, c.Index))) ours.Add(key);
+                    if (shown[i].Any(k => (k & 0xFFFF) == ClipKey.Of(side.Bit, c.Index))) ours.Add(key);
                 }
             }
         // baked names no block side offers (terrain fill) are left out

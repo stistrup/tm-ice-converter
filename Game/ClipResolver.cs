@@ -6,7 +6,7 @@ namespace TmIceConverter;
 
 // which clips the game shows: matching sides connect (no free clips), vertical clips need a pillar below,
 // full free clips replace deletable ones
-public sealed class ClipResolver(IBlockShapes shapes)
+public sealed class ClipResolver(BlockCatalog shapes)
 {
     public sealed record Placed(string Name, bool Ground, int Variant, Matrix4x4 Place);
 
@@ -96,7 +96,7 @@ public sealed class ClipResolver(IBlockShapes shapes)
             if (group is null) return 0;
             var top = !HasVertical((cell + Up, dir), group, out _);
             var bottom = !HasVertical((cell + Down, dir), group, out _);
-            return (top ? MeshExport.ColumnTop : 0) | (bottom ? MeshExport.ColumnBottom : 0) | (bottom && ground ? MeshExport.ColumnOnGround : 0);
+            return (top ? ClipKey.ColumnTop : 0) | (bottom ? ClipKey.ColumnBottom : 0) | (bottom && ground ? ClipKey.ColumnOnGround : 0);
         }
 
         var occupants = new Dictionary<Int3, List<int>>();
@@ -142,7 +142,7 @@ public sealed class ClipResolver(IBlockShapes shapes)
                     .ToList();
                 if (picked.Any(c => c.Full)) picked = picked.Where(c => c.Full || !c.Deletable).ToList();
                 foreach (var c in picked)
-                    shown[at.Block].Add(MeshExport.ClipKey(at.Side.Bit, c.Index, c.Vertical ? ColumnAt(cell, dir, c.VerticalGroup, blocks[at.Block].Ground) : 0));
+                    shown[at.Block].Add(ClipKey.Of(at.Side.Bit, c.Index, c.Vertical ? ColumnAt(cell, dir, c.VerticalGroup, blocks[at.Block].Ground) : 0));
             }
         }
         return shown;

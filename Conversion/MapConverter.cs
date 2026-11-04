@@ -5,7 +5,7 @@ using static TmIceConverter.Counts;
 
 namespace TmIceConverter;
 
-public sealed class MapConverter(HashSet<string> knownBlocks, Translations translations, IBlockShapes shapes, IItemSource items)
+public sealed class MapConverter(HashSet<string> knownBlocks, Translations translations, BlockCatalog shapes, ItemBuilder items)
 {
     // kept across maps: slow to work out
     private readonly SurfaceParents surfaceParents = new(knownBlocks, shapes);

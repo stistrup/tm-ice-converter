@@ -40,7 +40,7 @@ internal sealed class InspectCommands(string dataDir)
         var outDir = Option(ref rest, "-o") ?? Path.Combine(Paths.Views, name);
         Directory.CreateDirectory(outDir);
 
-        var shapes = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>());
+        var shapes = new BlockCatalog(Paths.ExtractedStadium);
         var view = new MapView(shapes);
         var scene = Path.Combine(outDir, "scene.json");
         var node = Gbx.ParseNode<CGameCtnChallenge>(map);
@@ -84,7 +84,7 @@ internal sealed class InspectCommands(string dataDir)
     public static int CheckClips(string[] rest)
     {
         var verbose = Option(ref rest, "-v");
-        var shapes = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>());
+        var shapes = new BlockCatalog(Paths.ExtractedStadium);
         var totals = new Dictionary<(string Kind, string What), int>();
         var details = new List<(string Map, string What, ClipCheck.Clip Clip)>();
         foreach (var path in ExpandMaps(rest))

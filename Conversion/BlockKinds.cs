@@ -7,14 +7,14 @@ namespace TmIceConverter;
 // what a block is, for the rules
 internal static class BlockKinds
 {
-    public static HashSet<int> FreeClips(IBlockShapes shapes, CGameCtnBlock block)
+    public static HashSet<int> FreeClips(BlockCatalog shapes, CGameCtnBlock block)
         => shapes.ClipSides(block.Name, false, VariantOf(block))
-            .SelectMany(s => s.Clips.Where(c => !c.Vertical && !c.Anti).Select(c => MeshExport.ClipKey(s.Bit, c.Index))).ToHashSet();
+            .SelectMany(s => s.Clips.Where(c => !c.Vertical && !c.Anti).Select(c => ClipKey.Of(s.Bit, c.Index))).ToHashSet();
 
     // what the game draws on a free block, vertical (wall sides) included
-    public static HashSet<int> DrawnFreeClips(IBlockShapes shapes, CGameCtnBlock block)
+    public static HashSet<int> DrawnFreeClips(BlockCatalog shapes, CGameCtnBlock block)
         => shapes.ClipSides(block.Name, false, VariantOf(block))
-            .SelectMany(s => s.Clips.Where(c => !c.Anti).Select(c => MeshExport.ClipKey(s.Bit, c.Index))).ToHashSet();
+            .SelectMany(s => s.Clips.Where(c => !c.Anti).Select(c => ClipKey.Of(s.Bit, c.Index))).ToHashSet();
 
     // white deco with no ice version stays (concrete)
     public static bool IsConcrete(ConversionRun run, CGameCtnBlock block, int variant, IReadOnlySet<int> clips)

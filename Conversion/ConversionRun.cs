@@ -17,8 +17,8 @@ internal sealed class ConversionRun
 
     public Translations Translations { get; }
     public HashSet<string> KnownBlocks { get; }
-    public IBlockShapes Shapes { get; }
-    public IItemSource Items { get; }
+    public BlockCatalog Shapes { get; }
+    public ItemBuilder Items { get; }
     public SurfaceParents SurfaceParents { get; }
     public Dictionary<string, List<(Vector3 A, Vector3 B, Vector3 C)>> FlatTops { get; }
 
@@ -47,7 +47,7 @@ internal sealed class ConversionRun
     public HashSet<CGameCtnBlock> Topped { get; } = new(ReferenceEqualityComparer.Instance);
 
     public ConversionRun(CGameCtnChallenge map, string collection, Translations rules, Translations translations, HashSet<string> knownBlocks,
-        IBlockShapes shapes, IItemSource items, SurfaceParents surfaceParents, Dictionary<string, List<(Vector3 A, Vector3 B, Vector3 C)>> flatTops)
+        BlockCatalog shapes, ItemBuilder items, SurfaceParents surfaceParents, Dictionary<string, List<(Vector3 A, Vector3 B, Vector3 C)>> flatTops)
     {
         (Map, Collection, Rules, Translations, KnownBlocks, Shapes, Items, SurfaceParents, FlatTops) = (map, collection, rules, translations, knownBlocks, shapes, items, surfaceParents, flatTops);
         var resolver = new ClipResolver(shapes);

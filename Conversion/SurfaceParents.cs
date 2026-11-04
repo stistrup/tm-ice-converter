@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 
 namespace TmIceConverter;
 
-internal sealed partial class SurfaceParents(HashSet<string> knownBlocks, IBlockShapes shapes)
+internal sealed partial class SurfaceParents(HashSet<string> knownBlocks, BlockCatalog shapes)
 {
     private readonly Dictionary<(string, int, string?), (string Name, HashSet<int> Missing)?> surfaceParents = [];
 
@@ -26,7 +26,7 @@ internal sealed partial class SurfaceParents(HashSet<string> knownBlocks, IBlock
                 if (theirs.Any(kv => own.FirstOrDefault(s => s.Bit == kv.Key) is not { } side || !kv.Value.IsSubsetOf(side.Clips.Select(c => c.Name)))) continue;
                 var missing = own.SelectMany(s => s.Clips.Where(c => !(theirs.TryGetValue(s.Bit, out var n) && n.Contains(c.Name))).Select(c => (Side: s, Clip: c))).ToList();
                 if (missing.Count == 0 || missing.Any(m => m.Clip.Group is not null || m.Clip.SymmetricGroup is not null || m.Clip.Vertical)) continue;
-                found = (other, missing.Select(m => MeshExport.ClipKey(m.Side.Bit, m.Clip.Index)).ToHashSet());
+                found = (other, missing.Select(m => ClipKey.Of(m.Side.Bit, m.Clip.Index)).ToHashSet());
                 break;
             }
             shapes.RecordMissing = true;

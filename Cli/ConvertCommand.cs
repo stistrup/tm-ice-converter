@@ -81,7 +81,7 @@ internal sealed class ConvertCommand(string dataDir)
     private int ConvertAll(IReadOnlyList<string> maps, Job job)
     {
         Directory.CreateDirectory(job.OutDir);
-        var shapes = new MeshExport(Paths.ExtractedStadium, new Dictionary<string, string>());
+        var shapes = new BlockCatalog(Paths.ExtractedStadium);
         var items = new ItemBuilder(dataDir) { RewriteBlocks = job.RewriteBlocks };
         var translations = Translations.Load(dataDir);
         translations.RunSettings.AddRange(job.Settings ?? []);

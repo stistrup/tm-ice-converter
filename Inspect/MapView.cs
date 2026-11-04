@@ -7,7 +7,7 @@ using GBX.NET.Engines.GameData;
 namespace TmIceConverter;
 
 // map -> scene for tools/view_map.py
-public sealed class MapView(MeshExport shapes)
+public sealed class MapView(BlockCatalog shapes)
 {
     private static readonly string GameData = Path.GetDirectoryName(Paths.ExtractedStadium)!;
 
@@ -59,7 +59,7 @@ public sealed class MapView(MeshExport shapes)
                 var (p, r) = (block.AbsolutePositionInMap ?? default, block.YawPitchRoll ?? default);
                 var free = Matrix4x4.CreateFromYawPitchRoll(r.X, r.Y, r.Z) * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
                 var all = shapes.ClipSides(name, block.IsGround, BlockFlags.VariantOf(block))
-                    .SelectMany(s => s.Clips.Where(c => !c.Vertical).Select(c => MeshExport.ClipKey(s.Bit, c.Index))).ToHashSet();
+                    .SelectMany(s => s.Clips.Where(c => !c.Vertical).Select(c => ClipKey.Of(s.Bit, c.Index))).ToHashSet();
                 Add(block, name, block.IsGround, BlockFlags.VariantOf(block), BlockFlags.MobilOf(block), free, all, Info(block, p));
                 continue;
             }
@@ -120,11 +120,11 @@ public sealed class MapView(MeshExport shapes)
         Dictionary<string, object> info)
     {
         if (shapes.IsTerrain(meshName)) info["tags"] = info.TryGetValue("tags", out var t) ? $"{t}, terrain" : "terrain";
-        var key = $"{meshName}|{(ground ? "g" : "a")}{variant}.{mobil}|{MeshExport.ClipsKey(clips)}";
+        var key = $"{meshName}|{(ground ? "g" : "a")}{variant}.{mobil}|{ClipKey.OfSet(clips)}";
         if (!meshes.ContainsKey(key))
         {
             var parts = shapes.FindPlacedBlockParts(meshName, ground, variant, mobil, clips);
-            meshes[key] = parts is null ? null : Pieces(shapes.Export(parts), shapes.MaterialModifierDir(meshName));
+            meshes[key] = parts is null ? null : Pieces(shapes.Plain.Export(parts), shapes.MaterialModifierDir(meshName));
         }
         if (meshes[key] is null)
         {
@@ -172,7 +172,7 @@ public sealed class MapView(MeshExport shapes)
                 {
                     List<MeshPiece>? pieces;
                     string? reason;
-                    try { pieces = shapes.ExportItem(path, out reason); }
+                    try { pieces = shapes.Plain.ExportItem(path, out reason); }
                     catch (Exception e) { pieces = null; reason = $"can't read ({e.GetType().Name})"; }
                     meshes[key] = pieces is null ? null : Pieces(pieces, null);
                     if (reason is not null) skipReasons[key] = reason;
@@ -202,7 +202,7 @@ public sealed class MapView(MeshExport shapes)
             && FindFile(Path.Combine(Paths.ExtractedStadium, "Media", "Modifier", name[..u]), name[(u + 1)..] + ".Material.Gbx") is { } i) path = i;
         else path = materialFiles[name].OrderBy(f => f.Contains("/Media/Material/") ? 0 : 1).FirstOrDefault();
 
-        var key = path is null ? name : shapes.RelativeToGameData(path);
+        var key = path is null ? name : shapes.Files.RelativeToGameData(path);
         if (!materials.ContainsKey(key)) materials[key] = path is null ? new SceneMaterial(name, null, []) : Material(name, path);
         return key;
     }
@@ -226,9 +226,9 @@ public sealed class MapView(MeshExport shapes)
                 if (texHeader.RefTable?.Files.FirstOrDefault()?.FilePath is { } img)
                     image = Resolve(texPath, texHeader.RefTable.AncestorLevel, img);
             }
-            else missing.Add(shapes.RelativeToGameData(texPath));
+            else missing.Add(shapes.Files.RelativeToGameData(texPath));
             image ??= Path.Combine(Path.GetDirectoryName(texPath)!, "Image", stem + ".dds");
-            if (!File.Exists(image)) { missing.Add(shapes.RelativeToGameData(image)); image = null; }
+            if (!File.Exists(image)) { missing.Add(shapes.Files.RelativeToGameData(image)); image = null; }
             textures.Add(new SceneTexture(role, stem, image));
         }
         return new SceneMaterial(name, shader, textures);

@@ -59,14 +59,14 @@ internal static class ItemSwaps
     // a variant list swaps per variant: by the variant's own model, clusters to the target's cluster
     private static (string Target, int Variant)? VariantSwap(ConversionRun run, CGameCtnAnchoredObject item, string to)
     {
-        if (run.Shapes is not MeshExport mesh || mesh.ItemVariants(item.ItemModel.Id) is not { Count: > 1 } from) return (to, 0);
+        if (run.Shapes.ItemVariants(item.ItemModel.Id) is not { Count: > 1 } from) return (to, 0);
         var index = (item.Flags & VariantBits) >> 8;
         if (index >= from.Count) return null;
         var own = from[index];
         if (run.Translations.Items.TryGetValue($"{run.Map.Collection}:{own}", out var t) || run.Translations.Items.TryGetValue(own, out t)
             || run.Translations.ItemsOnSnow.TryGetValue($"{run.Map.Collection}:{own}", out t) || run.Translations.ItemsOnSnow.TryGetValue(own, out t))
             return (t, 0);
-        if (!own.EndsWith(".Prefab") || mesh.ItemVariants(to) is not { } into) return null;
+        if (!own.EndsWith(".Prefab") || run.Shapes.ItemVariants(to) is not { } into) return null;
         var cluster = into.FindIndex(v => v.EndsWith(".Prefab") && ClusterLetter(v) == ClusterLetter(own));
         return cluster < 0 ? null : (to, cluster);
     }
@@ -95,10 +95,10 @@ internal static class ItemSwaps
         if (!run.FlatTops.TryGetValue(key, out var tops))
         {
             tops = [];
-            if (run.Shapes is MeshExport mesh && mesh.ItemFile(id) is { } file)
+            if (run.Shapes.ItemFile(id) is { } file)
                 try
                 {
-                    foreach (var piece in mesh.ExportItem(file, out _)?.Where(p => p.Visible) ?? [])
+                    foreach (var piece in run.Shapes.Plain.ExportItem(file, out _)?.Where(p => p.Visible) ?? [])
                         for (int t = 0; t + 2 < piece.Indices.Length; t += 3)
                         {
                             Vector3 V(int i) => new(piece.Positions[3 * i], piece.Positions[3 * i + 1], piece.Positions[3 * i + 2]);
