@@ -13,7 +13,6 @@ import {
   MeshBasicMaterial,
   MOUSE,
   PerspectiveCamera,
-  PlaneGeometry,
   Raycaster,
   Scene,
   Vector2,
@@ -24,7 +23,7 @@ import {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import type { InstanceInfo, SceneManifest } from '../api'
 import { categoryOf, type Category } from './categories'
-import { flatMaterial, SceneMaterials } from './materials'
+import { flatMaterial, groundHeight, SceneMaterials } from './materials'
 import { Picker } from './picker'
 
 interface Placed {
@@ -33,15 +32,26 @@ interface Placed {
   materials: Material[]
   matrix: Matrix4
   category: Category
+  // ground and terrain blocks draw their own ground; the base ground shows elsewhere
+  ownsGround: boolean
+  // block colour: 0 Default (as painted), 1 White .. 5 Black
+  tint: number
 }
 
 const CELL = { x: 32, y: 8, z: 32 }
+const tintColor = new Color()
 const SKY = 0x393939
 
 export interface MapSceneEvents {
   hover: (index: number | null) => void
   select: (index: number | null) => void
   textureLoaded: () => void
+  cameraMoved: () => void
+}
+
+export interface CameraState {
+  position: [number, number, number]
+  target: [number, number, number]
 }
 
 export interface PieceParts {
@@ -86,10 +96,13 @@ export class MapScene {
     this.scene.fog = new Fog(SKY, 4000, 12000)
     this.controls = new OrbitControls(this.camera, canvas)
     this.controls.mouseButtons = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.ROTATE }
+    // a drag pans about the distance to the orbit point: closer than this it crawls (a block is 32 m)
+    this.controls.minDistance = 16
     this.controls.zoomToCursor = true
     this.controls.screenSpacePanning = false
     this.controls.maxPolarAngle = Math.PI * 0.98
     this.controls.addEventListener('change', this.invalidate)
+    this.controls.addEventListener('change', () => this.events.cameraMoved())
 
     this.resize = new ResizeObserver(() => this.fit())
     this.resize.observe(canvas)
@@ -107,10 +120,10 @@ export class MapScene {
     this.materials = new SceneMaterials(manifest.materials, this.renderer, () => {
       this.invalidate()
       this.events.textureLoaded()
-    })
+    }, manifest.environment)
     const pieces = manifest.meshes.map((mesh) =>
       mesh.pieces.map((piece) => ({
-        geometry: this.pieceGeometry(buffer, piece.offset, piece.vertices, piece.indices),
+        geometry: this.pieceGeometry(buffer, piece.offset, piece.vertices, piece.indices, piece.colors),
         material: this.materials!.materials[piece.material] as Material,
       })),
     )
@@ -121,8 +134,10 @@ export class MapScene {
     }
     const marker = this.own(new ConeGeometry(3.5, 10, 10).translate(0, 8, 0))
     const markerMaterial = this.ownMaterial(flatMaterial([0.85, 0.9, 0.95]))
+    const treeMaterial = this.ownMaterial(flatMaterial([0.2, 0.42, 0.18]))
     for (const placeholder of manifest.placeholders) {
-      this.place(`placeholder:${placeholder.mesh}`, [marker], [markerMaterial], placeholder.m, { ...placeholder.info, placeholder: true })
+      const material = placeholder.info.missing === 'VegetTreeModel' ? treeMaterial : markerMaterial
+      this.place(`placeholder:${placeholder.mesh}`, [marker], [material], placeholder.m, { ...placeholder.info, placeholder: true })
     }
     const boxes = new Map<string, BufferGeometry>()
     const boxMaterial = this.ownMaterial(flatMaterial([0.9, 0.1, 0.8]))
@@ -136,7 +151,7 @@ export class MapScene {
     }
 
     this.buildInstances()
-    if ((manifest.environment ?? 'Stadium').startsWith('Stadium')) this.addGround()
+    this.addGround(manifest.environment)
     this.picker = new Picker(
       this.placed.map((placed) => ({
         geometries: placed.geometries,
@@ -193,6 +208,46 @@ export class MapScene {
     return box.getSize(new Vector3())
   }
 
+  cameraState(): CameraState {
+    const round = (v: Vector3) => [v.x, v.y, v.z].map((n) => Math.round(n * 10) / 10) as [number, number, number]
+    return { position: round(this.camera.position), target: round(this.controls.target) }
+  }
+
+  setCamera({ position, target }: CameraState) {
+    this.camera.position.set(...position)
+    this.controls.target.set(...target)
+    this.controls.update()
+    this.invalidate()
+  }
+
+  positionOf(index: number): Vector3 | null {
+    const placed = this.placed[index]
+    return placed ? new Vector3().setFromMatrixPosition(placed.matrix) : null
+  }
+
+  // x, y: 0..1 across the view from the top left; what a click there would hit, and its material
+  pickDetail(x: number, y: number) {
+    if (!this.picker) return null
+    const rect = this.canvas.getBoundingClientRect()
+    const ray = this.rayAt(rect.left + x * rect.width, rect.top + y * rect.height)
+    const hit = this.picker.hit(ray)
+    if (!hit) return null
+    const placed = this.placed[hit.index]
+    const point = ray.at(hit.distance, new Vector3())
+    return {
+      index: hit.index,
+      material: this.materials?.nameOf(placed.materials[hit.part]) ?? null,
+      point: [point.x, point.y, point.z].map((n) => Math.round(n * 100) / 100),
+      distance: Math.round(hit.distance * 10) / 10,
+    }
+  }
+
+  // rendered now: the drawing buffer is only readable in the same task
+  capture(): string {
+    this.renderer.render(this.scene, this.camera)
+    return this.canvas.toDataURL('image/png')
+  }
+
   frameAll() {
     if (!this.picker) return
     const { center, radius } = this.picker.bounds()
@@ -224,7 +279,9 @@ export class MapScene {
 
   private place(meshKey: string, geometries: BufferGeometry[], materials: Material[], m: number[], info: InstanceInfo) {
     // M is row-major with world = local * M, which is three's column-major layout
-    this.placed.push({ meshKey, geometries, materials, matrix: new Matrix4().fromArray(m), category: categoryOf(info) })
+    const ownsGround = info.kind.includes('block') && /\b(ground|terrain)\b/.test(info.tags ?? '')
+    const tint = typeof info.color === 'number' ? info.color : 0
+    this.placed.push({ meshKey, geometries, materials, matrix: new Matrix4().fromArray(m), category: categoryOf(info), ownsGround, tint })
   }
 
   private buildInstances() {
@@ -239,7 +296,11 @@ export class MapScene {
       const { geometries, materials, category } = group[0]
       geometries.forEach((geometry, i) => {
         const mesh = new InstancedMesh(geometry, materials[i], group.length)
-        group.forEach((placed, n) => mesh.setMatrixAt(n, placed.matrix))
+        group.forEach((placed, n) => {
+          mesh.setMatrixAt(n, placed.matrix)
+          // the colour index rides in the instance colour's red channel
+          mesh.setColorAt(n, tintColor.setRGB(placed.tint / 8, 0, 0))
+        })
         mesh.matrixAutoUpdate = false
         this.scene.add(mesh)
         const list = this.categoryMeshes.get(category)
@@ -249,20 +310,53 @@ export class MapScene {
     }
   }
 
-  private addGround() {
-    const size = 48 * 32
-    const geometry = this.own(new PlaneGeometry(size, size).rotateX(-Math.PI / 2))
-    const ground = new Mesh(geometry, this.ownMaterial(flatMaterial([0.16, 0.3, 0.09])))
-    ground.position.set(size / 2, 8 - 0.05, size / 2)
+  // cells without a ground or terrain block show the environment's base ground
+  private addGround(environment: string | null) {
+    const cell = CELL.x
+    const owned = new Set<string>()
+    let [minX, maxX, minZ, maxZ] = [0, 48, 0, 48]
+    const box = new Box3()
+    const part = new Box3()
+    for (const placed of this.placed) {
+      box.makeEmpty()
+      for (const geometry of placed.geometries) {
+        if (!geometry.boundingBox) geometry.computeBoundingBox()
+        box.union(part.copy(geometry.boundingBox!).applyMatrix4(placed.matrix))
+      }
+      if (box.isEmpty()) continue
+      // a hair inside, so a block doesn't claim the cells it only touches
+      const [x0, x1] = [Math.floor((box.min.x + 0.5) / cell), Math.floor((box.max.x - 0.5) / cell)]
+      const [z0, z1] = [Math.floor((box.min.z + 0.5) / cell), Math.floor((box.max.z - 0.5) / cell)]
+      ;[minX, maxX, minZ, maxZ] = [Math.min(minX, x0), Math.max(maxX, x1 + 1), Math.min(minZ, z0), Math.max(maxZ, z1 + 1)]
+      if (!placed.ownsGround) continue
+      for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) owned.add(`${x},${z}`)
+    }
+    const positions: number[] = []
+    // exact: it only fills cells no block owns, so nothing shares its plane
+    const y = groundHeight(environment)
+    for (let x = minX; x < maxX; x++) {
+      for (let z = minZ; z < maxZ; z++) {
+        if (owned.has(`${x},${z}`)) continue
+        const [ax, bx, az, bz] = [x * cell, (x + 1) * cell, z * cell, (z + 1) * cell]
+        positions.push(ax, y, az, ax, y, bz, bx, y, bz, ax, y, az, bx, y, bz, bx, y, az)
+      }
+    }
+    if (positions.length === 0) return
+    const geometry = this.own(new BufferGeometry())
+    geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3))
+    geometry.setAttribute('normal', new BufferAttribute(new Float32Array(positions.length).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3))
+    geometry.setAttribute('uv', new BufferAttribute(new Float32Array((positions.length / 3) * 2), 2))
+    const ground = new Mesh(geometry, this.materials!.ground())
     this.scene.add(ground)
   }
 
-  private pieceGeometry(buffer: ArrayBuffer, offset: number, vertices: number, indices: number) {
+  private pieceGeometry(buffer: ArrayBuffer, offset: number, vertices: number, indices: number, colors: boolean) {
     const geometry = new BufferGeometry()
     geometry.setAttribute('position', new BufferAttribute(new Float32Array(buffer, offset, vertices * 3), 3))
     geometry.setAttribute('normal', new BufferAttribute(new Float32Array(buffer, offset + vertices * 12, vertices * 3), 3))
     geometry.setAttribute('uv', new BufferAttribute(new Float32Array(buffer, offset + vertices * 24, vertices * 2), 2))
     geometry.setIndex(new BufferAttribute(new Uint32Array(buffer, offset + vertices * 32, indices), 1))
+    if (colors) geometry.setAttribute('cv', new BufferAttribute(new Float32Array(buffer, offset + vertices * 32 + indices * 4, vertices * 4), 4))
     return this.own(geometry)
   }
 
@@ -310,12 +404,16 @@ export class MapScene {
     this.invalidate()
   }
 
-  private pickAt(x: number, y: number): number | null {
-    if (!this.picker) return null
+  private rayAt(x: number, y: number) {
     const rect = this.canvas.getBoundingClientRect()
     const ndc = new Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1)
     this.raycaster.setFromCamera(ndc, this.camera)
-    return this.picker.pick(this.raycaster.ray)
+    return this.raycaster.ray
+  }
+
+  private pickAt(x: number, y: number): number | null {
+    if (!this.picker) return null
+    return this.picker.pick(this.rayAt(x, y))
   }
 
   private fit() {

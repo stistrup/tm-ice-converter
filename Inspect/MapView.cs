@@ -2,6 +2,7 @@ using System.Numerics;
 using System.Text.Json;
 using GBX.NET;
 using GBX.NET.Engines.Game;
+using GBX.NET.Engines.Plug;
 
 namespace TmIceConverter;
 
@@ -10,6 +11,7 @@ public sealed class MapView(BlockCatalog shapes)
 {
     private static readonly string GameData = Path.GetDirectoryName(Paths.ExtractedStadium)!;
 
+    private readonly MeshExporter exporter = new(shapes.Files, new Dictionary<string, string>()) { DynaObjects = true };
     private readonly Dictionary<string, List<ScenePiece>?> meshes = [];
     private readonly Dictionary<string, SceneMaterial> materials = [];
     private readonly List<SceneInstance> instances = [];
@@ -19,6 +21,7 @@ public sealed class MapView(BlockCatalog shapes)
     private readonly Dictionary<string, int> skipped = [];
     private readonly Dictionary<string, string> skipReasons = [];
     private readonly HashSet<string> missing = [];
+    private Dictionary<string, string> restyle = [];
 
     private readonly ILookup<string, string> materialFiles = Directory
         .EnumerateFiles(GameData, "*.Material.Gbx", new EnumerationOptions { RecurseSubdirectories = true, MatchCasing = MatchCasing.CaseInsensitive })
@@ -33,6 +36,7 @@ public sealed class MapView(BlockCatalog shapes)
 
     public SceneData Build(CGameCtnChallenge map)
     {
+        restyle = VistaRestyle(map.Collection?.ToString());
         AddBlocks(map);
         AddItems(map);
         return new SceneData(map.MapName, map.Collection?.ToString(),
@@ -43,6 +47,7 @@ public sealed class MapView(BlockCatalog shapes)
     private void AddBlocks(CGameCtnChallenge map)
     {
         var grid = new List<(CGameCtnBlock Block, ClipResolver.Placed Placed, int Mobil)>();
+        var cellsOf = new List<Int3[]>();
         foreach (var block in map.GetBlocks())
         {
             var name = block.Name;
@@ -65,6 +70,7 @@ public sealed class MapView(BlockCatalog shapes)
             var units = (custom is null ? shapes.Units(meshName, ground, variant) : shapes.Units(custom.Source, ground, custom.Variant)) ?? [new Int3(0, 0, 0)];
             var place = Placement.Of(block, (units.Max(u => u.X) + 1, units.Max(u => u.Z) + 1));
             grid.Add((block, new ClipResolver.Placed(meshName, ground, variant, place), mobil));
+            cellsOf.Add(units.Select(u => Placement.CellAt(Vector3.Transform(new Vector3(u.X * 32 + 16, u.Y * 8 + 4, u.Z * 32 + 16), place))).ToArray());
         }
 
         var resolver = new ClipResolver(shapes);
@@ -75,9 +81,17 @@ public sealed class MapView(BlockCatalog shapes)
 
         var shown = resolver.Resolve(grid.Select(g => g.Placed).ToList());
         var drop = Matrix4x4.CreateTranslation(0, -Placement.EnvironmentDrop(map.Collection?.ToString()), 0);
+        // a placed ground block replaces the terrain in its cells (the game hides it)
+        var built = Enumerable.Range(0, grid.Count).Where(i => grid[i].Block.IsGround && !shapes.IsTerrain(grid[i].Block.Name))
+            .SelectMany(i => cellsOf[i]).ToHashSet();
         for (int i = 0; i < grid.Count; i++)
         {
             var (block, placed, mobil) = grid[i];
+            if (shapes.IsTerrain(block.Name) && cellsOf[i].Any(built.Contains))
+            {
+                Bump(skipped, $"block {block.Name}: terrain under a placed block, hidden");
+                continue;
+            }
             var info = Info(block, null);
             if (placed.Name != block.Name) info["drawnAs"] = placed.Name;
             if (placed.Variant != BlockFlags.VariantOf(block)) info["shownVariant"] = placed.Variant;
@@ -95,6 +109,7 @@ public sealed class MapView(BlockCatalog shapes)
             ["variant"] = BlockFlags.VariantOf(block),
             ["mobil"] = BlockFlags.MobilOf(block),
             ["flags"] = $"0x{block.Flags:X8}",
+            ["color"] = (int)block.Color,
         };
         if (freePosition is { } p) info["position"] = new[] { p.X, p.Y, p.Z };
         else info["cell"] = new[] { block.Coord.X, block.Coord.Y, block.Coord.Z };
@@ -118,7 +133,13 @@ public sealed class MapView(BlockCatalog shapes)
         if (!meshes.ContainsKey(key))
         {
             var parts = shapes.FindPlacedBlockParts(meshName, ground, variant, mobil, clips);
-            meshes[key] = parts is null ? null : Pieces(shapes.Plain.Export(parts), shapes.MaterialModifierDir(meshName));
+            meshes[key] = parts is null ? null : Pieces(exporter.Export(parts), shapes.MaterialModifierOf(meshName));
+        }
+        // a body-less block (pillar) is only its clips: with all of them hidden the game draws nothing there either
+        if (meshes[key] is null && clips.Count == 0 && shapes.ClipSides(meshName, ground, variant).Count > 0)
+        {
+            Bump(skipped, $"block {meshName}: only clips, all hidden");
+            return;
         }
         if (meshes[key] is null)
         {
@@ -126,6 +147,9 @@ public sealed class MapView(BlockCatalog shapes)
             Bump(skipped, $"block {meshName}: no mesh, drawn as a box");
             var units = shapes.Units(meshName, ground, variant) ?? [new Int3(0, 0, 0)];
             info["units"] = new[] { units.Max(u => u.X) + 1, units.Max(u => u.Y) + 1, units.Max(u => u.Z) + 1 };
+            // why there's no mesh: a body-less block draws only the clips the resolver shows
+            info["clipSides"] = shapes.ClipSides(meshName, ground, variant).Sum(c => c.Clips.Count);
+            info["shownClips"] = clips.Count;
             boxes.Add(new SceneInstance(meshName, Flatten(place), info));
             return;
         }
@@ -141,7 +165,7 @@ public sealed class MapView(BlockCatalog shapes)
         if (!meshes.ContainsKey(key))
         {
             var json = Path.Combine(Paths.Work, "Mesh", custom.Item + ".pieces.json");
-            meshes[key] = File.Exists(json) ? Pieces(Jsonc.Load<List<MeshPiece>>(json), null) : null;
+            meshes[key] = File.Exists(json) ? Pieces(Jsonc.Load<List<MeshPiece>>(json), null, ours: true) : null;
         }
         if (meshes[key] is not { Count: > 0 }) return false;
         info["kind"] = "custom block";
@@ -164,14 +188,14 @@ public sealed class MapView(BlockCatalog shapes)
                 * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
             var key = "item:" + id;
             string? waypoint = null;
-            var info = new Dictionary<string, object> { ["kind"] = "item", ["name"] = id, ["position"] = new[] { p.X, p.Y, p.Z } };
+            var info = new Dictionary<string, object> { ["kind"] = "item", ["name"] = id, ["position"] = new[] { p.X, p.Y, p.Z }, ["color"] = (int)item.Color };
             if (id.StartsWith("IceConverter\\"))
             {
                 var name = id[(id.LastIndexOf('\\') + 1)..^".Item.gbx".Length];
                 if (!meshes.ContainsKey(key))
                 {
                     var json = Path.Combine(Paths.Work, "Mesh", name + ".pieces.json");
-                    meshes[key] = File.Exists(json) ? Pieces(Jsonc.Load<List<MeshPiece>>(json), null) : null;
+                    meshes[key] = File.Exists(json) ? Pieces(Jsonc.Load<List<MeshPiece>>(json), null, ours: true) : null;
                 }
                 waypoint = shapes.Waypoint(name[..name.IndexOf("_Ice")]);
                 info["kind"] = "ice item";
@@ -184,7 +208,7 @@ public sealed class MapView(BlockCatalog shapes)
                 {
                     List<MeshPiece>? pieces;
                     string? reason;
-                    try { pieces = shapes.Plain.ExportItem(path, out reason); }
+                    try { pieces = exporter.ExportItem(path, out reason); }
                     catch (Exception e) { pieces = null; reason = $"can't read ({e.GetType().Name})"; }
                     meshes[key] = pieces is null ? null : Pieces(pieces, null);
                     if (reason is not null) skipReasons[key] = reason;
@@ -192,8 +216,9 @@ public sealed class MapView(BlockCatalog shapes)
             }
             if (meshes[key] is not { Count: > 0 })
             {
+                info["missing"] = skipReasons.GetValueOrDefault(key, "no mesh");
                 placeholders.Add(new SceneInstance(id, Flatten(place), info));
-                Bump(skipped, $"item {id}: {skipReasons.GetValueOrDefault(key, "no mesh")}");
+                Bump(skipped, $"item {id}: {info["missing"]}");
                 continue;
             }
             instances.Add(new SceneInstance(key, Flatten(place), info));
@@ -201,19 +226,21 @@ public sealed class MapView(BlockCatalog shapes)
         }
     }
 
-    private List<ScenePiece> Pieces(IEnumerable<MeshPiece> pieces, string? modifierDir)
+    // ours: IceConverter blocks and items; their materials are the importer's, the vista doesn't restyle them
+    private List<ScenePiece> Pieces(IEnumerable<MeshPiece> pieces, MaterialModifier? modifier, bool ours = false)
         => pieces.Where(p => p.Visible && !p.Name.StartsWith("_socket_") && !p.Name.StartsWith("_trigger_"))
-            .Select(p => new ScenePiece(MaterialKey(p.Material, modifierDir), p.Positions, p.Normals, p.Uv0, p.Indices, p.Colors))
+            .Select(p => new ScenePiece(MaterialKey(p.Material, modifier, ours), p.Positions, p.Normals, p.Uv0, p.Indices, p.Colors))
             .ToList();
 
-    private string MaterialKey(string name, string? modifierDir)
+    private string MaterialKey(string name, MaterialModifier? modifier, bool ours)
     {
         string? path = null;
-        if (modifierDir is not null && FindFile(modifierDir, name + ".Material.Gbx") is { } m) path = m;
+        if (modifier is not null && modifier.Swaps.TryGetValue(name, out var swap) && FindFile(modifier.Folder, swap + ".Material.Gbx") is { } m) path = m;
         else if (name.IndexOf('_') is > 0 and var u
             && FindFile(Path.Combine(Paths.ExtractedStadium, "Media", "Modifier", name[..u]), name[(u + 1)..] + ".Material.Gbx") is { } i) path = i;
         else path = materialFiles[name].OrderBy(f => f.Contains("/Media/Material/") ? 0 : 1).FirstOrDefault();
 
+        if (path is not null && !ours && restyle.GetValueOrDefault(shapes.Files.RelativeToGameData(path).ToLowerInvariant()) is { } restyled) path = restyled;
         var key = path is null ? name : shapes.Files.RelativeToGameData(path);
         if (!materials.ContainsKey(key)) materials[key] = path is null ? new SceneMaterial(name, null, []) : Material(name, path);
         return key;
@@ -237,13 +264,54 @@ public sealed class MapView(BlockCatalog shapes)
                 var texHeader = Gbx.ParseHeader(texPath);
                 if (texHeader.RefTable?.Files.FirstOrDefault()?.FilePath is { } img)
                     image = Resolve(texPath, texHeader.RefTable.AncestorLevel, img);
+                if (image?.EndsWith(".TextureArray.Gbx", StringComparison.OrdinalIgnoreCase) == true) image = ArrayImage(image, stem);
+                // a decal set (the vegetation scatter) isn't the colour; the layer image sits under Image/
+                else if (image?.EndsWith(".Gbx", StringComparison.OrdinalIgnoreCase) == true) image = null;
             }
             else missing.Add(shapes.Files.RelativeToGameData(texPath));
             image ??= Path.Combine(Path.GetDirectoryName(texPath)!, "Image", stem + ".dds");
             if (!File.Exists(image)) { missing.Add(shapes.Files.RelativeToGameData(image)); image = null; }
             textures.Add(new SceneTexture(role, stem, image));
         }
-        return new SceneMaterial(name, shader, textures);
+        var table = refs.FirstOrDefault(f => f.EndsWith(".ColorTable.gbx.json", StringComparison.OrdinalIgnoreCase)) is { } t ? Tints(Resolve(path, ancestor, t)) : null;
+        return new SceneMaterial(name, shader, textures, table);
+    }
+
+    // a block's colour (White, Green, Blue, Red, Black) picks one; Default keeps the texture as painted
+    private static List<string>? Tints(string tableFile)
+    {
+        if (!File.Exists(tableFile)) return null;
+        using var json = JsonDocument.Parse(File.ReadAllText(tableFile), new JsonDocumentOptions { AllowTrailingCommas = true });
+        return json.RootElement.TryGetProperty("Colors", out var colors)
+            ? colors.EnumerateArray().Select(c => c.GetString() is { Length: >= 7 } hex ? hex[..7] : "#ffffff").ToList()
+            : null;
+    }
+
+    // on a vista the game swaps Stadium materials for <env>/Media/Modifier/StadiumOnTerrain/<name> (Deco becomes the vista's ground),
+    // listed in Stadium's StadiumOnTerrain game skin; game-data path (lower case) -> restyled file
+    private static Dictionary<string, string> VistaRestyle(string? collection)
+    {
+        if (collection is null or "Stadium2020" || !collection.All(char.IsLetterOrDigit)) return [];
+        var skinFile = Path.Combine(GameData, "Stadium", "GameSkin", "StadiumOnTerrain.GameSkin.gbx");
+        var dir = Path.Combine(GameData, collection, "Media", "Modifier", "StadiumOnTerrain");
+        if (!File.Exists(skinFile) || !Directory.Exists(dir)) return [];
+        var table = new Dictionary<string, string>();
+        foreach (var fid in Gbx.ParseNode<CPlugGameSkin>(skinFile).HeaderFids ?? [])
+        {
+            if (fid.Directory is not { } source || FindFile(dir, fid.Name + ".Material.Gbx") is not { } target) continue;
+            table[source.Replace('\\', '/').ToLowerInvariant()] = target;
+        }
+        return table;
+    }
+
+    // a texture array lists one image per layer; the texture's own name picks it
+    private static string? ArrayImage(string arrayFile, string stem)
+    {
+        if (!File.Exists(arrayFile)) return null;
+        var refs = Gbx.ParseHeader(arrayFile).RefTable;
+        return refs?.Files.FirstOrDefault(f => Path.GetFileName(f.FilePath.Replace('\\', '/')).Equals(stem + ".dds", StringComparison.OrdinalIgnoreCase)) is { } hit
+            ? Resolve(arrayFile, refs.AncestorLevel, hit.FilePath)
+            : null;
     }
 
     private static string? FindFile(string dir, string fileName)
@@ -284,6 +352,6 @@ public sealed record SceneInstance(string Mesh, float[] M, Dictionary<string, ob
 
 public sealed record SceneWaypoint(string Kind, string Mesh, float[] M);
 
-public sealed record SceneMaterial(string Name, string? Shader, List<SceneTexture> Textures);
+public sealed record SceneMaterial(string Name, string? Shader, List<SceneTexture> Textures, List<string>? Tints = null);
 
 public sealed record SceneTexture(string Role, string Name, string? Image);

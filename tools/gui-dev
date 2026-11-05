@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# gui-dev: API on :5199 (rebuilt and started again whenever it stops) + Vite on :5173 with hot reload.
+# Restart the API after C# changes: tools/gui-dev restart
+set -uo pipefail
+root="$(dirname "$(readlink -f "$0")")/.."
+
+if [ "${1:-}" = restart ]; then
+    pid=$(ss -ltnpH 'sport = :5199' | grep -o 'pid=[0-9]*' | head -1 | cut -d= -f2)
+    [ -n "$pid" ] && kill "$pid" && echo "API restarting" || echo "API not running"
+    exit 0
+fi
+
+(cd "$root/web" && exec npm run dev) &
+vite=$!
+trap 'kill $vite 2>/dev/null; exit 0' INT TERM EXIT
+
+while true; do
+    dotnet run --project "$root" -- gui --no-open
+    echo "API stopped, starting again"
+    sleep 1
+done

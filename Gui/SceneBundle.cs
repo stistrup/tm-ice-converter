@@ -11,7 +11,7 @@ namespace TmIceConverter;
 internal static class SceneBundle
 {
     // bump when the output changes
-    private const int Format = 2;
+    private const int Format = 17;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -47,7 +47,7 @@ internal static class SceneBundle
         var materialKeys = scene.Materials.Keys.ToList();
         var materialIndex = materialKeys.Select((key, i) => (key, i)).ToDictionary(x => x.key, x => x.i);
         var materials = materialKeys.Select(key => scene.Materials[key]).Select(m => new ManifestMaterial(m.Name, m.Shader,
-            m.Textures.Select(t => new ManifestTexture(t.Role, t.Name, t.Image is null ? null : Path.GetRelativePath(gameData, t.Image))).ToList())).ToList();
+            m.Textures.Select(t => new ManifestTexture(t.Role, t.Name, t.Image is null ? null : Path.GetRelativePath(gameData, t.Image))).ToList(), m.Tints)).ToList();
 
         var meshKeys = scene.Meshes.Keys.ToList();
         var meshIndex = meshKeys.Select((key, i) => (key, i)).ToDictionary(x => x.key, x => x.i);
@@ -62,7 +62,7 @@ internal static class SceneBundle
             scene.Placeholders, scene.Boxes, scene.Skipped);
     }
 
-    // one material's pieces merged. Layout at Offset: positions, normals, uvs (floats), indices (uint)
+    // one material's pieces merged. Layout at Offset: positions, normals, uvs (floats), indices (uint), then rgba (floats) when Colors
     private static ManifestPiece WritePiece(Stream stream, int material, List<ScenePiece> pieces)
     {
         var offset = stream.Position;
@@ -78,7 +78,11 @@ internal static class SceneBundle
             baseVertex += p.Positions.Length / 3;
             indexCount += shifted.Length;
         }
-        return new ManifestPiece(material, offset, vertices, indexCount);
+        // some shaders scale by them (TAddModCV: waypoint trigger glow)
+        var colors = pieces.Any(p => p.Colors is not null);
+        if (colors)
+            foreach (var p in pieces) Put(stream, p.Colors ?? Enumerable.Repeat(1f, p.Positions.Length / 3 * 4).ToArray());
+        return new ManifestPiece(material, offset, vertices, indexCount, colors);
     }
 
     private static void Put<T>(Stream stream, T[] values) where T : struct => stream.Write(MemoryMarshal.AsBytes(values.AsSpan()));
@@ -95,13 +99,13 @@ internal static class SceneBundle
         List<SceneInstance> Boxes,
         Dictionary<string, int> Skipped);
 
-    private sealed record ManifestMaterial(string Name, string? Shader, List<ManifestTexture> Textures);
+    private sealed record ManifestMaterial(string Name, string? Shader, List<ManifestTexture> Textures, List<string>? Tints);
 
     private sealed record ManifestTexture(string Role, string Name, string? Image);
 
     private sealed record ManifestMesh(string Key, List<ManifestPiece> Pieces);
 
-    private sealed record ManifestPiece(int Material, long Offset, int Vertices, int Indices);
+    private sealed record ManifestPiece(int Material, long Offset, int Vertices, int Indices, bool Colors);
 
     private sealed record ManifestInstance(int Mesh, float[] M, Dictionary<string, object> Info);
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -22,6 +23,7 @@ internal sealed partial class GuiServer(string url, string webRoot)
     };
 
     private readonly SemaphoreSlim building = new(1);
+    private readonly LiveLink live = new();
     private readonly Dictionary<string, (DateTime Modified, string Name)> names = [];
 
     public async Task RunAsync()
@@ -42,7 +44,12 @@ internal sealed partial class GuiServer(string url, string webRoot)
         try
         {
             var path = request.Url!.AbsolutePath;
-            if (request.HttpMethod != "GET") await Text(response, 405, "GET only");
+            if (request.HttpMethod == "POST") await Post(request, response, path);
+            else if (request.HttpMethod != "GET") await Text(response, 405, "GET or POST only");
+            else if (path == "/api/state") await Bytes(response, 200, "application/json", Encoding.UTF8.GetBytes(live.State));
+            else if (path == "/api/events") await live.Events(response);
+            else if (path == "/api/shot") await Shot(response);
+            else if (path == "/api/pick") await Pick(request, response);
             else if (path == "/api/maps") await Json(response, ListMaps());
             else if (path == "/api/scene") await Scene(request, response);
             else if (path == "/api/geometry") await Geometry(request, response);
@@ -60,6 +67,52 @@ internal sealed partial class GuiServer(string url, string webRoot)
         {
             try { response.Close(); } catch (Exception) { }
         }
+    }
+
+    private async Task Post(HttpListenerRequest request, HttpListenerResponse response, string path)
+    {
+        using var body = new MemoryStream();
+        await request.InputStream.CopyToAsync(body);
+        if (path == "/api/state")
+        {
+            live.SetState(Encoding.UTF8.GetString(body.ToArray()));
+            await Text(response, 200, "ok");
+        }
+        else if (path is "/api/answer" or "/api/shot")
+            await Text(response, live.Answered(request.QueryString["id"], body.ToArray()) ? 200 : 404, "");
+        else if (path == "/api/command")
+        {
+            var command = Encoding.UTF8.GetString(body.ToArray());
+            try { JsonDocument.Parse(command).Dispose(); }
+            catch (JsonException e) { await Text(response, 400, e.Message); return; }
+            var pages = await live.Send(command);
+            await Text(response, pages > 0 ? 200 : 503, pages > 0 ? $"sent to {pages} page(s)" : "no page open");
+        }
+        else await Text(response, 404, "no such endpoint");
+    }
+
+    private async Task Shot(HttpListenerResponse response)
+    {
+        if (await live.Shot() is { } png)
+        {
+            response.Headers["X-Shot-File"] = LiveLink.ShotFile;
+            await Bytes(response, 200, "image/png", png);
+        }
+        else await Text(response, 503, "no page answered");
+    }
+
+    // x, y: 0..1 across the page's 3D view, from the top left
+    private async Task Pick(HttpListenerRequest request, HttpListenerResponse response)
+    {
+        var at = (X: request.QueryString["x"], Y: request.QueryString["y"]);
+        if (!double.TryParse(at.X, CultureInfo.InvariantCulture, out var x) || !double.TryParse(at.Y, CultureInfo.InvariantCulture, out var y))
+        {
+            await Text(response, 400, "x and y: 0..1");
+            return;
+        }
+        var fields = string.Create(CultureInfo.InvariantCulture, $"\"x\":{x},\"y\":{y}");
+        if (await live.Ask("pick", fields) is { } json) await Bytes(response, 200, "application/json", json);
+        else await Text(response, 503, "no page answered");
     }
 
     private List<MapEntry> ListMaps()

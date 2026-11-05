@@ -75,6 +75,11 @@ export class Picker {
   }
 
   pick(ray: Ray): number | null {
+    return this.hit(ray)?.index ?? null
+  }
+
+  // distance in world units along a normalized ray; part = which of the instance's geometries
+  hit(ray: Ray): { index: number; part: number; distance: number } | null {
     const candidates: { index: number; near: number }[] = []
     const { x: ox, y: oy, z: oz } = ray.origin
     const { x: dx, y: dy, z: dz } = ray.direction
@@ -90,32 +95,34 @@ export class Picker {
     }
     candidates.sort((a, b) => a.near - b.near)
 
-    let best = Infinity
+    let best = { distance: Infinity, part: -1 }
     let hit: number | null = null
     for (const { index, near } of candidates) {
-      if (near > best) break
-      const t = this.hitInstance(this.instances[index], ray, best)
-      if (t < best) {
-        best = t
+      if (near > best.distance) break
+      const found = this.hitInstance(this.instances[index], ray, best.distance)
+      if (found.distance < best.distance) {
+        best = found
         hit = index
       }
     }
-    return hit
+    return hit === null ? null : { index: hit, ...best }
   }
 
-  private hitInstance(instance: PickInstance, ray: Ray, limit: number): number {
+  private hitInstance(instance: PickInstance, ray: Ray, limit: number): { distance: number; part: number } {
     inverse.copy(instance.matrix).invert()
     origin.copy(ray.origin).applyMatrix4(inverse)
     // not normalized: t stays in world units
     direction.copy(ray.direction).applyMatrix3(linear.setFromMatrix4(inverse))
     let best = limit
-    for (const geometry of instance.geometries) {
+    let part = -1
+    instance.geometries.forEach((geometry, g) => {
       const positions = geometry.attributes.position.array
       const indices = geometry.index!.array
       for (let i = 0; i < indices.length; i += 3) {
-        best = hitTriangle(positions, indices[i] * 3, indices[i + 1] * 3, indices[i + 2] * 3, best)
+        const t = hitTriangle(positions, indices[i] * 3, indices[i + 1] * 3, indices[i + 2] * 3, best)
+        if (t < best) [best, part] = [t, g]
       }
-    }
-    return best
+    })
+    return { distance: best, part }
   }
 }

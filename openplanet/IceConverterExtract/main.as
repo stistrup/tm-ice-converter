@@ -16,6 +16,7 @@ void RenderMenu()
     if (UI::MenuItem("\\$9cf" + Icons::Snowflake + "\\$z Extract vegetation models (full size)", "", false, !g_running)) {
         startnew(RunVeget);
     }
+    RenderDumpMenu();
     RenderShadowsMenu();
 }
 
@@ -277,7 +278,7 @@ void FollowTable(const string &in gamePath, bool extractedNow = false)
     } catch {
         warn("can't read the references of " + gamePath + ": " + getExceptionInfo());
     }
-    if (g_followed.GetSize() % 50 == 0) yield();
+    DumpYield();
     for (uint i = 0; i < refs.Length; i++) FollowTable(refs[i]);
 }
 

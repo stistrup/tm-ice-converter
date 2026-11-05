@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Text.RegularExpressions;
 using GBX.NET;
+using GBX.NET.Engines.Plug;
 using GBX.NET.Engines.Game;
 using GBX.NET.Engines.GameData;
 using GBX.NET.Engines.Meta;
@@ -142,13 +143,26 @@ public sealed class BlockCatalog
 
     private static string? NonEmpty(string? text) => string.IsNullOrEmpty(text) ? null : text;
 
-    public string? MaterialModifierDir(string blockName)
+    // a block's TerrainModifier: a material folder plus a game skin listing which materials it swaps
+    // (TrackWallToDecoCliff: only TrackWall, from PlatformGrass). GBX.NET can't read the modifier's body; its paths are plain text
+    public MaterialModifier? MaterialModifierOf(string blockName)
     {
         if (!TryLoadBlock(blockName, out var block) || block.Info.MaterialModifierFile?.FilePath is not { } file) return null;
         var ancestor = Gbx.ParseHeader(block.Path).RefTable?.AncestorLevel ?? 0;
-        var dir = GameFiles.ResolveRef(block.Path, ancestor, file);
-        dir = dir[..dir.IndexOf('.', dir.LastIndexOf('/'))];
-        return Directory.Exists(dir) ? dir : null;
+        var modifierFile = GameFiles.ResolveRef(block.Path, ancestor, file);
+        if (!File.Exists(modifierFile)) return null;
+        var text = System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(modifierFile));
+        var gameData = Path.GetDirectoryName(stadiumDir)!;
+        var folder = Regex.Match(text, @"[A-Za-z0-9_]+\\Media\\Modifier\\[A-Za-z0-9_]+\\") is { Success: true } f
+            ? Path.Combine(gameData, f.Value.Replace('\\', '/').TrimEnd('/')) : null;
+        var skin = Regex.Match(text, @"([A-Za-z0-9_]+)\.GameSkin\.gbx", RegexOptions.IgnoreCase) is { Success: true } k
+            ? Path.Combine(stadiumDir, "GameSkin", k.Groups[1].Value + ".GameSkin.gbx") : null;
+        if (folder is null || !Directory.Exists(folder) || skin is null || !File.Exists(skin)) return null;
+        var swaps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var fid in Gbx.ParseHeaderNode<CPlugGameSkin>(skin).HeaderFids ?? [])
+            if (fid.Directory is { } source)
+                swaps.TryAdd(Path.GetFileName(source.Replace('\\', '/')).Split('.')[0], fid.Name.TrimStart('*'));
+        return new MaterialModifier(folder, swaps);
     }
 
     private static CGameCtnBlockInfoVariant? PickVariant(CGameCtnBlockInfo info, bool ground, int index)
@@ -279,3 +293,6 @@ public sealed class BlockCatalog
         return variant.BlockUnitModels is { Length: > 0 } units ? units.Select(u => u.RelativeOffset).ToList() : [new Int3(0, 0, 0)];
     }
 }
+
+// swaps: game material name -> the name to load from Folder instead
+public sealed record MaterialModifier(string Folder, IReadOnlyDictionary<string, string> Swaps);

@@ -3,11 +3,15 @@ import { onMounted } from 'vue'
 import MapList from './components/MapList.vue'
 import MapViewport from './components/MapViewport.vue'
 import StatusBar from './components/StatusBar.vue'
+import { startLiveLink } from './live'
 import { useMapStore } from './stores/map'
 
 const store = useMapStore()
 
-onMounted(store.loadMaps)
+onMounted(() => {
+  void store.loadMaps()
+  startLiveLink()
+})
 </script>
 
 <template>

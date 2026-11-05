@@ -22,7 +22,8 @@ export const useMapStore = defineStore('map', () => {
   const selected = ref<number | null>(null)
   const view = shallowRef<MapScene | null>(null)
   const textureLoads = ref(0)
-  const hidden = ref<Category[]>(['terrain'])
+  const cameraMoves = ref(0)
+  const hidden = ref<Category[]>([])
 
   let loadId = 0
 
@@ -114,6 +115,7 @@ export const useMapStore = defineStore('map', () => {
     categoryCounts,
     view,
     textureLoads,
+    cameraMoves,
     loadMaps,
     openMap,
     toggleCategory,

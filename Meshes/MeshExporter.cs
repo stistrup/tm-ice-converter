@@ -1,5 +1,6 @@
 using System.Numerics;
 using GBX.NET;
+using GBX.NET.Components;
 using GBX.NET.Engines.GameData;
 using GBX.NET.Engines.Meta;
 using GBX.NET.Engines.Plug;
@@ -19,6 +20,9 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
     public Vector3 Up { get; init; } = Vector3.UnitY;
 
     public Func<Vector3, bool>? KeepFace { get; init; }
+
+    // moving parts (flags, pistons) in their rest pose: for viewing only, a block can't move them
+    public bool DynaObjects { get; init; }
     public bool PlatformLayout { get; init; }
 
     // material for visual faces that touch a border (the road lip under it): null = as usual, "" = left out
@@ -50,7 +54,7 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
                 AddPrefab(prefab, itemPath, Matrix4x4.Identity, pieces, depth: 0);
                 break;
             case CGameCommonItemEntityModel { StaticObject: { } som }:
-                AddStaticObject(som, Matrix4x4.Identity, Path.GetFileNameWithoutExtension(itemPath), pieces);
+                AddStaticObject(som, Matrix4x4.Identity, Path.GetFileNameWithoutExtension(itemPath), pieces, itemPath);
                 break;
             // entity in a separate file: take it from the ref table
             case null when Gbx.ParseHeader(itemPath).RefTable?.Files.FirstOrDefault(f => f.FilePath.EndsWith(".Prefab.Gbx", StringComparison.OrdinalIgnoreCase)) is { } prefabRef:
@@ -74,7 +78,7 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
             return null;
         }
         if (kind == "Prefab") AddPrefab(target, Matrix4x4.Identity, pieces, depth: 0);
-        else AddStaticObject(Gbx.ParseNode<CPlugStaticObjectModel>(target), Matrix4x4.Identity, Path.GetFileNameWithoutExtension(target), pieces);
+        else if (files.LoadStaticObject(target) is { } som) AddStaticObject(som, Matrix4x4.Identity, Path.GetFileNameWithoutExtension(target), pieces, target);
         return pieces;
     }
 
@@ -117,7 +121,10 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
             switch (ent.Model)
             {
                 case CPlugStaticObjectModel som:
-                    if (pieces is not null) AddStaticObject(som, world, $"{label}_{i}", pieces);
+                    if (pieces is not null) AddStaticObject(som, world, $"{label}_{i}", pieces, path);
+                    break;
+                case CPlugDynaObjectModel dyna:
+                    if (pieces is not null && DynaObjects) AddDynaObject(dyna, world, $"{label}_{i}", pieces, path);
                     break;
                 case CPlugPrefab nested:
                     var nestedPath = ent.ModelFile is { } nf ? GameFiles.ResolveRef(path, ancestor, nf.FilePath) : path;
@@ -127,6 +134,14 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
                     var target = GameFiles.ResolveRef(path, ancestor, file.FilePath);
                     if (target.EndsWith(".Prefab.Gbx", StringComparison.OrdinalIgnoreCase))
                         AddPrefab(target, world, pieces, depth + 1, trees);
+                    else if (target.EndsWith(".StaticObject.Gbx", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (pieces is not null && files.LoadStaticObject(target) is { } fileSom) AddStaticObject(fileSom, world, $"{label}_{i}", pieces, target);
+                    }
+                    else if (target.EndsWith(".DynaObject.Gbx", StringComparison.OrdinalIgnoreCase))
+                    {
+                        if (pieces is not null && DynaObjects && files.LoadDynaObject(target) is { } fileDyna) AddDynaObject(fileDyna, world, $"{label}_{i}", pieces, target);
+                    }
                     else if (target.EndsWith(".VegetTreeModel.Gbx", StringComparison.OrdinalIgnoreCase))
                         trees?.Add((Path.GetFileName(target)[..^".VegetTreeModel.Gbx".Length], world));
                     else if (pieces is not null)
@@ -139,14 +154,24 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
         }
     }
 
-    private void AddStaticObject(CPlugStaticObjectModel som, Matrix4x4 world, string label, List<MeshPiece> pieces)
+    private CPlugSolid2Model? ExternalMesh(GbxRefTableFile? file, string source)
+        => file is null ? null : files.LoadMesh(GameFiles.ResolveRef(source, Gbx.ParseHeader(source).RefTable?.AncestorLevel ?? 0, file.FilePath));
+
+    private void AddDynaObject(CPlugDynaObjectModel dyna, Matrix4x4 world, string label, List<MeshPiece> pieces, string sourceFile)
+    {
+        if ((dyna.Mesh ?? ExternalMesh(dyna.MeshFile, sourceFile)) is { } mesh)
+            AddStaticObject(new CPlugStaticObjectModel { Mesh = mesh }, world, label, pieces, sourceFile);
+    }
+
+    // sourceFile: the file whose ref table holds som's refs
+    private void AddStaticObject(CPlugStaticObjectModel som, Matrix4x4 world, string label, List<MeshPiece> pieces, string sourceFile)
     {
         if (collectingBorders)
         {
             lips!.Collect(som, world);
             return;
         }
-        if (som.Mesh is { } mesh)
+        if ((som.Mesh ?? ExternalMesh(som.MeshFile, sourceFile)) is { } mesh)
         {
             // best LOD only
             var geoms = mesh.ShadedGeoms ?? [];
@@ -155,13 +180,12 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
             foreach (var (geom, gi) in geoms.Select((g, gi) => (g, gi)).Where(x => x.g.LodMask == 0 ? !hasLods : (x.g.LodMask & bestLod) != 0))
             {
                 if (mesh.Visuals?[geom.VisualIndex] is not CPlugVisualIndexedTriangles vis) continue;
-                var stream = vis.VertexStreams?.FirstOrDefault();
-                if (stream?.Positions is not { } pos || vis.IndexBuffer?.Indices is not { } idx) continue;
+                if (vis.IndexBuffer?.Indices is not { } idx || VertsOf(vis, idx) is not { } vertices) continue;
 
                 var source = MaterialName(mesh, geom.MaterialIndex);
                 if (MapMaterial(source) is "") continue;
                 if (KeepMaterial is { } keep && !keep(source)) continue;
-                var worldPos = Transform(pos, world);
+                var worldPos = Transform(vertices.Positions, world);
                 idx = KeptFaces(worldPos, idx);
                 var lipAs = LipAs?.Invoke(source);
                 int[] lip = [];
@@ -170,15 +194,15 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
                 {
                     // the game gives the hidden lip no lightmap space
                     pieces.Add(Lightmaps.Projected(new MeshPiece($"_notcollidable_{label}_v{gi}_lip", lipAs!, Visible: true, Collidable: false,
-                        SkinLift.Lifted(worldPos, lip, Lift, Up), stream.Normals is { } ln ? TransformNormals(ln, world) : null, Uv(stream, 0), null, lip)));
+                        SkinLift.Lifted(worldPos, lip, Lift, Up), vertices.Normals is { } ln ? TransformNormals(ln, world) : null, vertices.Uv0, null, lip)));
                 }
                 if (idx.Length == 0) continue;
                 var positions = SkinLift.Lifted(worldPos, idx, Lift, Up);
                 var piece = new MeshPiece(
                     $"_notcollidable_{label}_v{gi}", MapMaterial(source), Visible: true, Collidable: false,
-                    positions, stream.Normals is { } n ? TransformNormals(n, world) : null,
-                    SnowLaidOut(source) ? RoadLayout.PlainSnowUv(positions) : PlatformLayout || PlatformLaidOut.Contains(source) ? RoadLayout.PlatformUv(positions) : Uv(stream, 0),
-                    Uv(stream, 1), idx, Colors(stream));
+                    positions, vertices.Normals is { } n ? TransformNormals(n, world) : null,
+                    SnowLaidOut(source) ? RoadLayout.PlainSnowUv(positions) : PlatformLayout || PlatformLaidOut.Contains(source) ? RoadLayout.PlatformUv(positions) : vertices.Uv0,
+                    vertices.Uv1, idx, vertices.Colors);
                 if (Lift != 0) piece = SkinLift.WithSkirt(piece, worldPos, Lift / MathF.Tan(SkirtAngle * MathF.PI / 180));
                 if (piece.Uv1 is null && !source.StartsWith("Decal")) piece = Lightmaps.Projected(piece);
                 if (PlatformLaidOut.Contains(source)) roadLaid.Add(piece);
@@ -237,6 +261,28 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
         if (mesh.MaterialIds is { } ids && index < ids.Length) return ids[index];
         return "Unknown";
     }
+
+    private sealed record Verts(Vec3[] Positions, Vec3[]? Normals, float[]? Uv0, float[]? Uv1, float[]? Colors);
+
+    // older meshes keep vertices on the visual; frames past the indexed ones are vertex animation (flags)
+    private static Verts? VertsOf(CPlugVisualIndexedTriangles vis, int[] indices)
+    {
+        if (vis.VertexStreams?.FirstOrDefault() is { Positions: { } pos } stream)
+            return new Verts(pos, stream.Normals, Uv(stream, 0), Uv(stream, 1), Colors(stream));
+        if (vis.Vertices is not { Length: > 0 } all || indices.Length == 0) return null;
+        var count = indices.Max() + 1;
+        if (count > all.Length) return null;
+        var frame = all[..count];
+        var normals = frame.All(v => v.Normal is not null) ? frame.Select(v => v.Normal!.Value).ToArray() : null;
+        var colors = frame.All(v => v.Color is not null) ? frame.SelectMany(v => new[] { v.Color!.Value.X, v.Color.Value.Y, v.Color.Value.Z, v.Color.Value.W }).ToArray() : null;
+        return new Verts(frame.Select(v => v.Position).ToArray(), normals, LegacyUv(vis, 0, count), LegacyUv(vis, 1, count), colors);
+    }
+
+    // V counts up here, down in vertex streams (flag cloth vs its pole, both checked against the game)
+    private static float[]? LegacyUv(CPlugVisualIndexedTriangles vis, int set, int count)
+        => vis.TexCoords is { } sets && set < sets.Length && sets[set].TexCoords is { } uvs && uvs.Length >= count
+            ? uvs[..count].SelectMany(t => new[] { t.UV.X, 1 - t.UV.Y }).ToArray()
+            : null;
 
     private static float[]? Colors(CPlugVertexStream stream)
         => stream.Colors is { } sets && sets.TryGetValue(0, out var c)

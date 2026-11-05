@@ -1,4 +1,5 @@
 using GBX.NET;
+using GBX.NET.Engines.MwFoundations;
 using GBX.NET.Engines.Plug;
 
 namespace TmIceConverter;
@@ -6,7 +7,7 @@ namespace TmIceConverter;
 // the extracted game data: loads prefabs, remembers what's missing
 public sealed class GameFiles(string stadiumDir)
 {
-    private readonly Dictionary<string, CPlugPrefab?> prefabCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, CMwNod?> cache = new(StringComparer.OrdinalIgnoreCase);
 
     public string StadiumDir => stadiumDir;
 
@@ -19,10 +20,18 @@ public sealed class GameFiles(string stadiumDir)
 
     public string RelativeToGameData(string path) => Path.GetRelativePath(Path.GetDirectoryName(stadiumDir)!, path).Replace('\\', '/');
 
-    public CPlugPrefab? LoadPrefab(string path)
+    public CPlugPrefab? LoadPrefab(string path) => Load<CPlugPrefab>(path);
+
+    public CPlugStaticObjectModel? LoadStaticObject(string path) => Load<CPlugStaticObjectModel>(path);
+
+    public CPlugSolid2Model? LoadMesh(string path) => Load<CPlugSolid2Model>(path);
+
+    public CPlugDynaObjectModel? LoadDynaObject(string path) => Load<CPlugDynaObjectModel>(path);
+
+    private T? Load<T>(string path) where T : CMwNod, new()
     {
-        if (prefabCache.TryGetValue(path, out var cached)) return cached;
-        CPlugPrefab? prefab = null;
+        if (cache.TryGetValue(path, out var cached)) return cached as T;
+        T? node = null;
         if (!File.Exists(path))
         {
             Warnings.Add($"missing {Path.GetRelativePath(stadiumDir, path)} (not extracted)");
@@ -30,10 +39,11 @@ public sealed class GameFiles(string stadiumDir)
         }
         else
         {
-            try { prefab = Gbx.ParseNode<CPlugPrefab>(path); }
+            try { node = Gbx.ParseNode<T>(path); }
             catch (Exception e) { Warnings.Add($"cannot read {Path.GetFileName(path)}: {e.GetType().Name}"); }
         }
-        return prefabCache[path] = prefab;
+        cache[path] = node;
+        return node;
     }
 
     public static string ResolveRef(string fromFile, int ancestorLevel, string refPath)

@@ -29,8 +29,10 @@ function createView() {
   return markRaw(
     new MapScene(canvas.value!, {
       hover: (index) => (store.hovered = index),
-      select: (index) => (store.selected = index),
+      // clicking the selected piece again clears the selection
+      select: (index) => (store.selected = index === store.selected ? null : index),
       textureLoaded: () => store.textureLoads++,
+      cameraMoved: () => store.cameraMoves++,
     }),
   )
 }

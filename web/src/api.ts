@@ -16,6 +16,8 @@ export interface SceneMaterial {
   name: string
   shader: string | null
   textures: SceneTexture[]
+  // colour table, one per block colour White..Black
+  tints: string[] | null
 }
 
 export interface ScenePiece {
@@ -23,6 +25,8 @@ export interface ScenePiece {
   offset: number
   vertices: number
   indices: number
+  // rgba per vertex after the indices
+  colors: boolean
 }
 
 export interface SceneMesh {
