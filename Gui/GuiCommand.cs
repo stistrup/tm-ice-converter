@@ -15,7 +15,7 @@ internal sealed class GuiCommand(string dataDir)
             Console.WriteLine($"No built page in {webRoot}: run npm install and npm run build in web/ (the API still runs).");
 
         var url = $"http://localhost:{port}/";
-        var server = new GuiServer(url, webRoot);
+        var server = new GuiServer(url, webRoot, new ConversionPreview(dataDir));
         Console.WriteLine($"GUI on {url} (Ctrl+C to stop)");
         if (!noOpen) Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
         server.RunAsync().GetAwaiter().GetResult();

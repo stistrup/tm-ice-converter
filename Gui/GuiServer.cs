@@ -9,7 +9,7 @@ using GBX.NET.Engines.Game;
 namespace TmIceConverter;
 
 // localhost only; HttpListener rejects other Host headers
-internal sealed partial class GuiServer(string url, string webRoot)
+internal sealed partial class GuiServer(string url, string webRoot, ConversionPreview preview)
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -54,6 +54,19 @@ internal sealed partial class GuiServer(string url, string webRoot)
             else if (path == "/api/scene") await Scene(request, response);
             else if (path == "/api/geometry") await Geometry(request, response);
             else if (path == "/api/texture") await Texture(request, response);
+            else if (path == "/api/preview") await Preview(request, response);
+            else if (path == "/api/preview-build") await Json(response, preview.Building());
+            else if (path == "/api/preview-scene")
+            {
+                if (preview.AddedScene(request.QueryString["id"] ?? "") is not { } scene) await Text(response, 404, "no such preview");
+                else if (request.QueryString["part"] == "geometry") await Bytes(response, 200, "application/octet-stream", scene.Geometry);
+                else await Bytes(response, 200, "application/json", scene.Manifest);
+            }
+            else if (path == "/api/options")
+            {
+                if (MapFile(request) is { } map) await Json(response, preview.OptionsOf(map));
+                else await Text(response, 404, "no such map");
+            }
             else if (path.StartsWith("/api/")) await Text(response, 404, "no such endpoint");
             else await Static(response, path);
         }
@@ -80,6 +93,7 @@ internal sealed partial class GuiServer(string url, string webRoot)
         }
         else if (path is "/api/answer" or "/api/shot")
             await Text(response, live.Answered(request.QueryString["id"], body.ToArray()) ? 200 : 404, "");
+        else if (path == "/api/preview") await Preview(request, response, body.ToArray());
         else if (path == "/api/command")
         {
             var command = Encoding.UTF8.GetString(body.ToArray());
@@ -158,6 +172,35 @@ internal sealed partial class GuiServer(string url, string webRoot)
         var file = SceneBundle.GeometryOf(map);
         if (!File.Exists(file)) { await Text(response, 404, "scene not built"); return; }
         await SendFile(response, file, "application/octet-stream");
+    }
+
+    // set=name=true,name=false: options over the map's own
+    // POST body: { "picks": { "<piece key>": "<choice>" } }
+    private async Task Preview(HttpListenerRequest request, HttpListenerResponse response, byte[]? body = null)
+    {
+        var picks = new Dictionary<string, string>();
+        if (body is { Length: > 0 })
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("picks", out var list))
+                    foreach (var pick in list.EnumerateObject())
+                        if (pick.Value.GetString() is { } choice && Translations.PieceChoices.Contains(choice)) picks[pick.Name] = choice;
+                        else { await Text(response, 400, $"bad pick for '{pick.Name}'"); return; }
+            }
+            catch (JsonException e) { await Text(response, 400, e.Message); return; }
+        }
+        if (MapFile(request) is not { } map) { await Text(response, 404, "no such map"); return; }
+        var settings = new List<(string, bool)>();
+        foreach (var pair in (request.QueryString["set"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (pair.Split('=') is not [var name, var value] || !bool.TryParse(value, out var on)) { await Text(response, 400, $"bad setting '{pair}'"); return; }
+            try { new ConvertOptions().With(name, on); }
+            catch (FormatException e) { await Text(response, 400, e.Message); return; }
+            settings.Add((name, on));
+        }
+        await Json(response, await Task.Run(() => preview.For(map, settings, picks)).ConfigureAwait(false));
     }
 
     private async Task Texture(HttpListenerRequest request, HttpListenerResponse response)

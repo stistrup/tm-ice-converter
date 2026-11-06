@@ -20,8 +20,7 @@ internal static class Gates
             Bump(run.Report.EngineOff, (name, ""));
             return true;
         }
-        var stripped = name.Replace("SpecialNoEngine", "");
-        if (options.EngineOffToPlain && new[] { stripped, stripped + "Base", stripped + "Straight" }.FirstOrDefault(run.KnownBlocks.Contains) is { } plain)
+        if (options.EngineOffToPlain && PlainOf(name, run) is { } plain)
         {
             Bump(run.Report.EngineOff, (name, plain));
             block.Name = plain;
@@ -32,6 +31,13 @@ internal static class Gates
             block.Name = reset;
         }
         return false;
+    }
+
+    // the block without its effect: RoadTechSpecialTurbo -> RoadTechStraight
+    public static string? PlainOf(string name, ConversionRun run)
+    {
+        var stripped = System.Text.RegularExpressions.Regex.Replace(name, @"Special(TurboRoulette|Turbo2|Turbo|Boost2|Boost|NoEngine|NoSteering|NoBrake|SlowMotion|Fragile|Reset|Cruise)", "");
+        return stripped == name ? null : new[] { stripped, stripped + "Base", stripped + "Straight" }.FirstOrDefault(run.KnownBlocks.Contains);
     }
 
     public static void RemoveEngineOffItems(ConversionRun run)

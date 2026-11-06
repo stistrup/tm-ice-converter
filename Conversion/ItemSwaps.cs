@@ -14,19 +14,22 @@ internal static class ItemSwaps
         foreach (var item in run.Map.GetAnchoredObjects())
         {
             if (item.ItemModel is not { Author: "Nadeo" } model) continue;
-            if (run.Rules.RemovesItem(model.Id, new Vector3(item.AbsolutePositionInMap.X, item.AbsolutePositionInMap.Y, item.AbsolutePositionInMap.Z)))
+            var at = new Vector3(item.AbsolutePositionInMap.X, item.AbsolutePositionInMap.Y, item.AbsolutePositionInMap.Z);
+            var picked = run.Rules.ChoiceAt(model.Id, at);
+            if (picked == "remove" || picked is null && run.Rules.RemovesItem(model.Id, at))
             { removed.Add(item); Bump(run.Report.RemovedByList, model.Id); continue; }
-            if (run.Rules.KeepsItem(model.Id)) { Bump(run.Report.KeptByList, model.Id); continue; }
+            if (picked == "keep" || picked is null && run.Rules.KeepsItem(model.Id)) { Bump(run.Report.KeptByList, model.Id); continue; }
             var p = item.AbsolutePositionInMap;
             // "<Env>:<Item>" beats the bare id
             bool Find(Dictionary<string, string> table, out string to)
                 => table.TryGetValue($"{run.Map.Collection}:{model.Id}", out to!) || table.TryGetValue(model.Id, out to!);
             // the swap tables are all vegetation
-            var trees = run.Rules.Options.ConvertTrees;
+            // frozen: swapped whatever the options and the snow around say
+            var (trees, frozen) = (run.Rules.Options.ConvertTrees || picked == "frozen", picked == "frozen");
             var to = "";
             var always = trees && Find(run.Translations.Items, out to);
             if ((always || trees && Find(run.Translations.ItemsOnSnow, out to)) && VariantSwap(run, item, to) is var (target, variant)
-                && (always || snow.Touches(new Vector3(p.X, p.Y, p.Z), TreeHeight(target))))
+                && (always || frozen || snow.Touches(new Vector3(p.X, p.Y, p.Z), TreeHeight(target))))
             {
                 item.ItemModel = model with { Id = target, Collection = new Id(26) }; // Stadium2020
                 item.Flags = (short)(item.Flags & ~VariantBits | variant << 8);

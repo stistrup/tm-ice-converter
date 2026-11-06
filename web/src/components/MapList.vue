@@ -20,6 +20,7 @@ const STORAGE_KEY = 'open-map-folders'
 const store = useMapStore()
 const search = ref('')
 const openFolders = ref(new Set<string>(readOpenFolders()))
+const shown = defineModel<boolean>('shown', { default: true })
 
 function readOpenFolders(): string[] {
   try {
@@ -102,15 +103,21 @@ function indent(depth: number) {
 
 <template>
   <aside :class="$style.panel">
-    <header :class="$style.header">
+    <button
+      type="button"
+      :class="$style.header"
+      :aria-expanded="shown"
+      :title="shown ? 'Hide maps' : 'Show maps'"
+      @click="shown = !shown"
+    >
       <span>Maps</span>
-      <span :class="$style.count">{{ store.maps.length || '' }}</span>
-    </header>
-    <div :class="$style.search">
+      <span :class="[$style.chevron, { [$style.open]: shown }]" />
+    </button>
+    <div v-if="shown" :class="$style.search">
       <input v-model="search" type="search" placeholder="Search" aria-label="Search maps" />
     </div>
-    <p v-if="store.mapsError" :class="$style.error">{{ store.mapsError }}</p>
-    <div :class="$style.tree">
+    <p v-if="shown && store.mapsError" :class="$style.error">{{ store.mapsError }}</p>
+    <div v-if="shown" :class="$style.tree">
       <template v-for="row in rows" :key="row.key">
         <button
           v-if="row.kind === 'folder'"
@@ -154,10 +161,27 @@ function indent(depth: number) {
   flex: none;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
   height: 24px;
   padding: 0 8px;
   color: var(--strong);
+  text-align: left;
+  cursor: default;
   background: var(--header);
+  border: 0;
+}
+
+.chevron {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.chevron.open {
+  transform: translateY(2px) rotate(-135deg);
 }
 
 .search {

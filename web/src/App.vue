@@ -16,7 +16,9 @@ onMounted(() => {
 
 <template>
   <div :class="$style.layout">
-    <MapList />
+    <div :class="$style.side">
+      <MapList v-model:shown="store.mapsShown" :class="[$style.box, { [$style.open]: store.mapsShown }]" />
+    </div>
     <MapViewport />
     <StatusBar :class="$style.status" />
   </div>
@@ -24,12 +26,36 @@ onMounted(() => {
 
 <style module>
 .layout {
+  position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr) 22px;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 1px;
   height: 100%;
   background: var(--line);
+}
+
+/* maps over properties, floating over the view so it never resizes */
+.side {
+  position: absolute;
+  top: 0;
+  bottom: 23px;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  width: 261px;
+  pointer-events: none;
+}
+
+.box {
+  flex: none;
+  pointer-events: auto;
+  border-right: 1px solid var(--line);
+}
+
+.open {
+  flex: 1 1 0;
 }
 
 .status {

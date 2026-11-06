@@ -115,6 +115,17 @@ public sealed class ItemBuilder(string dataDir)
     // false when nothing was planned
     public bool BuildPlanned()
     {
+        var jobs = TakePlanned();
+        if (jobs.Count == 0) return false;
+        RunBuilds(jobs);
+        return true;
+    }
+
+    public int PlannedCount => plannedCopies.Count + planned.Count;
+
+    // what planning noted, taken out to build (the GUI builds while the next plans run)
+    public List<Action<TextWriter>> TakePlanned()
+    {
         var jobs = plannedCopies.Values.Select(c => (Action<TextWriter>)(log =>
         {
             var copy = BuildItemCopy(c.ItemId, c.Environment, log, plan: false);
@@ -122,7 +133,11 @@ public sealed class ItemBuilder(string dataDir)
         })).Concat(planned.Values.Select(r => (Action<TextWriter>)(log => BuildRequest(r, log)))).ToList();
         plannedCopies.Clear();
         planned.Clear();
-        if (jobs.Count == 0) return false;
+        return jobs;
+    }
+
+    public static void RunBuilds(List<Action<TextWriter>> jobs, Action<int>? progress = null)
+    {
         // jobs mostly wait on Blender and Wine start-up; two cores left for the desktop
         var parallel = Math.Max(1, System.Environment.ProcessorCount - 2);
         Console.WriteLine($"Building {jobs.Count} items, {parallel} at a time");
@@ -132,9 +147,9 @@ public sealed class ItemBuilder(string dataDir)
             var log = new StringWriter();
             job(log);
             var n = Interlocked.Increment(ref done);
+            progress?.Invoke(n);
             if (log.ToString() is { Length: > 0 } text) lock (Console.Out) Console.Write($"[{n}/{jobs.Count}] " + text.TrimStart());
         });
-        return true;
     }
 
     private void BuildRequest(ItemRequest r, TextWriter log)

@@ -11,7 +11,9 @@ public sealed class MapConverter(HashSet<string> knownBlocks, Translations trans
     private readonly SurfaceParents surfaceParents = new(knownBlocks, shapes);
     private readonly Dictionary<string, List<(Vector3 A, Vector3 B, Vector3 C)>> flatTops = [];
 
-    public ConversionReport Convert(CGameCtnChallenge map)
+    public ConversionReport Convert(CGameCtnChallenge map) => Run(map).Report;
+
+    internal ConversionRun Run(CGameCtnChallenge map)
     {
         var collection = map.Collection?.ToString() ?? "Stadium2020";
         var rules = translations.For(map.MapName);
@@ -36,7 +38,7 @@ public sealed class MapConverter(HashSet<string> knownBlocks, Translations trans
         foreach (var (block, name, models) in trees) Trees.Plant(run, block, name, models);
         MatchPlatformColour(run);
         if (rules.Options.RemoveForcedCameras) RemoveForcedCameras(run);
-        return run.Report;
+        return run;
     }
 
     private static void PlaceNativesUnderBodies(ConversionRun run)

@@ -13,6 +13,7 @@ internal static partial class BlockRules
 {
     private static readonly BlockRule[] Rules =
     [
+        Picked,
         Gates.EngineOff,
         AlreadyIce,
         OnKeepList,
@@ -39,7 +40,37 @@ internal static partial class BlockRules
     public static void Decide(CGameCtnBlock block, ConversionRun run)
     {
         foreach (var rule in Rules)
-            if (rule(block, run)) return;
+            if (rule(block, run))
+            {
+                run.DecidedBy[block] = rule.Method.Name;
+                return;
+            }
+    }
+
+    // chosen per piece (maps.jsonc "pieces", the GUI); snow goes through the snowTerrain areas, plain renames and lets the rules go on
+    private static bool Picked(CGameCtnBlock block, ConversionRun run)
+    {
+        switch (run.Rules.PieceChoice(block))
+        {
+            case "keep":
+                Bump(run.Report.KeptByList, block.Name);
+                return true;
+            case "custom":
+                return BuildCustom(block, run) || AsItem(block, run);
+            case "item":
+                return AsItem(block, run);
+            case "skin":
+                SkinRules.Skin(block, run, block.IsGround ? ItemKind.None : ItemKind.Skin);
+                return true;
+            case "tops":
+                TopsOnly(block, run);
+                return true;
+            case "plain" when Gates.PlainOf(block.Name, run) is { } plain:
+                block.Name = plain;
+                return false;
+            default:
+                return false;
+        }
     }
 
     private static bool AlreadyIce(CGameCtnBlock block, ConversionRun run)
@@ -160,8 +191,14 @@ internal static partial class BlockRules
     // the game draws the placed variant's body, not the resolver's no-pillar-below one
     private static bool CustomBlock(CGameCtnBlock block, ConversionRun run)
     {
-        var (name, options, shapes, items) = (block.Name, run.Rules.Options, run.Shapes, run.Items);
-        if (!options.CustomBlocks || run.InTerrain(block) || !options.CustomWaypoints && shapes.Waypoint(name) is not null) return false;
+        var options = run.Rules.Options;
+        if (!options.CustomBlocks || run.InTerrain(block) || !options.CustomWaypoints && run.Shapes.Waypoint(block.Name) is not null) return false;
+        return BuildCustom(block, run);
+    }
+
+    private static bool BuildCustom(CGameCtnBlock block, ConversionRun run)
+    {
+        var (name, shapes, items) = (block.Name, run.Shapes, run.Items);
         var (variant, mobil, collection, noClips) = (VariantOf(block), MobilOf(block), run.Map.Collection!.Value, ConversionRun.NoClips);
         var stack = NeedsNativeUnder(block, run);
         var built = items.BlockFor(name, name, block.IsGround, variant, mobil, collection, noClips, lift: stack) is { } own

@@ -2,15 +2,19 @@
 {
   // per map in "maps", per run with --set name=value
   "options": {
+    // forced camera changes are taken out of the in-game clips
     "removeForcedCameras": true,
+    // plastic walls stay plastic (off: they get ice)
     "keepPlasticWalls": false,
+    // engine-off blocks become reset blocks, engine-off gates are removed
     "engineOffToReset": false,
-    // wins over engineOffToReset
+    // engine-off blocks become plain blocks, engine-off gates are removed; wins over engineOffToReset
     "engineOffToPlain": false,
-    // snow on open-zone sides
+    // snow on open-zone sides, inside custom blocks and skins only (roads swapped to the game's own ice roads keep their grass)
     "snowOnZoneSides": true,
     // deco platforms on/in the ground: native ice + snow skin (off: faces at ground level dropped, terrain shows)
     "snowOnGroundDeco": true,
+    // slow-motion and reset pads become ice with a gate that keeps the effect
     "effectsToGate": false,
     // blocks that would become whole items become custom blocks instead (off: items)
     "customBlocks": true,

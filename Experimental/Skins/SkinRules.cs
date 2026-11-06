@@ -23,7 +23,7 @@ internal static class SkinRules
         return true;
     }
 
-    private static void Skin(CGameCtnBlock block, ConversionRun run, ItemKind kind)
+    public static void Skin(CGameCtnBlock block, ConversionRun run, ItemKind kind)
     {
         if (ItemPlacer.Place(run, block, run.Variant(block), run.Clips(block), kind))
         {

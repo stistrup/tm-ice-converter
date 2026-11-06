@@ -22,12 +22,16 @@ public sealed class MapView(BlockCatalog shapes)
     private readonly Dictionary<string, string> skipReasons = [];
     private readonly HashSet<string> missing = [];
     private Dictionary<string, string> restyle = [];
+    private readonly Dictionary<CGameCtnBlock, int> blockIndex = new(ReferenceEqualityComparer.Instance);
 
     private readonly ILookup<string, string> materialFiles = Directory
         .EnumerateFiles(GameData, "*.Material.Gbx", new EnumerationOptions { RecurseSubdirectories = true, MatchCasing = MatchCasing.CaseInsensitive })
         .ToLookup(f => Stem(f), StringComparer.OrdinalIgnoreCase);
 
     public IReadOnlyCollection<string> Missing => missing.Concat(shapes.Missing).ToHashSet();
+
+    // an importer material as our items use it (no vista restyle)
+    public SceneMaterial OwnMaterial(string name) => materials[MaterialKey(name, null, ours: true)];
 
     public IReadOnlyDictionary<string, int> Skipped => skipped;
 
@@ -48,6 +52,9 @@ public sealed class MapView(BlockCatalog shapes)
     {
         var grid = new List<(CGameCtnBlock Block, ClipResolver.Placed Placed, int Mobil)>();
         var cellsOf = new List<Int3[]>();
+        // the map's own order, for the conversion preview
+        blockIndex.Clear();
+        foreach (var (i, b) in map.GetBlocks().Index()) blockIndex[b] = i;
         foreach (var block in map.GetBlocks())
         {
             var name = block.Name;
@@ -57,7 +64,8 @@ public sealed class MapView(BlockCatalog shapes)
                 var free = Matrix4x4.CreateFromYawPitchRoll(r.X, r.Y, r.Z) * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
                 var all = shapes.ClipSides(name, block.IsGround, BlockFlags.VariantOf(block))
                     .SelectMany(s => s.Clips.Where(c => !c.Vertical).Select(c => ClipKey.Of(s.Bit, c.Index))).ToHashSet();
-                Add(block, name, block.IsGround, BlockFlags.VariantOf(block), BlockFlags.MobilOf(block), free, all, Info(block, p));
+                if (onlyBlocks?.Contains(block) != false)
+                    Add(block, name, block.IsGround, BlockFlags.VariantOf(block), BlockFlags.MobilOf(block), free, all, Info(block, p));
                 continue;
             }
 
@@ -66,8 +74,9 @@ public sealed class MapView(BlockCatalog shapes)
             if (name.EndsWith("Pillar") && shapes.FindPlacedBlockParts(name, ground, variant, mobil, new HashSet<int>()) is null
                 && shapes.ClipSides(name, ground, variant).Count == 0)
                 (meshName, ground, variant, mobil) = (name[..^"Pillar".Length], false, 0, 0);
-            var custom = CustomBlockMesh.Parse(meshName);
-            var units = (custom is null ? shapes.Units(meshName, ground, variant) : shapes.Units(custom.Source, ground, custom.Variant)) ?? [new Int3(0, 0, 0)];
+            // a custom block clips as the block it was made from (the game draws that block's clips around our body)
+            if (CustomBlockMesh.Parse(meshName) is { } custom) meshName = custom.Source;
+            var units = shapes.Units(meshName, ground, variant) ?? [new Int3(0, 0, 0)];
             var place = Placement.Of(block, (units.Max(u => u.X) + 1, units.Max(u => u.Z) + 1));
             grid.Add((block, new ClipResolver.Placed(meshName, ground, variant, place), mobil));
             cellsOf.Add(units.Select(u => Placement.CellAt(Vector3.Transform(new Vector3(u.X * 32 + 16, u.Y * 8 + 4, u.Z * 32 + 16), place))).ToArray());
@@ -81,12 +90,14 @@ public sealed class MapView(BlockCatalog shapes)
 
         var shown = resolver.Resolve(grid.Select(g => g.Placed).ToList());
         var drop = Matrix4x4.CreateTranslation(0, -Placement.EnvironmentDrop(map.Collection?.ToString()), 0);
-        // a placed ground block replaces the terrain in its cells (the game hides it)
-        var built = Enumerable.Range(0, grid.Count).Where(i => grid[i].Block.IsGround && !shapes.IsTerrain(grid[i].Block.Name))
+        // a placed native ground block draws its own ground and replaces the terrain in its cells (the game hides it);
+        // our custom blocks carry no ground, so the terrain shows, except on hills and cliffs, whose bodies keep the terrain's faces
+        var built = Enumerable.Range(0, grid.Count).Where(i => grid[i].Block.IsGround && !shapes.IsTerrain(grid[i].Block.Name) && OwnsGround(grid[i].Block.Name))
             .SelectMany(i => cellsOf[i]).ToHashSet();
         for (int i = 0; i < grid.Count; i++)
         {
             var (block, placed, mobil) = grid[i];
+            if (onlyBlocks?.Contains(block) == false) continue;
             if (shapes.IsTerrain(block.Name) && cellsOf[i].Any(built.Contains))
             {
                 Bump(skipped, $"block {block.Name}: terrain under a placed block, hidden");
@@ -99,11 +110,29 @@ public sealed class MapView(BlockCatalog shapes)
         }
     }
 
-    private static Dictionary<string, object> Info(CGameCtnBlock block, Vec3? freePosition)
+    // the shown clips of the block a custom block was made from: the game still draws them (terrain ones included)
+    private void AddClipsOf(string source, bool ground, int variant, int mobil, Matrix4x4 place, HashSet<int> clips, Dictionary<string, object> info)
+    {
+        if (clips.Count == 0) return;
+        var key = $"clipsof:{source}|{(ground ? "g" : "a")}{variant}.{mobil}|{ClipKey.OfSet(clips)}";
+        if (!meshes.ContainsKey(key))
+        {
+            var body = shapes.FindPlacedBlockParts(source, ground, variant, mobil, new HashSet<int>())?.ToHashSet() ?? [];
+            var all = shapes.FindPlacedBlockParts(source, ground, variant, mobil, clips);
+            meshes[key] = all is null ? null : Pieces(exporter.Export(all.Where(p => !body.Contains(p)).ToList()), shapes.MaterialModifierOf(source));
+        }
+        if (meshes[key] is not { Count: > 0 }) return;
+        instances.Add(new SceneInstance(key, Flatten(place), new Dictionary<string, object>(info) { ["kind"] = "block", ["name"] = source, ["drawnAs"] = "clips" }));
+    }
+
+    private static bool OwnsGround(string block) => CustomBlockMesh.Parse(block) is not { } custom || BlockNames.OnTerrainShape(custom.Source);
+
+    private Dictionary<string, object> Info(CGameCtnBlock block, Vec3? freePosition)
     {
         var info = new Dictionary<string, object>
         {
             ["kind"] = "block",
+            ["block"] = blockIndex[block],
             ["name"] = block.Name,
             ["direction"] = block.Direction.ToString(),
             ["variant"] = BlockFlags.VariantOf(block),
@@ -127,7 +156,11 @@ public sealed class MapView(BlockCatalog shapes)
     private void Add(CGameCtnBlock block, string meshName, bool ground, int variant, int mobil, Matrix4x4 place, HashSet<int> clips,
         Dictionary<string, object> info)
     {
-        if (AddCustomBlock(meshName, place, info)) return;
+        if (AddCustomBlock(block.Name, place, info))
+        {
+            AddClipsOf(meshName, ground, variant, mobil, place, clips, info);
+            return;
+        }
         if (shapes.IsTerrain(meshName)) info["tags"] = info.TryGetValue("tags", out var t) ? $"{t}, terrain" : "terrain";
         var key = $"{meshName}|{(ground ? "g" : "a")}{variant}.{mobil}|{ClipKey.OfSet(clips)}";
         if (!meshes.ContainsKey(key))
@@ -176,10 +209,25 @@ public sealed class MapView(BlockCatalog shapes)
         return true;
     }
 
-    private void AddItems(CGameCtnChallenge map)
+    // only some of a map's pieces (the ones a conversion changes), for the preview; only what has a real mesh
+    public SceneData BuildPart(CGameCtnChallenge map, IReadOnlySet<CGameCtnBlock> blocks, IReadOnlySet<CGameCtnAnchoredObject> items)
     {
-        foreach (var item in map.AnchoredObjects ?? [])
+        restyle = VistaRestyle(map.Collection?.ToString());
+        onlyBlocks = blocks;
+        AddBlocks(map);
+        AddItems(map, items);
+        return new SceneData(map.MapName, map.Collection?.ToString(),
+            meshes.Where(kv => kv.Value is { Count: > 0 }).ToDictionary(kv => kv.Key, kv => kv.Value!),
+            instances, [], [], waypoints, materials, skipped);
+    }
+
+    private IReadOnlySet<CGameCtnBlock>? onlyBlocks;
+
+    private void AddItems(CGameCtnChallenge map, IReadOnlySet<CGameCtnAnchoredObject>? only = null)
+    {
+        foreach (var (itemIndex, item) in (map.AnchoredObjects ?? []).Index())
         {
+            if (only is not null && !only.Contains(item)) continue;
             var id = item.ItemModel.Id;
             var (p, r, pivot) = (item.AbsolutePositionInMap, item.YawPitchRoll, item.PivotPosition);
             var place = Matrix4x4.CreateTranslation(-pivot.X, -pivot.Y, -pivot.Z)
@@ -188,7 +236,7 @@ public sealed class MapView(BlockCatalog shapes)
                 * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
             var key = "item:" + id;
             string? waypoint = null;
-            var info = new Dictionary<string, object> { ["kind"] = "item", ["name"] = id, ["position"] = new[] { p.X, p.Y, p.Z }, ["color"] = (int)item.Color };
+            var info = new Dictionary<string, object> { ["kind"] = "item", ["item"] = itemIndex, ["name"] = id, ["position"] = new[] { p.X, p.Y, p.Z }, ["color"] = (int)item.Color };
             if (id.StartsWith("IceConverter\\"))
             {
                 var name = id[(id.LastIndexOf('\\') + 1)..^".Item.gbx".Length];

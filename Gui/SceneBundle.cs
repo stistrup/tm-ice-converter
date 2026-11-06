@@ -11,7 +11,7 @@ namespace TmIceConverter;
 internal static class SceneBundle
 {
     // bump when the output changes
-    private const int Format = 17;
+    private const int Format = 23;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -33,7 +33,8 @@ internal static class SceneBundle
         var view = new MapView(shapes);
         var scene = view.Build(node);
         var notExtracted = ExtractList.Add(view.Missing);
-        File.WriteAllBytes(manifest, JsonSerializer.SerializeToUtf8Bytes(Write(scene, notExtracted, GeometryOf(map)), JsonOptions));
+        using (var geometry = File.Create(GeometryOf(map)))
+            File.WriteAllBytes(manifest, JsonSerializer.SerializeToUtf8Bytes(Write(scene, notExtracted, geometry), JsonOptions));
         File.WriteAllText(stampFile, stamp);
         return manifest;
     }
@@ -41,7 +42,15 @@ internal static class SceneBundle
     private static string CacheDir(string map)
         => Path.Combine(Paths.Work, "Gui", Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(map)))[..16]);
 
-    private static Manifest Write(SceneData scene, int notExtracted, string geometryPath)
+    // a scene kept in memory (the preview's added items): manifest json, geometry
+    public static (byte[] Manifest, byte[] Geometry) InMemory(SceneData scene)
+    {
+        using var geometry = new MemoryStream();
+        var manifest = JsonSerializer.SerializeToUtf8Bytes(Write(scene, 0, geometry), JsonOptions);
+        return (manifest, geometry.ToArray());
+    }
+
+    private static Manifest Write(SceneData scene, int notExtracted, Stream geometry)
     {
         var gameData = Path.GetDirectoryName(Paths.ExtractedStadium)!;
         var materialKeys = scene.Materials.Keys.ToList();
@@ -51,7 +60,6 @@ internal static class SceneBundle
 
         var meshKeys = scene.Meshes.Keys.ToList();
         var meshIndex = meshKeys.Select((key, i) => (key, i)).ToDictionary(x => x.key, x => x.i);
-        using var geometry = File.Create(geometryPath);
         var meshes = meshKeys.Select(key => new ManifestMesh(key, scene.Meshes[key]
             .GroupBy(p => p.Material)
             .Select(group => WritePiece(geometry, materialIndex[group.Key], group.ToList()))

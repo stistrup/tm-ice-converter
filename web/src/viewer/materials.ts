@@ -11,6 +11,7 @@ import {
   Texture,
   LinearMipmapLinearFilter,
   LinearFilter,
+  Vector4,
   type CompressedPixelFormat,
   type Material,
   type WebGLRenderer,
@@ -66,6 +67,11 @@ const fragmentShader = /* glsl */ `
   uniform float ice;
   uniform float opacity;
   uniform float water;
+  uniform float greyGreen;
+  // the ground blocks' road surface (MapScene's cut pass): terrain above it inside their footprint is cut away
+  uniform sampler2D cutMap;
+  uniform vec4 cutBox;
+  uniform float hasCut;
 
   varying vec3 vWorld;
   varying vec3 vNormal;
@@ -82,6 +88,15 @@ const fragmentShader = /* glsl */ `
     if (!gl_FrontFacing) n = -n;
     // only the surface: the volume's sides would show through
     if (water > 0.5 && abs(n.y) < 0.7) discard;
+    if (terrain > 0.5 && hasCut > 0.5) {
+      vec2 cuv = (vWorld.xz - cutBox.xy) / cutBox.zw;
+      if (cuv.x >= 0.0 && cuv.x <= 1.0 && cuv.y >= 0.0 && cuv.y <= 1.0) {
+        // blended between texels: height over cover is the covered texels' own height
+        vec2 cut = texture2D(cutMap, cuv).rg;
+        // level with the road counts too: inside a block the road is what shows
+        if (cut.g > 0.5 && vWorld.y > cut.r / cut.g - 0.3) discard;
+      }
+    }
 
     vec4 albedo = vec4(baseColor, 1.0);
     if (terrain > 0.5) albedo.rgb = mix(sideColor, baseColor, smoothstep(0.55, 0.8, n.y));
@@ -95,6 +110,9 @@ const fragmentShader = /* glsl */ `
       vec4 top = texture2D(mapTop, vec2(vWorld.x, -vWorld.z) * TILE);
       albedo = hasMap.x + hasMap.z > 0.5 ? mix(albedo, top, up) : top;
     }
+
+    // _Hue shaders (Custom* library materials): the texture is brightness in its green channel, the hue (white here) colours it
+    if (greyGreen > 0.5) albedo.rgb = vec3(albedo.g);
 
     // the block's colour repaints the hue mask's area: alpha = how much, green = brightness; Default keeps the painted green
     int tint = int(vTint + 0.5);
@@ -246,6 +264,10 @@ export function flatMaterial(color: [number, number, number]): ShaderMaterial {
       solidGlow: { value: 0 },
       tints: { value: Array.from({ length: 5 }, () => new Color(1, 1, 1)) },
       water: { value: 0 },
+      greyGreen: { value: 0 },
+      cutMap: { value: blank },
+      cutBox: { value: new Vector4(0, 0, 1, 1) },
+      hasCut: { value: 0 },
     },
   })
 }
@@ -270,6 +292,8 @@ export class SceneMaterials {
     private readonly renderer: WebGLRenderer,
     private readonly onTexture: () => void,
     private readonly environment: string | null,
+    // textures come from (and stay with) this one: a preview layer reuses the scene's
+    private readonly shared: SceneMaterials | null = null,
   ) {
     this.materials = source.map((material) => this.create(material))
   }
@@ -283,6 +307,7 @@ export class SceneMaterials {
     material.uniforms.cutout.value = isCutout ? 1 : 0
     material.uniforms.decal.value = isDecal ? 1 : 0
     material.uniforms.ice.value = shader.includes('Layered') ? 1 : 0
+    material.uniforms.greyGreen.value = shader.endsWith('_Hue') ? 1 : 0
     // timer digit slots (ChronoFinish-00-01-00…) show one digit of an atlas the game shifts at runtime:
     // not faked, they glow in the atlas's background colour
     const digitSlot = /^Chrono\w*-\d+-\d+-\d+$/.test(source.name)
@@ -323,6 +348,30 @@ export class SceneMaterials {
       material.visible = false
     }
     return material
+  }
+
+  // a material outside the scene's list (the preview's ice looks), textures loaded right away
+  extraMaterial(source: SceneMaterial): ShaderMaterial {
+    const material = this.create(source)
+    this.extra.push(material)
+    const jobs: TextureJob[] = Object.entries(diffuseMaps(source)).map(([mapping, texture]) => ({
+      material,
+      mapping: mapping as Mapping,
+      path: texture.image!,
+    }))
+    jobs.push(...this.extraJobs.filter((job) => job.material === material))
+    for (const job of jobs) void this.apply(job)
+    return material
+  }
+
+  // the cut pass's result on every terrain material
+  setCut(map: Texture | null, box: Vector4) {
+    for (const material of [...this.materials, ...this.extra]) {
+      if (material.uniforms.terrain.value !== 1) continue
+      material.uniforms.cutMap.value = map ?? blank
+      ;(material.uniforms.cutBox.value as Vector4).copy(box)
+      material.uniforms.hasCut.value = map ? 1 : 0
+    }
   }
 
   nameOf(material: Material): string | null {
@@ -399,7 +448,8 @@ export class SceneMaterials {
     this.onTexture()
   }
 
-  private texture(path: string) {
+  private texture(path: string): Promise<CompressedTexture | null> {
+    if (this.shared) return this.shared.texture(path)
     let pending = this.cache.get(path)
     if (!pending) {
       pending = this.fetchTexture(path)

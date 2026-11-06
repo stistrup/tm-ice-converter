@@ -16,6 +16,8 @@ switch (args)
         return new GuiCommand(dataDir).Run(rest);
     case ["convert", .. var rest]:
         return new ConvertCommand(dataDir).Run(rest);
+    case ["plan", .. var rest]:
+        return new ConvertCommand(dataDir).Plan(rest);
     case ["watch", .. var rest]:
         return new ConvertCommand(dataDir).Watch(rest);
     case ["scan", .. var rest]:

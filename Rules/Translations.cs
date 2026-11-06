@@ -66,6 +66,21 @@ public sealed class Translations
 
     public List<(string Name, bool Value)> RunSettings { get; } = [];
 
+    // per piece: "Name x,y,z" (grid cell) or "Name x, y, z" (free block, item) -> keep | custom | item | skin | snow | tops | plain | remove | frozen
+    public Dictionary<string, string> Pieces { get; } = [];
+
+    // for one run (the GUI's preview), over the map's own
+    public Dictionary<string, string> RunPieces { get; } = [];
+
+    public static readonly string[] PieceChoices = ["keep", "custom", "item", "skin", "snow", "tops", "plain", "remove", "frozen"];
+
+    public string? PieceChoice(GBX.NET.Engines.Game.CGameCtnBlock block)
+        => block.IsFree
+            ? block.AbsolutePositionInMap is { } p ? ChoiceAt(block.Name, new System.Numerics.Vector3(p.X, p.Y, p.Z)) : null
+            : Pieces.GetValueOrDefault(KeepKey(block.Name, block.Coord.X, block.Coord.Y, block.Coord.Z));
+
+    public string? ChoiceAt(string id, System.Numerics.Vector3 at) => Pieces.FirstOrDefault(kv => IsAt(kv.Key, id, at) == true).Value;
+
     public ConvertOptions Options { get; private set; } = new();
 
     public HashSet<string> Keep { get; } = [];
@@ -122,6 +137,11 @@ public sealed class Translations
         result.Skinned.AddRange(own.Skinned);
         result.SkinLift = own.SkinLift;
         result.SkinEdge = own.SkinEdge;
+        foreach (var (k, v) in own.Pieces.Concat(RunPieces)) result.Pieces[NormalizeKeep(k)] = v;
+        // snow picked on a grid piece: its column is a snowTerrain area
+        foreach (var (k, v) in result.Pieces)
+            if (v == "snow" && Regex.Match(k, @"^\S+ (-?\d+),-?\d+,(-?\d+)$") is { Success: true } m)
+                result.SnowTerrain.Add((int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value)));
         foreach (var (k, v) in UnavailableIn) result.UnavailableIn[k] = v;
         foreach (var (k, v) in Items) result.Items[k] = v;
         foreach (var (k, v) in ItemsOnSnow) result.ItemsOnSnow[k] = v;
@@ -178,6 +198,10 @@ public sealed class Translations
             result.KeepItems.UnionWith(keepItems.EnumerateArray().Select(e => e.GetString()!.Trim()));
         if (root.TryGetProperty("removeItems", out var removeItems))
             result.RemoveItems.UnionWith(removeItems.EnumerateArray().Select(e => e.GetString()!.Trim()));
+        if (root.TryGetProperty("pieces", out var pieces))
+            foreach (var piece in pieces.EnumerateObject())
+                result.Pieces[NormalizeKeep(piece.Name)] = piece.Value.GetString() is { } choice && PieceChoices.Contains(choice)
+                    ? choice : throw new FormatException($"piece '{piece.Name}': one of {string.Join(", ", PieceChoices)}");
         if (root.TryGetProperty("skinLiftCm", out var lift)) result.SkinLift = lift.GetSingle() / 100;
         if (root.TryGetProperty("skinEdgeDeg", out var edge)) result.SkinEdge = edge.GetSingle();
         foreach (var (key, areas) in new[] { ("snowTerrain", result.SnowTerrain), ("skinned", result.Skinned) })

@@ -45,6 +45,8 @@ internal sealed class ConversionRun
     // convertScenery off: left alone by the neighbour and top passes too
     public HashSet<CGameCtnBlock> SceneryKept { get; } = new(ReferenceEqualityComparer.Instance);
     public HashSet<CGameCtnBlock> Topped { get; } = new(ReferenceEqualityComparer.Instance);
+    // the rule that dealt with each block
+    public Dictionary<CGameCtnBlock, string> DecidedBy { get; } = new(ReferenceEqualityComparer.Instance);
 
     public ConversionRun(CGameCtnChallenge map, string collection, Translations rules, Translations translations, HashSet<string> knownBlocks,
         BlockCatalog shapes, ItemBuilder items, SurfaceParents surfaceParents, Dictionary<string, List<(Vector3 A, Vector3 B, Vector3 C)>> flatTops)

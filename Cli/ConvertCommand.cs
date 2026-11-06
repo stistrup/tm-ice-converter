@@ -85,7 +85,7 @@ internal sealed class ConvertCommand(string dataDir)
         var items = new ItemBuilder(dataDir) { RewriteBlocks = job.RewriteBlocks };
         var translations = Translations.Load(dataDir);
         translations.RunSettings.AddRange(job.Settings ?? []);
-        var converter = new MapConverter(KnownBlocks(), translations, shapes, items);
+        var converter = new MapConverter(KnownBlocks(dataDir), translations, shapes, items);
 
         BuildItems(maps, converter, items);
 
@@ -151,7 +151,28 @@ internal sealed class ConvertCommand(string dataDir)
                 : job.Release ? $"{job.Suffix}{Paths.TestrunAuthor.Login}#release{(Paths.ReleaseGeneration > 1 ? Paths.ReleaseGeneration : "")}"
                 : job.Suffix));
 
-    private HashSet<string> KnownBlocks()
+    // decisions only, nothing built or saved: times one map's conversion in planning mode
+    public int Plan(string[] rest)
+    {
+        if (rest is not [var path]) return Fail("plan takes one map");
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var shapes = new BlockCatalog(Paths.ExtractedStadium);
+        var items = new ItemBuilder(dataDir) { Planning = true };
+        var translations = Translations.Load(dataDir);
+        var converter = new MapConverter(KnownBlocks(dataDir), translations, shapes, items);
+        Console.WriteLine($"setup {clock.ElapsedMilliseconds} ms");
+        for (var i = 1; i <= 3; i++)
+        {
+            clock.Restart();
+            var map = Gbx.ParseNode<CGameCtnChallenge>(path);
+            var parse = clock.ElapsedMilliseconds;
+            var report = converter.Convert(map);
+            Console.WriteLine($"run {i}: parse {parse} ms, decide {clock.ElapsedMilliseconds - parse} ms, custom blocks {report.UsedBlocks.Count}");
+        }
+        return 0;
+    }
+
+    internal static HashSet<string> KnownBlocks(string dataDir)
     {
         var names = File.ReadAllLines(Path.Combine(dataDir, "known-blocks.txt")).ToHashSet();
         foreach (var blockInfos in Paths.BlockInfoDirs(Paths.ExtractedStadium))

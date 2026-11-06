@@ -1,5 +1,6 @@
 import { watch } from 'vue'
 import { useMapStore } from './stores/map'
+import { usePreviewStore } from './stores/preview'
 import type { CameraState } from './viewer/MapScene'
 import { displayName } from './viewer/names'
 
@@ -8,10 +9,16 @@ type Command =
   | { type: 'shot'; id: string }
   | { type: 'select'; index?: number; name?: string; focus?: boolean }
   | { type: 'camera' } & CameraState
-  | { type: 'open'; map: string }
+  | { type: 'open'; map?: string; rebuild?: boolean }
   | { type: 'pick'; id: string; x: number; y: number }
+  | { type: 'preview'; open: boolean; set?: Record<string, boolean> }
+
+// once per page: a hot-reloaded App mounts again, and every extra event stream takes one of the browser's few connections
+let started = false
 
 export function startLiveLink() {
+  if (started) return
+  started = true
   const store = useMapStore()
 
   function piece(index: number | null) {
@@ -37,6 +44,7 @@ export function startLiveLink() {
         map: store.currentMap && { path: store.currentMap.path, name: store.currentMap.name },
         loaded: !!store.scene,
         selected: piece(store.selected),
+        selection: store.selection,
         hovered: piece(store.hovered),
         camera: store.view?.cameraState() ?? null,
         hidden: store.hidden,
@@ -63,9 +71,19 @@ export function startLiveLink() {
       const found = store.view?.pickDetail(command.x, command.y) ?? null
       const answer = found && { ...found, piece: piece(found.index) }
       await fetch(`/api/answer?id=${command.id}`, { method: 'POST', body: JSON.stringify(answer) })
+    } else if (command.type === 'preview') {
+      const preview = usePreviewStore()
+      if (!command.open) preview.close()
+      else {
+        if (command.set) preview.settings = command.set
+        preview.show()
+        void preview.run()
+      }
     } else if (command.type === 'open') {
-      const map = store.maps.find((m) => m.path === command.map || m.name === command.map)
-      if (map) void store.openMap(map)
+      const map = command.map
+        ? store.maps.find((m) => m.path === command.map || m.name === command.map)
+        : store.currentMap
+      if (map) void store.openMap(map, command.rebuild)
     }
   }
 

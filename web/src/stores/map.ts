@@ -1,5 +1,5 @@
-import { defineStore } from 'pinia'
-import { computed, ref, shallowRef } from 'vue'
+import { acceptHMRUpdate, defineStore } from 'pinia'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { fetchGeometry, fetchMaps, fetchScene, type InstanceInfo, type MapEntry, type SceneManifest } from '../api'
 import { categoryOf, type Category } from '../viewer/categories'
 import type { MapScene } from '../viewer/MapScene'
@@ -10,6 +10,15 @@ export interface LoadedScene {
 }
 
 const MAP_KEY = 'current-map'
+const SHOWN_KEY = 'maps-shown'
+
+function readShown(): boolean {
+  try {
+    return localStorage.getItem(SHOWN_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
 
 export const useMapStore = defineStore('map', () => {
   const maps = ref<MapEntry[]>([])
@@ -19,11 +28,43 @@ export const useMapStore = defineStore('map', () => {
   const status = ref('')
   const loadError = ref('')
   const hovered = ref<number | null>(null)
-  const selected = ref<number | null>(null)
+  const selection = ref<number[]>([])
+  // the last picked piece, the one the properties panel shows
+  const selected = computed<number | null>({
+    get: () => selection.value.at(-1) ?? null,
+    set: (index) => (selection.value = index === null ? [] : [index]),
+  })
+
+  // click: just this one (again: none); shift-click: add or remove it
+  function pick(index: number | null, add: boolean) {
+    if (add) {
+      if (index === null) return
+      selection.value = selection.value.includes(index)
+        ? selection.value.filter((i) => i !== index)
+        : [...selection.value, index]
+    } else {
+      const only = selection.value.length === 1 && selection.value[0] === index
+      selected.value = only ? null : index
+    }
+  }
+  function paint(index: number, add: boolean) {
+    const has = selection.value.includes(index)
+    if (add && !has) selection.value = [...selection.value, index]
+    else if (!add && has) selection.value = selection.value.filter((i) => i !== index)
+  }
   const view = shallowRef<MapScene | null>(null)
   const textureLoads = ref(0)
   const cameraMoves = ref(0)
   const hidden = ref<Category[]>([])
+  const mapsShown = ref(readShown())
+
+  watch(mapsShown, (value) => {
+    try {
+      localStorage.setItem(SHOWN_KEY, String(value))
+    } catch {
+      // only a convenience
+    }
+  })
 
   let loadId = 0
 
@@ -110,7 +151,11 @@ export const useMapStore = defineStore('map', () => {
     loadError,
     hovered,
     selected,
+    selection,
+    pick,
+    paint,
     hidden,
+    mapsShown,
     infos,
     categoryCounts,
     view,
@@ -121,3 +166,5 @@ export const useMapStore = defineStore('map', () => {
     toggleCategory,
   }
 })
+
+if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useMapStore, import.meta.hot))

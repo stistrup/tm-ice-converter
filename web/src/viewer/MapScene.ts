@@ -12,6 +12,14 @@ import {
   Mesh,
   MeshBasicMaterial,
   MOUSE,
+  FloatType,
+  HalfFloatType,
+  LinearFilter,
+  RGFormat,
+  OrthographicCamera,
+  ShaderMaterial,
+  Vector4,
+  WebGLRenderTarget,
   PerspectiveCamera,
   Raycaster,
   Scene,
@@ -21,7 +29,7 @@ import {
   type Material,
 } from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import type { InstanceInfo, SceneManifest } from '../api'
+import type { InstanceInfo, SceneManifest, SceneMaterial } from '../api'
 import { categoryOf, type Category } from './categories'
 import { flatMaterial, groundHeight, SceneMaterials } from './materials'
 import { Picker } from './picker'
@@ -36,7 +44,60 @@ interface Placed {
   ownsGround: boolean
   // block colour: 0 Default (as painted), 1 White .. 5 Black
   tint: number
+  // where it sits in the instanced meshes, one per geometry
+  slots: { mesh: InstancedMesh; n: number }[]
 }
+
+// the preview's redraw of one piece: per geometry a material (null = left out), on the whole piece or only on its upward faces
+export interface LookChange {
+  index: number
+  // undefined = as it is (whole piece) / no ice (tops only)
+  materials: (Material | null | undefined)[]
+  topsOnly: boolean
+}
+
+export interface PreviewDraw {
+  changed: { manifest: SceneManifest; geometry: ArrayBuffer } | null
+  looks: LookChange[]
+  tints: { color: number; indices: number[] }[]
+}
+
+const hidden = new Matrix4().makeScale(0, 0, 0)
+
+const CUT_LAYER = 1
+
+// ground blocks (not terrain) are what the terrain gets cut around
+function markCutter(mesh: InstancedMesh) {
+  const material = mesh.material as ShaderMaterial
+  if (material.uniforms?.terrain?.value === 1) return
+  mesh.layers.enable(CUT_LAYER)
+}
+
+// world height into the red channel
+const cutMaterial = new ShaderMaterial({
+  vertexShader: /* glsl */ `
+    varying vec3 vWorld;
+    void main() {
+      mat4 local = modelMatrix;
+      #ifdef USE_INSTANCING
+        local = modelMatrix * instanceMatrix;
+      #endif
+      vec4 world = local * vec4(position, 1.0);
+      vWorld = world.xyz;
+      gl_Position = projectionMatrix * viewMatrix * world;
+    }
+  `,
+  fragmentShader: /* glsl */ `
+    varying vec3 vWorld;
+    // only flat-ish faces count, from their shape: the meshes' normals don't always point up
+    void main() {
+      vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
+      if (abs(n.y) < 0.3) discard;
+      gl_FragColor = vec4(vWorld.y, 1.0, 0.0, 1.0);
+    }
+  `,
+  side: DoubleSide,
+})
 
 const CELL = { x: 32, y: 8, z: 32 }
 const tintColor = new Color()
@@ -44,7 +105,11 @@ const SKY = 0x393939
 
 export interface MapSceneEvents {
   hover: (index: number | null) => void
-  select: (index: number | null) => void
+  select: (index: number | null, add: boolean) => void
+  // shift-drag: every piece touched goes in (add) or out
+  paint: (index: number, add: boolean) => void
+  stroke: (phase: 'start' | 'end') => void
+  isSelected: (index: number) => boolean
   textureLoaded: () => void
   cameraMoved: () => void
 }
@@ -79,10 +144,25 @@ export class MapScene {
   private picker: Picker | null = null
   private hoverOverlay: InstancedMesh[] = []
   private selectOverlay: InstancedMesh[] = []
+  private tintOverlay: InstancedMesh[] = []
+  private readonly tintMaterials = new Map<number, Material>()
+  private readonly lookMaterials = new Map<string, Material>()
+  private layer: { meshes: InstancedMesh[]; materials: SceneMaterials; dispose: () => void } | null = null
+  private layerMaterials: SceneMaterials | null = null
+  private extent: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null
+  private cutTarget: WebGLRenderTarget | null = null
+  private cutTimer = 0
+  private previewCall = 0
+  private lookMeshes: InstancedMesh[] = []
+  private lookHidden: { mesh: InstancedMesh; n: number; matrix: Matrix4 }[] = []
+  private readonly upward = new Map<BufferGeometry, BufferGeometry | null>()
+  // the preview's version of a piece, for the properties picture
+  private looks = new Map<number, PieceParts>()
   private frame = 0
   private needsRender = true
   private lastMove: { x: number; y: number } | null = null
   private pointerDown: { x: number; y: number } | null = null
+  private painting: { add: boolean; touched: Set<number> } | null = null
   private hoverIndex: number | null = null
   private lastTime = 0
 
@@ -152,6 +232,7 @@ export class MapScene {
 
     this.buildInstances()
     this.addGround(manifest.environment)
+    this.scheduleCut()
     this.picker = new Picker(
       this.placed.map((placed) => ({
         geometries: placed.geometries,
@@ -174,8 +255,232 @@ export class MapScene {
     this.invalidate()
   }
 
-  setSelection(index: number | null) {
-    this.selectOverlay = this.replaceOverlay(this.selectOverlay, index === null ? [] : [index], this.selectMaterial)
+  // terrain is cut where a ground block sits below it (the game reshapes it around the block): the blocks' lowest flat
+  // faces (the road, not an arch over it) seen from straight below; in the background after loading and each preview
+  private scheduleCut() {
+    clearTimeout(this.cutTimer)
+    this.cutTimer = window.setTimeout(() => this.updateCut(), 50)
+  }
+
+  private updateCut() {
+    if (!this.extent || !this.materials) return
+    const { minX, maxX, minZ, maxZ } = this.extent
+    const [sizeX, sizeZ] = [maxX - minX, maxZ - minZ]
+    // 0.5 m per texel: red = road height, green = covered (1); sampled smooth, the cover's 0.5 line traces the block's outline
+    const [width, height] = [Math.min(4096, Math.ceil(sizeX * 2)), Math.min(4096, Math.ceil(sizeZ * 2))]
+    const type = this.renderer.extensions.has('OES_texture_float_linear') ? FloatType : HalfFloatType
+    if (!this.cutTarget) this.cutTarget = new WebGLRenderTarget(width, height, { type, format: RGFormat, minFilter: LinearFilter, magFilter: LinearFilter })
+    else this.cutTarget.setSize(width, height)
+    const camera = new OrthographicCamera(-sizeX / 2, sizeX / 2, sizeZ / 2, -sizeZ / 2, 1, 20000)
+    camera.position.set(minX + sizeX / 2, -10000, minZ + sizeZ / 2)
+    camera.up.set(0, 0, 1)
+    camera.lookAt(minX + sizeX / 2, 0, minZ + sizeZ / 2)
+    camera.layers.set(CUT_LAYER)
+    const [background, fog, override] = [this.scene.background, this.scene.fog, this.scene.overrideMaterial]
+    const clear = this.renderer.getClearColor(new Color())
+    const alpha = this.renderer.getClearAlpha()
+    this.scene.background = null
+    this.scene.fog = null
+    this.scene.overrideMaterial = cutMaterial
+    this.renderer.setRenderTarget(this.cutTarget)
+    this.renderer.setClearColor(new Color(0, 0, 0), 1)
+    this.renderer.clear()
+    this.renderer.render(this.scene, camera)
+    this.renderer.setRenderTarget(null)
+    this.renderer.setClearColor(clear, alpha)
+    ;[this.scene.background, this.scene.fog, this.scene.overrideMaterial] = [background, fog, override]
+    const box = new Vector4(minX, minZ, sizeX, sizeZ)
+    this.materials.setCut(this.cutTarget.texture, box)
+    this.layerMaterials?.setCut(this.cutTarget.texture, box)
+    this.invalidate()
+  }
+
+  // the conversion preview in one step: the converted pieces (a layer of their own, built and textured first),
+  // the originals they replace hidden, the rest repainted or coloured
+  async showPreview(draw: PreviewDraw | null) {
+    const call = ++this.previewCall
+    const layer = draw?.changed ? await this.buildLayer(draw.changed) : null
+    if (call !== this.previewCall) {
+      layer?.dispose()
+      return
+    }
+    this.layer?.dispose()
+    this.layer = layer
+    for (const mesh of layer?.meshes ?? []) this.scene.add(mesh)
+    this.setLook(draw?.looks ?? [])
+    this.setTints(draw?.tints ?? [])
+    this.layerMaterials = layer?.materials ?? null
+    this.scheduleCut()
+  }
+
+  private async buildLayer({ manifest, geometry: buffer }: { manifest: SceneManifest; geometry: ArrayBuffer }) {
+    const materials = new SceneMaterials(manifest.materials, this.renderer, this.invalidate, manifest.environment, this.materials)
+    const geometries: BufferGeometry[] = []
+    const meshes: InstancedMesh[] = []
+    const pieces = manifest.meshes.map((mesh) =>
+      mesh.pieces.map((piece) => {
+        const geometry = this.pieceGeometry(buffer, piece.offset, piece.vertices, piece.indices, piece.colors)
+        geometries.push(geometry)
+        return { geometry, material: materials.materials[piece.material] as Material }
+      }),
+    )
+    const byMesh = new Map<number, typeof manifest.instances>()
+    for (const instance of manifest.instances) byMesh.set(instance.mesh, [...(byMesh.get(instance.mesh) ?? []), instance])
+    for (const [index, list] of byMesh) {
+      for (const { geometry, material } of pieces[index]) {
+        const mesh = new InstancedMesh(geometry, material, list.length)
+        list.forEach((instance, n) => {
+          mesh.setMatrixAt(n, new Matrix4().fromArray(instance.m))
+          mesh.setColorAt(n, tintColor.setRGB((typeof instance.info.color === 'number' ? instance.info.color : 0) / 8, 0, 0))
+        })
+        mesh.matrixAutoUpdate = false
+        const info = list[0].info
+        if (/\bground\b/.test(info.tags ?? '') && !/\bterrain\b/.test(info.tags ?? '')) markCutter(mesh)
+        meshes.push(mesh)
+      }
+    }
+    await materials.loadTextures()
+    return {
+      meshes,
+      materials,
+      dispose: () => {
+        for (const mesh of meshes) {
+          this.scene.remove(mesh)
+          mesh.dispose()
+        }
+        for (const geometry of geometries) geometry.dispose()
+        materials.dispose()
+        this.invalidate()
+      },
+    }
+  }
+
+  materialNames(index: number): (string | null)[] {
+    return this.placed[index]?.materials.map((material) => this.materials?.nameOf(material) ?? null) ?? []
+  }
+
+  // a preview material, made once per name
+  lookMaterial(source: SceneMaterial): Material | null {
+    if (!this.materials) return null
+    let material = this.lookMaterials.get(source.name)
+    if (!material) this.lookMaterials.set(source.name, (material = this.materials.extraMaterial(source)))
+    return material
+  }
+
+  // the conversion preview drawn in its materials: whole pieces swapped (the native one hidden), or ice laid on their upward faces
+  private setLook(changes: LookChange[]) {
+    for (const { mesh, n, matrix } of this.lookHidden) {
+      mesh.setMatrixAt(n, matrix)
+      mesh.instanceMatrix.needsUpdate = true
+    }
+    this.lookHidden = []
+    for (const mesh of this.lookMeshes) {
+      this.scene.remove(mesh)
+      mesh.dispose()
+    }
+    this.lookMeshes = []
+    this.looks = new Map()
+
+    const groups = new Map<string, { placed: Placed[]; change: LookChange }>()
+    for (const change of changes) {
+      const placed = this.placed[change.index]
+      if (!placed) continue
+      if (!change.topsOnly)
+        for (const { mesh, n } of placed.slots) {
+          this.lookHidden.push({ mesh, n, matrix: placed.matrix })
+          mesh.setMatrixAt(n, hidden)
+          mesh.instanceMatrix.needsUpdate = true
+        }
+      // drawn by the changed layer: the picture keeps the original for now
+      if (change.topsOnly || change.materials.some((m) => m !== null)) this.looks.set(change.index, this.lookOf(placed, change))
+      const key = `${placed.meshKey}|${change.topsOnly}|${change.materials.map((m) => m?.uuid ?? '-').join(',')}`
+      const group = groups.get(key)
+      if (group) group.placed.push(placed)
+      else groups.set(key, { placed: [placed], change })
+    }
+    for (const { placed, change } of groups.values()) {
+      placed[0].geometries.forEach((geometry, i) => {
+        const swapped = change.materials[i]
+        const material = swapped === undefined && !change.topsOnly ? placed[0].materials[i] : swapped
+        if (!material) return
+        const shape = change.topsOnly ? this.upwardFaces(geometry) : geometry
+        if (!shape) return
+        const mesh = new InstancedMesh(shape, material, placed.length)
+        placed.forEach((p, n) => {
+          mesh.setMatrixAt(n, p.matrix)
+          mesh.setColorAt(n, tintColor.setRGB(p.tint / 8, 0, 0))
+        })
+        mesh.matrixAutoUpdate = false
+        if (placed[0].ownsGround && placed[0].category !== 'terrain') markCutter(mesh)
+        this.scene.add(mesh)
+        this.lookMeshes.push(mesh)
+      })
+    }
+    this.invalidate()
+  }
+
+  private lookOf(placed: Placed, change: LookChange): PieceParts {
+    const parts: PieceParts = change.topsOnly
+      ? { geometries: [...placed.geometries], materials: [...placed.materials] }
+      : { geometries: [], materials: [] }
+    placed.geometries.forEach((geometry, i) => {
+      const swapped = change.materials[i]
+      const material = swapped === undefined && !change.topsOnly ? placed.materials[i] : swapped
+      const shape = material && (change.topsOnly ? this.upwardFaces(geometry) : geometry)
+      if (!material || !shape) return
+      parts.geometries.push(shape)
+      parts.materials.push(material)
+    })
+    return parts
+  }
+
+  // the faces pointing up (local), lifted 2 cm so they sit on the native surface
+  private upwardFaces(geometry: BufferGeometry): BufferGeometry | null {
+    if (this.upward.has(geometry)) return this.upward.get(geometry)!
+    const position = geometry.getAttribute('position')
+    const index = geometry.getIndex()
+    const count = index ? index.count : position.count
+    const at = (i: number) => (index ? index.getX(i) : i)
+    const [a, b, c, ab, ac] = [new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3()]
+    const keep: number[] = []
+    for (let i = 0; i + 2 < count; i += 3) {
+      a.fromBufferAttribute(position, at(i))
+      b.fromBufferAttribute(position, at(i + 1))
+      c.fromBufferAttribute(position, at(i + 2))
+      const normal = ab.subVectors(b, a).cross(ac.subVectors(c, a))
+      // the converter's top minimum (ItemMesh.TopMinY)
+      if (normal.lengthSq() > 0 && normal.normalize().y > 0.02) keep.push(at(i), at(i + 1), at(i + 2))
+    }
+    let shape: BufferGeometry | null = null
+    if (keep.length) {
+      shape = geometry.clone()
+      shape.setIndex(keep)
+      shape.translate(0, 0.02, 0)
+      this.geometries.push(shape)
+    }
+    this.upward.set(geometry, shape)
+    return shape
+  }
+
+  // the conversion preview: one see-through colour per group
+  private setTints(groups: { color: number; indices: number[] }[]) {
+    for (const mesh of this.tintOverlay) {
+      this.scene.remove(mesh)
+      mesh.dispose()
+    }
+    this.tintOverlay = []
+    for (const { color, indices } of groups) {
+      let material = this.tintMaterials.get(color)
+      if (!material) this.tintMaterials.set(color, (material = highlightMaterial(color, 0.5)))
+      const meshes = this.replaceOverlay([], indices, material)
+      for (const mesh of meshes) mesh.renderOrder = 5
+      this.tintOverlay.push(...meshes)
+    }
+    this.invalidate()
+  }
+
+  setSelection(indices: number[]) {
+    this.selectOverlay = this.replaceOverlay(this.selectOverlay, indices, this.selectMaterial)
     this.invalidate()
   }
 
@@ -194,7 +499,7 @@ export class MapScene {
   partsOf(index: number): PieceParts | null {
     const placed = this.placed[index]
     if (!placed || placed.meshKey.startsWith('placeholder:') || placed.meshKey.startsWith('box:')) return null
-    return placed
+    return this.looks.get(index) ?? placed
   }
 
   sizeOf(index: number): Vector3 | null {
@@ -239,7 +544,23 @@ export class MapScene {
       material: this.materials?.nameOf(placed.materials[hit.part]) ?? null,
       point: [point.x, point.y, point.z].map((n) => Math.round(n * 100) / 100),
       distance: Math.round(hit.distance * 10) / 10,
+      cut: this.cutAt(point.x, point.z),
     }
+  }
+
+  // the cut pass at a point: [height, cover] (diagnosis)
+  cutAt(x: number, z: number): number[] | null {
+    if (!this.cutTarget || !this.extent) return null
+    const { minX, minZ, maxX, maxZ } = this.extent
+    const ix = Math.floor(((x - minX) / (maxX - minX)) * this.cutTarget.width)
+    const iy = Math.floor(((z - minZ) / (maxZ - minZ)) * this.cutTarget.height)
+    const out: number[] = []
+    for (const [dx, dy] of [[0, 0], [-2, 0], [2, 0], [0, -2], [0, 2]]) {
+      const pixel = this.cutTarget.texture.type === FloatType ? new Float32Array(4) : new Uint16Array(4)
+      this.renderer.readRenderTargetPixels(this.cutTarget, ix + dx, iy + dy, 1, 1, pixel)
+      out.push(Math.round(Number(pixel[0]) * 100) / 100, Number(pixel[1]))
+    }
+    return out
   }
 
   // rendered now: the drawing buffer is only readable in the same task
@@ -269,19 +590,27 @@ export class MapScene {
     window.removeEventListener('blur', this.onBlur)
     this.controls.dispose()
     this.materials?.dispose()
+    this.previewCall++
+    clearTimeout(this.cutTimer)
+    this.cutTarget?.dispose()
+    this.layer?.dispose()
     for (const geometry of this.geometries) geometry.dispose()
     for (const material of this.ownMaterials) material.dispose()
     this.hoverMaterial.dispose()
     this.selectMaterial.dispose()
+    for (const material of this.tintMaterials.values()) material.dispose()
     this.renderer.dispose()
     this.renderer.forceContextLoss()
   }
 
   private place(meshKey: string, geometries: BufferGeometry[], materials: Material[], m: number[], info: InstanceInfo) {
     // M is row-major with world = local * M, which is three's column-major layout
-    const ownsGround = info.kind.includes('block') && /\b(ground|terrain)\b/.test(info.tags ?? '')
+    // our custom blocks carry no ground of their own, except on hills and cliffs (BlockNames.OnTerrainShape)
+    const custom = info.kind === 'custom block'
+    const keepsTerrain = custom && /On[A-Z][a-z]+(Cliff|Hill)/.test(String(info.sourceBlock ?? ''))
+    const ownsGround = info.kind.includes('block') && (!custom || keepsTerrain) && /\b(ground|terrain)\b/.test(info.tags ?? '')
     const tint = typeof info.color === 'number' ? info.color : 0
-    this.placed.push({ meshKey, geometries, materials, matrix: new Matrix4().fromArray(m), category: categoryOf(info), ownsGround, tint })
+    this.placed.push({ meshKey, geometries, materials, matrix: new Matrix4().fromArray(m), category: categoryOf(info), ownsGround, tint, slots: [] })
   }
 
   private buildInstances() {
@@ -300,8 +629,10 @@ export class MapScene {
           mesh.setMatrixAt(n, placed.matrix)
           // the colour index rides in the instance colour's red channel
           mesh.setColorAt(n, tintColor.setRGB(placed.tint / 8, 0, 0))
+          placed.slots.push({ mesh, n })
         })
         mesh.matrixAutoUpdate = false
+        if (group[0].ownsGround && category !== 'terrain') markCutter(mesh)
         this.scene.add(mesh)
         const list = this.categoryMeshes.get(category)
         if (list) list.push(mesh)
@@ -315,6 +646,7 @@ export class MapScene {
     const cell = CELL.x
     const owned = new Set<string>()
     let [minX, maxX, minZ, maxZ] = [0, 48, 0, 48]
+    // the cut pass covers what the base ground covers
     const box = new Box3()
     const part = new Box3()
     for (const placed of this.placed) {
@@ -341,6 +673,7 @@ export class MapScene {
         positions.push(ax, y, az, ax, y, bz, bx, y, bz, ax, y, az, bx, y, bz, bx, y, az)
       }
     }
+    this.extent = { minX: minX * cell, maxX: maxX * cell, minZ: minZ * cell, maxZ: maxZ * cell }
     if (positions.length === 0) return
     const geometry = this.own(new BufferGeometry())
     geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3))
@@ -451,7 +784,11 @@ export class MapScene {
     this.frame = requestAnimationFrame(this.tick)
     this.moveWithKeys(Math.min((time - this.lastTime) / 1000, 0.1))
     this.lastTime = time
-    if (this.lastMove && !this.pointerDown) {
+    if (this.lastMove && this.painting) {
+      const index = this.pickAt(this.lastMove.x, this.lastMove.y)
+      this.lastMove = null
+      if (index !== null) this.paint(index)
+    } else if (this.lastMove && !this.pointerDown) {
       this.setHover(this.pickAt(this.lastMove.x, this.lastMove.y))
       this.lastMove = null
     }
@@ -468,14 +805,33 @@ export class MapScene {
   private readonly onPointerDown = (event: PointerEvent) => {
     this.pointerDown = { x: event.clientX, y: event.clientY }
     this.setHover(null)
+    if (event.button !== 0 || !event.shiftKey) return
+    this.controls.enabled = false
+    // the first piece decides: starting on a selected one unselects
+    const index = this.pickAt(event.clientX, event.clientY)
+    this.painting = { add: index === null || !this.events.isSelected(index), touched: new Set() }
+    this.events.stroke('start')
+    if (index !== null) this.paint(index)
+  }
+
+  private paint(index: number) {
+    if (!this.painting || this.painting.touched.has(index)) return
+    this.painting.touched.add(index)
+    this.events.paint(index, this.painting.add)
   }
 
   private readonly onPointerUp = (event: PointerEvent) => {
     const down = this.pointerDown
     this.pointerDown = null
+    if (this.painting) {
+      this.painting = null
+      this.events.stroke('end')
+      if (!this.keys.has('ShiftLeft') && !this.keys.has('ShiftRight')) this.controls.enabled = true
+      return
+    }
     if (!down || event.button !== 0) return
     if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > 4) return
-    this.events.select(this.pickAt(event.clientX, event.clientY))
+    this.events.select(this.pickAt(event.clientX, event.clientY), event.shiftKey)
   }
 
   private readonly onPointerLeave = () => {
@@ -486,14 +842,20 @@ export class MapScene {
   private readonly onKeyDown = (event: KeyboardEvent) => {
     if (event.target instanceof HTMLInputElement) return
     this.keys.add(event.code)
+    // shift is for selecting: the mouse leaves the camera alone
+    if (event.key === 'Shift') this.controls.enabled = false
   }
 
   private readonly onKeyUp = (event: KeyboardEvent) => {
     this.keys.delete(event.code)
+    if (event.key === 'Shift') this.controls.enabled = true
   }
 
   private readonly onBlur = () => {
     this.keys.clear()
+    this.controls.enabled = true
+    if (this.painting) this.events.stroke('end')
+    this.painting = null
   }
 }
 

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { markRaw, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMapStore } from '../stores/map'
+import { usePreviewStore } from '../stores/preview'
 import { PiecePreview } from '../viewer/PiecePreview'
 
 const store = useMapStore()
+const previewStore = usePreviewStore()
 const canvas = ref<HTMLCanvasElement>()
 const hasMesh = ref(false)
 let preview = null as PiecePreview | null
@@ -20,7 +22,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => preview?.dispose())
 
-watch(() => [store.selected, store.view], update)
+watch(() => [store.selected, store.view, previewStore.lookVersion], update)
 watch(() => store.textureLoads, () => preview?.invalidate())
 </script>
 
