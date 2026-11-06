@@ -1,9 +1,24 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { computed, ref, shallowRef, watch } from 'vue'
-import { type PreviewAsk, fetchBuildStatus, fetchOptions, fetchPreview, fetchPreviewScene, type BuildStatus, type SceneManifest, type PreviewDecision, type PreviewOption, type PreviewResult } from '../api'
+import {
+  fetchBuildStatus,
+  fetchMapState,
+  fetchPreview,
+  fetchPreviewScene,
+  saveDraft,
+  type BuildStatus,
+  type MapSettings,
+  type MapState,
+  type PreviewDecision,
+  type PreviewOption,
+  type PreviewResult,
+  type RunInfo,
+  type SceneManifest,
+} from '../api'
 import { useMapStore } from './map'
 
 const OPEN_KEY = 'preview-open'
+const SEED = 'maps.jsonc'
 
 function readOpen(): boolean {
   try {
@@ -13,13 +28,19 @@ function readOpen(): boolean {
   }
 }
 
-// the converter's decisions for the open map with the menu's options; nothing is built
+const clone = (settings: MapSettings): MapSettings => JSON.parse(JSON.stringify(settings))
+
+// the open map's settings (kept as the family's draft while they change) and the converter's decisions with them; nothing is built
 export const usePreviewStore = defineStore('preview', () => {
   const map = useMapStore()
   // the panel is always there; folding only hides it
   const open = ref(readOpen())
-  // only options changed from the map's own setting
-  const settings = ref<Record<string, boolean>>({})
+  // where the map's settings stand: runs, the maps.jsonc entry, defaults
+  const state = ref<MapState | null>(null)
+  // what the menu edits and the preview runs with, shaped like a maps.jsonc entry
+  const working = ref<MapSettings>({})
+  // the run id (or maps.jsonc) the working settings started from
+  const from = ref<string | null>(null)
   const result = shallowRef<PreviewResult | null>(null)
   const loading = ref(false)
   const error = ref('')
@@ -27,29 +48,35 @@ export const usePreviewStore = defineStore('preview', () => {
   const ranWith = ref('')
   // bumped when the view redraws the preview (the properties picture follows)
   const lookVersion = ref(0)
+  // the view shows the map as it is, the preview kept
+  const showOriginal = ref(false)
   // the changed pieces as the conversion makes them, where their meshes exist
   const changed = shallowRef<{ manifest: SceneManifest; geometry: ArrayBuffer } | null>(null)
   let runId = 0
 
-  // per piece key, from the manual flow; sent with every preview
-  const picks = ref<Record<string, string>>({})
+  const options = computed<PreviewOption[]>(() => state.value?.defaults ?? [])
 
-  const asking = (): PreviewAsk => ({ settings: settings.value, picks: picks.value })
+  // per piece key, from the manual flow
+  const picks = computed<Record<string, string>>(() => {
+    const pieces = working.value.pieces
+    if (!pieces || typeof pieces !== 'object') return {}
+    return Object.fromEntries(Object.entries(pieces).filter((e): e is [string, string] => typeof e[1] === 'string'))
+  })
 
-  // the boxes and picks as they are, or (after builds) what the shown result came from
-  async function run(asked: PreviewAsk = asking()) {
+  // the working settings as they are, or (after builds) what the shown result came from
+  async function run(settings: MapSettings = working.value) {
     const current = map.currentMap
     if (!current) return
     const id = ++runId
     loading.value = true
     error.value = ''
     try {
-      const answer = await fetchPreview(current.path, asked)
+      const answer = await fetchPreview(current.path, settings)
       const scene = await fetchPreviewScene(answer.addedScene)
       if (id === runId) {
         changed.value = scene
         result.value = answer
-        ranWith.value = JSON.stringify(asked)
+        ranWith.value = JSON.stringify(settings)
         void followBuilds(id)
       }
     } catch (e) {
@@ -79,19 +106,53 @@ export const usePreviewStore = defineStore('preview', () => {
     }
   }
 
-  // the map's own option values, loaded without working anything out
-  const options = ref<PreviewOption[]>([])
-
-  async function loadOptions() {
+  // a draft only exists once the settings differ from the maps.jsonc entry
+  let saved = ''
+  let saveTimer: ReturnType<typeof setTimeout> | undefined
+  function scheduleSave() {
     const current = map.currentMap
-    options.value = []
+    const seed = state.value?.seed
+    if (!current || !seed) return
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(async () => {
+      const json = JSON.stringify(working.value)
+      if (json === saved) return
+      const same = json === JSON.stringify(seed)
+      try {
+        await saveDraft(current.path, same ? null : working.value, same ? null : from.value)
+        saved = json
+        if (state.value && map.currentMap === current)
+          state.value = { ...state.value, from: same ? SEED : 'draft', draftFrom: same ? null : from.value }
+      } catch (e) {
+        error.value = `Draft not saved: ${e instanceof Error ? e.message : String(e)}`
+      }
+    }, 400)
+  }
+
+  watch(working, scheduleSave, { deep: true })
+
+  async function loadState() {
+    const current = map.currentMap
+    state.value = null
     if (!current) return
     try {
-      const list = await fetchOptions(current.path)
-      if (map.currentMap === current) options.value = list
+      const loaded = await fetchMapState(current.path)
+      if (map.currentMap !== current) return
+      state.value = loaded
+      saved = JSON.stringify(loaded.from === SEED ? loaded.seed : loaded.settings)
+      from.value = loaded.from === SEED ? SEED : loaded.draftFrom
+      working.value = clone(loaded.settings)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     }
+  }
+
+  // a past run's settings (or the maps.jsonc entry) become the working ones
+  function load(source: RunInfo | null) {
+    const seed = state.value?.seed
+    if (!seed) return
+    working.value = clone(source?.settings ?? seed)
+    from.value = source?.id ?? SEED
   }
 
   // folding only hides the panel; the preview stays drawn
@@ -123,45 +184,68 @@ export const usePreviewStore = defineStore('preview', () => {
   watch(
     () => map.currentMap,
     () => {
-      settings.value = {}
-      picks.value = {}
+      clearTimeout(saveTimer)
+      working.value = {}
+      from.value = null
       error.value = ''
       clear()
-      void loadOptions()
+      void loadState()
     },
     { immediate: true },
   )
 
+  const defaultOf = (name: string) => options.value.find((o) => o.name === name)?.mapValue ?? false
 
-  function mapValueOf(name: string) {
-    return options.value.find((o) => o.name === name)?.mapValue ?? false
+  function optionIn(settings: MapSettings | undefined, name: string): boolean {
+    const value = settings?.options?.[name]
+    return typeof value === 'boolean' ? value : defaultOf(name)
   }
 
+  // the box as the working settings have it
+  const valueOf = (name: string) => optionIn(working.value, name)
+
+  // as the map's maps.jsonc entry has it
+  const seedValueOf = (name: string) => optionIn(state.value?.seed, name)
+
+  // a default is left out, so the settings only say what's special about the map
   function set(name: string, value: boolean) {
-    const next = { ...settings.value }
-    if (mapValueOf(name) === value) delete next[name]
-    else next[name] = value
-    settings.value = next
+    const own = { ...(working.value.options ?? {}) }
+    if (value === defaultOf(name)) delete own[name]
+    else own[name] = value
+    const { options: _, ...rest } = working.value
+    working.value = Object.keys(own).length ? { ...rest, options: own } : rest
   }
 
-  // the boxes as ticked, before Preview runs them
-  function valueOf(name: string): boolean {
-    return settings.value[name] ?? mapValueOf(name)
-  }
+  const stale = computed(() => JSON.stringify(working.value) !== ranWith.value)
 
-  const stale = computed(() => JSON.stringify(asking()) !== ranWith.value)
+  // while the preview is shown it follows the settings; the first run on a map is the one the server warmed up
+  let asked = ''
+  let runTimer: ReturnType<typeof setTimeout> | undefined
+  watch(
+    [working, showOriginal, state],
+    () => {
+      clearTimeout(runTimer)
+      if (showOriginal.value || !state.value) return
+      runTimer = setTimeout(() => {
+        const json = JSON.stringify(working.value)
+        if (json === asked && (loading.value || json === ranWith.value)) return
+        asked = json
+        void run()
+      }, 250)
+    },
+    { deep: true },
+  )
 
   // "" = back to the rules; the preview follows right away
   function pick(keys: string[], choice: string) {
-    const next = { ...picks.value }
+    const pieces: Record<string, unknown> = { ...(working.value.pieces ?? {}) }
     for (const key of keys) {
-      if (choice) next[key] = choice
-      else delete next[key]
+      if (choice) pieces[key] = choice
+      else delete pieces[key]
     }
-    picks.value = next
-    void run()
+    const { pieces: _, ...rest } = working.value
+    working.value = Object.keys(pieces).length ? { ...rest, pieces } : rest
   }
-
 
   // one per scene piece, in store.infos order
   const decisions = computed<(PreviewDecision | undefined)[] | null>(() => {
@@ -172,7 +256,31 @@ export const usePreviewStore = defineStore('preview', () => {
     )
   })
 
-  return { picks, pick, building, changed, lookVersion, open, options, settings, result, loading, error, stale, decisions, run, show, close, set, valueOf }
+  return {
+    state,
+    working,
+    from,
+    picks,
+    pick,
+    load,
+    building,
+    changed,
+    lookVersion,
+    showOriginal,
+    open,
+    options,
+    result,
+    loading,
+    error,
+    stale,
+    decisions,
+    run,
+    show,
+    close,
+    set,
+    valueOf,
+    seedValueOf,
+  }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(usePreviewStore, import.meta.hot))

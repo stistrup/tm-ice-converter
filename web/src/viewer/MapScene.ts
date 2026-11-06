@@ -380,6 +380,9 @@ export class MapScene {
   }
 
   // a preview material, made once per name
+  // a removed piece: a faint white ghost of itself
+  readonly ghostMaterial: Material = ghost()
+
   lookMaterial(source: SceneMaterial): Material | null {
     if (!this.materials) return null
     let material = this.lookMaterials.get(source.name)
@@ -753,6 +756,11 @@ export class MapScene {
     return overlay
   }
 
+  // from outside the view (a list): highlighted as the pointer would
+  showHover(index: number | null) {
+    this.setHover(index)
+  }
+
   private setHover(index: number | null) {
     if (index === this.hoverIndex) return
     this.hoverIndex = index
@@ -881,6 +889,15 @@ export class MapScene {
     if (this.painting) this.events.stroke('end')
     this.painting = null
   }
+}
+
+// instance colours carry the block colour index, not a colour: left out, or the ghost turns black
+function ghost() {
+  const material = new MeshBasicMaterial({ color: 0xffffff, opacity: 0.18, transparent: true, depthWrite: false, fog: false })
+  material.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>', '')
+  }
+  return material
 }
 
 function highlightMaterial(color: number, opacity: number) {

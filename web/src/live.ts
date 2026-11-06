@@ -75,7 +75,7 @@ export function startLiveLink() {
       const preview = usePreviewStore()
       if (!command.open) preview.close()
       else {
-        if (command.set) preview.settings = command.set
+        for (const [name, value] of Object.entries(command.set ?? {})) preview.set(name, value)
         preview.show()
         void preview.run()
       }

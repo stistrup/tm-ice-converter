@@ -1,4 +1,6 @@
+using System.Reflection;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
 namespace TmIceConverter;
@@ -42,9 +44,13 @@ public sealed record ConvertOptions(
         "skinsOnly" => this with { SkinsOnly = value },
         "skinWaypoints" => this with { SkinWaypoints = value },
         "rampToSkins" => this with { RampToSkins = value },
-        _ => throw new FormatException($"unknown option '{name}' (known: "
-            + "removeForcedCameras, keepPlasticWalls, engineOffToReset, effectsToGate, engineOffToPlain, snowOnZoneSides, snowOnGroundDeco, customBlocks, customWaypoints, convertTrees, convertScenery, skinsOnly, skinWaypoints, rampToSkins)"),
+        _ => throw new FormatException($"unknown option '{name}' (known: {string.Join(", ", All().Select(o => o.Name))})"),
     };
+
+    // every option by its jsonc name
+    public IEnumerable<(string Name, bool Value)> All()
+        => typeof(ConvertOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.PropertyType == typeof(bool))
+            .Select(p => (char.ToLowerInvariant(p.Name[0]) + p.Name[1..], (bool)p.GetValue(this)!));
 }
 
 public sealed class Translations
@@ -58,19 +64,17 @@ public sealed class Translations
 
     public Dictionary<string, Translations> Maps { get; } = [];
 
+    // the maps.jsonc entries as written: the seed for a map's settings
+    public Dictionary<string, JsonObject> MapEntries { get; } = [];
+
     public string? Name { get; private set; }
 
     public string NameFor(string mapName) => Maps.GetValueOrDefault(mapName)?.Name ?? mapName;
 
     public List<(string Name, bool Value)> Settings { get; } = [];
 
-    public List<(string Name, bool Value)> RunSettings { get; } = [];
-
     // per piece: "Name x,y,z" (grid cell) or "Name x, y, z" (free block, item) -> keep | custom | item | skin | snow | tops | plain | remove | frozen
     public Dictionary<string, string> Pieces { get; } = [];
-
-    // for one run (the GUI's preview), over the map's own
-    public Dictionary<string, string> RunPieces { get; } = [];
 
     public static readonly string[] PieceChoices = ["keep", "custom", "item", "skin", "snow", "tops", "plain", "remove", "frozen"];
 
@@ -122,11 +126,12 @@ public sealed class Translations
 
     private static string NormalizeKeep(string entry) => Regex.Replace(entry.Trim(), @"\s*,\s*", ",");
 
-    public Translations For(string mapName)
+    // the global rules with one map's own; own: that map's settings (MapSettings.Read), else its maps.jsonc entry
+    public Translations For(string mapName, Translations? own = null)
     {
-        var own = Maps.GetValueOrDefault(mapName) ?? new Translations();
-        var result = new Translations();
-        result.Options = Settings.Concat(own.Settings).Concat(RunSettings).Aggregate(new ConvertOptions(), (o, s) => o.With(s.Name, s.Value));
+        own ??= Maps.GetValueOrDefault(mapName) ?? new Translations();
+        var result = new Translations { Name = own.Name };
+        result.Options = Settings.Concat(own.Settings).Aggregate(new ConvertOptions(), (o, s) => o.With(s.Name, s.Value));
         result.IgnorePrefixes.AddRange(IgnorePrefixes.Concat(own.IgnorePrefixes));
         if (result.Options.KeepPlasticWalls) result.IgnorePrefixes.Add("PlatformPlasticWall");
         foreach (var (k, v) in Blocks.Concat(own.Blocks)) result.Blocks[k] = v;
@@ -137,7 +142,7 @@ public sealed class Translations
         result.Skinned.AddRange(own.Skinned);
         result.SkinLift = own.SkinLift;
         result.SkinEdge = own.SkinEdge;
-        foreach (var (k, v) in own.Pieces.Concat(RunPieces)) result.Pieces[NormalizeKeep(k)] = v;
+        foreach (var (k, v) in own.Pieces) result.Pieces[NormalizeKeep(k)] = v;
         // snow picked on a grid piece: its column is a snowTerrain area
         foreach (var (k, v) in result.Pieces)
             if (v == "snow" && Regex.Match(k, @"^\S+ (-?\d+),-?\d+,(-?\d+)$") is { Success: true } m)
@@ -174,63 +179,105 @@ public sealed class Translations
             result.RemoveItems.UnionWith(part.RemoveItems);
             if (doc.RootElement.TryGetProperty("maps", out var maps))
                 foreach (var map in maps.EnumerateObject())
+                {
                     result.Maps[map.Name] = Parse(map.Value);
+                    result.MapEntries[map.Name] = JsonNode.Parse(map.Value.GetRawText())!.AsObject();
+                }
         }
         return result;
     }
 
-    private static Translations Parse(JsonElement root)
+    // one map's own part, field by field: what doesn't read goes to problems and is left out
+    public static Translations ReadMap(JsonElement root, List<string> problems) => Parse(root, problems);
+
+    // problems null: the first bad field throws (data files); else each bad field or entry is skipped and noted
+    private static Translations Parse(JsonElement root, List<string>? problems = null)
     {
         var result = new Translations();
+        void Read(string what, Action read)
+        {
+            if (problems is null) { read(); return; }
+            try { read(); }
+            catch (FormatException e) { problems.Add($"{what}: {e.Message}"); }
+            catch (Exception e) when (e is InvalidOperationException or KeyNotFoundException or ArgumentException or OverflowException)
+            {
+                problems.Add($"{what}: wrong type");
+            }
+        }
+        IEnumerable<JsonElement> Array(JsonElement e) => e.ValueKind == JsonValueKind.Array ? e.EnumerateArray() : throw new FormatException("not a list");
+        IEnumerable<JsonProperty> Object(JsonElement e) => e.ValueKind == JsonValueKind.Object ? e.EnumerateObject() : throw new FormatException("not an object");
+        string Text(JsonElement e) => e.ValueKind == JsonValueKind.String ? e.GetString()! : throw new FormatException($"{e} is not text");
 
-        if (root.TryGetProperty("name", out var newName)) result.Name = newName.GetString();
+        if (root.ValueKind != JsonValueKind.Object) throw new FormatException("settings must be an object");
+
+        if (root.TryGetProperty("name", out var newName)) Read("name", () => result.Name = Text(newName));
 
         if (root.TryGetProperty("options", out var options))
-            foreach (var option in options.EnumerateObject())
+            Read("options", () =>
             {
-                result.Settings.Add((option.Name, option.Value.GetBoolean()));
-                new ConvertOptions().With(option.Name, false);
-            }
+                foreach (var option in Object(options))
+                    Read($"option {option.Name}", () =>
+                    {
+                        if (!new ConvertOptions().All().Any(o => o.Name == option.Name)) throw new FormatException("unknown option");
+                        if (option.Value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new FormatException($"{option.Value} is not true/false");
+                        result.Settings.Add((option.Name, option.Value.GetBoolean()));
+                    });
+            });
 
-        if (root.TryGetProperty("keep", out var keep))
-            result.Keep.UnionWith(keep.EnumerateArray().Select(e => NormalizeKeep(e.GetString()!)));
-        if (root.TryGetProperty("keepItems", out var keepItems))
-            result.KeepItems.UnionWith(keepItems.EnumerateArray().Select(e => e.GetString()!.Trim()));
-        if (root.TryGetProperty("removeItems", out var removeItems))
-            result.RemoveItems.UnionWith(removeItems.EnumerateArray().Select(e => e.GetString()!.Trim()));
+        foreach (var (key, set, normal) in new[] { ("keep", result.Keep, true), ("keepItems", result.KeepItems, false), ("removeItems", result.RemoveItems, false) })
+            if (root.TryGetProperty(key, out var list))
+                Read(key, () =>
+                {
+                    foreach (var entry in Array(list))
+                        Read($"{key} entry", () => set.Add(normal ? NormalizeKeep(Text(entry)) : Text(entry).Trim()));
+                });
         if (root.TryGetProperty("pieces", out var pieces))
-            foreach (var piece in pieces.EnumerateObject())
-                result.Pieces[NormalizeKeep(piece.Name)] = piece.Value.GetString() is { } choice && PieceChoices.Contains(choice)
-                    ? choice : throw new FormatException($"piece '{piece.Name}': one of {string.Join(", ", PieceChoices)}");
-        if (root.TryGetProperty("skinLiftCm", out var lift)) result.SkinLift = lift.GetSingle() / 100;
-        if (root.TryGetProperty("skinEdgeDeg", out var edge)) result.SkinEdge = edge.GetSingle();
+            Read("pieces", () =>
+            {
+                foreach (var piece in Object(pieces))
+                    Read($"piece {piece.Name}", () => result.Pieces[NormalizeKeep(piece.Name)] = piece.Value.ValueKind == JsonValueKind.String && PieceChoices.Contains(piece.Value.GetString())
+                        ? piece.Value.GetString()! : throw new FormatException($"unknown choice {piece.Value}"));
+            });
+        if (root.TryGetProperty("skinLiftCm", out var lift)) Read("skinLiftCm", () => result.SkinLift = lift.GetSingle() / 100);
+        if (root.TryGetProperty("skinEdgeDeg", out var edge)) Read("skinEdgeDeg", () => result.SkinEdge = edge.GetSingle());
         foreach (var (key, areas) in new[] { ("snowTerrain", result.SnowTerrain), ("skinned", result.Skinned) })
             if (root.TryGetProperty(key, out var list))
-                foreach (var area in list.EnumerateArray())
+                Read(key, () =>
                 {
-                    if (area.EnumerateArray().Select(e => e.GetInt32()).ToArray() is not [var x0, var z0, var x1, var z1])
-                        throw new FormatException($"{key} takes [x0, z0, x1, z1] areas, not {area}");
-                    areas.Add((Math.Min(x0, x1), Math.Min(z0, z1), Math.Max(x0, x1), Math.Max(z0, z1)));
-                }
+                    foreach (var area in Array(list))
+                        Read($"{key} area", () =>
+                        {
+                            if (Array(area).Select(e => e.GetInt32()).ToArray() is not [var x0, var z0, var x1, var z1])
+                                throw new FormatException($"{area} is not [x0, z0, x1, z1]");
+                            areas.Add((Math.Min(x0, x1), Math.Min(z0, z1), Math.Max(x0, x1), Math.Max(z0, z1)));
+                        });
+                });
 
         if (root.TryGetProperty("ignorePrefixes", out var ignore))
-            result.IgnorePrefixes.AddRange(ignore.EnumerateArray().Select(e => e.GetString()!));
+            Read("ignorePrefixes", () => result.IgnorePrefixes.AddRange(Array(ignore).Select(Text)));
 
         if (root.TryGetProperty("unavailableIn", out var unavailable))
-            foreach (var env in unavailable.EnumerateObject())
-                result.UnavailableIn[env.Name] = env.Value.EnumerateArray().Select(e => e.GetString()!).ToList();
+            Read("unavailableIn", () =>
+            {
+                foreach (var env in Object(unavailable))
+                    result.UnavailableIn[env.Name] = Array(env.Value).Select(Text).ToList();
+            });
 
         foreach (var (name, table) in new[] { ("items", result.Items), ("itemsOnSnow", result.ItemsOnSnow) })
             if (root.TryGetProperty(name, out var itemTable))
-                foreach (var entry in itemTable.EnumerateObject())
-                    table[entry.Name] = entry.Value.GetString() is { Length: > 0 } to
-                        ? to : throw new FormatException($"item '{entry.Name}' needs a target item id");
+                Read(name, () =>
+                {
+                    foreach (var entry in Object(itemTable))
+                        Read($"{name} {entry.Name}", () => table[entry.Name] = entry.Value.ValueKind == JsonValueKind.String && entry.Value.GetString() is { Length: > 0 } to
+                            ? to : throw new FormatException($"item '{entry.Name}' needs a target item id"));
+                });
 
         if (root.TryGetProperty("blocks", out var blocks))
-        {
-            foreach (var entry in blocks.EnumerateObject())
-                result.Blocks[entry.Name] = ParseEntry(entry.Name, entry.Value);
-        }
+            Read("blocks", () =>
+            {
+                foreach (var entry in Object(blocks))
+                    Read($"block {entry.Name}", () => result.Blocks[entry.Name] = ParseEntry(entry.Name, entry.Value));
+            });
         return result;
     }
 

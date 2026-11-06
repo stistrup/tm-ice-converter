@@ -32,6 +32,10 @@ public static class Paths
 
     public static string LocalSettings { get; set; } = "local.jsonc";
 
+    // conversion runs, drafts and map links (RunLog); "settings" in local.jsonc, else settings/ next to data/
+    public static string SettingsStore => Local.Value.Paths?.GetValueOrDefault("settings") is { Length: > 0 }
+        ? Local.Value.Folder("settings") : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(LocalSettings))!, "..", "settings"));
+
     public static (string Login, string Nickname, string Zone) TestrunAuthor => testrunAuthor.Value;
 
     private static readonly Lazy<LocalFile> Local = new(() => File.Exists(LocalSettings)

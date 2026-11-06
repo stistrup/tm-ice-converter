@@ -2,7 +2,7 @@ import { acceptHMRUpdate, defineStore } from 'pinia'
 import { computed, ref, shallowRef, watch } from 'vue'
 import { fetchGeometry, fetchMaps, fetchScene, type InstanceInfo, type MapEntry, type SceneManifest } from '../api'
 import { categoryOf, type Category } from '../viewer/categories'
-import type { MapScene } from '../viewer/MapScene'
+import type { CameraState, MapScene } from '../viewer/MapScene'
 
 export interface LoadedScene {
   manifest: SceneManifest
@@ -11,6 +11,32 @@ export interface LoadedScene {
 
 const MAP_KEY = 'current-map'
 const SHOWN_KEY = 'maps-shown'
+const HIDDEN_KEY = 'hidden-categories'
+const VIEW_KEY = 'view:'
+
+// per map file: where the camera was and what was selected; only while the file is unchanged (indices follow the file)
+export interface ViewMemory {
+  modified: string
+  selection: number[]
+  camera: CameraState | null
+}
+
+function readJson<T>(key: string, fallback: T): T {
+  try {
+    const text = localStorage.getItem(key)
+    return text === null ? fallback : (JSON.parse(text) as T)
+  } catch {
+    return fallback
+  }
+}
+
+function writeJson(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // only a convenience
+  }
+}
 
 function readShown(): boolean {
   try {
@@ -55,7 +81,22 @@ export const useMapStore = defineStore('map', () => {
   const view = shallowRef<MapScene | null>(null)
   const textureLoads = ref(0)
   const cameraMoves = ref(0)
-  const hidden = ref<Category[]>([])
+  const hidden = ref<Category[]>(readJson<Category[]>(HIDDEN_KEY, []))
+  watch(hidden, (value) => writeJson(HIDDEN_KEY, value))
+
+  function viewMemory(map: MapEntry): ViewMemory | null {
+    const memory = readJson<ViewMemory | null>(VIEW_KEY + map.path, null)
+    return memory?.modified === map.modified ? memory : null
+  }
+
+  function rememberView(patch: Partial<ViewMemory>) {
+    const map = currentMap.value
+    if (!map || !scene.value) return
+    const memory = viewMemory(map) ?? { modified: map.modified, selection: [], camera: null }
+    writeJson(VIEW_KEY + map.path, { ...memory, ...patch, modified: map.modified })
+  }
+
+  watch(selection, (value) => rememberView({ selection: value }))
   const mapsShown = ref(readShown())
 
   watch(mapsShown, (value) => {
@@ -70,7 +111,7 @@ export const useMapStore = defineStore('map', () => {
 
   function rememberMap(path: string) {
     try {
-      sessionStorage.setItem(MAP_KEY, path)
+      localStorage.setItem(MAP_KEY, path)
     } catch {
       // only a convenience
     }
@@ -78,7 +119,7 @@ export const useMapStore = defineStore('map', () => {
 
   function rememberedMap(): string | null {
     try {
-      return sessionStorage.getItem(MAP_KEY)
+      return localStorage.getItem(MAP_KEY)
     } catch {
       return null
     }
@@ -128,6 +169,7 @@ export const useMapStore = defineStore('map', () => {
       })
       if (id !== loadId) return
       scene.value = { manifest, geometry }
+      selection.value = viewMemory(map)?.selection.filter((i) => i < infos.value.length) ?? []
       status.value = ''
     } catch (error) {
       if (id !== loadId) return
@@ -164,6 +206,8 @@ export const useMapStore = defineStore('map', () => {
     loadMaps,
     openMap,
     toggleCategory,
+    viewMemory,
+    rememberView,
   }
 })
 

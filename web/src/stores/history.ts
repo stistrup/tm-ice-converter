@@ -1,12 +1,13 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { ref, watch } from 'vue'
+import type { MapSettings } from '../api'
 import { useMapStore } from './map'
 import { usePreviewStore } from './preview'
 
 interface Snapshot {
   selection: number[]
-  settings: Record<string, boolean>
-  picks: Record<string, string>
+  settings: MapSettings
+  from: string | null
 }
 
 // undo/redo over what the user changes on the open map: the selection and the conversion options
@@ -16,15 +17,13 @@ export const useHistoryStore = defineStore('history', () => {
   const past = ref<Snapshot[]>([])
   const future = ref<Snapshot[]>([])
 
-  const now = (): Snapshot => ({ selection: map.selection, settings: preview.settings, picks: preview.picks })
+  const now = (): Snapshot => ({ selection: map.selection, settings: preview.working, from: preview.from })
 
   function restore(snapshot: Snapshot) {
     map.selection = snapshot.selection
-    preview.settings = snapshot.settings
-    if (JSON.stringify(preview.picks) !== JSON.stringify(snapshot.picks)) {
-      preview.picks = snapshot.picks
-      void preview.run()
-    }
+    // the preview follows the settings by itself
+    preview.working = snapshot.settings
+    preview.from = snapshot.from
   }
 
   const same = (a: Snapshot, b: Snapshot) => JSON.stringify(a) === JSON.stringify(b)

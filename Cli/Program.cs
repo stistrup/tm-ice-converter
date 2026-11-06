@@ -16,6 +16,10 @@ switch (args)
         return new GuiCommand(dataDir).Run(rest);
     case ["convert", .. var rest]:
         return new ConvertCommand(dataDir).Run(rest);
+    case ["runs", .. var rest]:
+        return new RunsCommand(dataDir).Runs(rest);
+    case ["settings", .. var rest]:
+        return new RunsCommand(dataDir).Settings(rest);
     case ["plan", .. var rest]:
         return new ConvertCommand(dataDir).Plan(rest);
     case ["watch", .. var rest]:
@@ -41,16 +45,23 @@ switch (args)
             Usage:
               gui [--port <n>] [--no-open]
                   Local web interface: browse maps and look through them in 3D. Build the page first: npm run build in web/.
-              convert [map.Gbx | folder]... [-o <out dir>] [-t <tag> | --final | --testrun | --release] [--name <map name>] [--set <option>=true|false]... [--rewrite-blocks]
+              convert [map.Gbx | folder]... [-o <out dir>] [-t <tag> | --final | --testrun | --release] [--name <map name>] [--settings <from>] [--set <option>=true|false]... [--rewrite-blocks]
                   Convert maps to ice. Without maps: everything in the drop folder that changed since its last
                   conversion. Output goes to Maps/ICE in progress as "<name> (ICE).Map.Gbx" ("(ice <tag>)" with -t);
-                  --final writes to the finished folder (finishedFolder in data/local.jsonc). Options (removeForcedCameras, keepPlasticWalls)
-                  default from "options" in data/maps.jsonc, per map from "maps"; --set overrides them for the run.
+                  --final writes to the finished folder (finishedFolder in data/local.jsonc).
+                  Settings per map: the draft the GUI keeps for it, else its entry in data/maps.jsonc. --settings takes
+                  a settings file, a run id or file, "draft" or "seed" (maps.jsonc) instead; --set overrides options for the run.
+                  Every conversion is logged with its settings (see runs).
                   --testrun writes "<name> - AN Ice" to Maps/Ice testrun, validated with a 1:00:00.000 author time, ready
                   for a club campaign without driving them.
                   --rewrite-blocks writes the custom blocks again, for changes to the block writer.
                   --release writes "<name> - AN Ice" to the finished folder with you as author, no records and no times:
                   compute shadows, validate by driving, save.
+              runs <map.Gbx>
+                  The conversions in this map's family (the original, its conversions, the game's saves of them) and
+                  which settings a convert would use now.
+              settings <map.Gbx> [draft | seed | <run id>]
+                  Print settings as JSON (default: what a convert would use); fields that don't read are listed.
               watch [-o <out dir>] [-t <tag>]
                   Keep converting maps as they land in the drop folder.
               scan [folder]...

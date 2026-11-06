@@ -26,12 +26,16 @@ async function showPreview() {
   if (!view) return
   const groups = new Map<number, number[]>()
   const changes: LookChange[] = []
-  const result = preview.result
+  const result = preview.showOriginal ? null : preview.result
   const hiddenBlocks = new Set(result?.hiddenBlocks)
   const hiddenItems = new Set(result?.hiddenItems)
   if (result)
     preview.decisions?.forEach((decision, index) => {
       const info = store.infos[index]
+      if (decision?.outcome === 'removed') {
+        changes.push({ index, materials: view.materialNames(index).map(() => view.ghostMaterial), topsOnly: false })
+        return
+      }
       const real = typeof info?.block === 'number' ? hiddenBlocks.has(info.block) : typeof info?.item === 'number' && hiddenItems.has(info.item)
       if (real) {
         changes.push({ index, materials: view.materialNames(index).map(() => null), topsOnly: false })
@@ -98,6 +102,8 @@ async function showScene(scene: typeof store.scene) {
   const view = createView()
   view.setHiddenCategories(store.hidden)
   view.load(scene.manifest, scene.geometry)
+  const camera = store.currentMap && store.viewMemory(store.currentMap)?.camera
+  if (camera) view.setCamera(camera)
   view.setSelection(store.selection)
   ownView = view
   store.view = view
@@ -106,9 +112,22 @@ async function showScene(scene: typeof store.scene) {
 
 watch(() => store.scene, showScene)
 
+// the camera is remembered once it rests
+let cameraTimer: ReturnType<typeof setTimeout> | undefined
+watch(
+  () => store.cameraMoves,
+  () => {
+    clearTimeout(cameraTimer)
+    cameraTimer = setTimeout(() => {
+      if (ownView && store.view === ownView) store.rememberView({ camera: ownView.cameraState() })
+    }, 500)
+  },
+)
+
 watch(() => store.hidden, (hidden) => store.view?.setHiddenCategories(hidden))
 watch(() => store.selection, (selection) => store.view?.setSelection(selection))
 watch(() => preview.decisions, showPreview)
+watch(() => preview.showOriginal, showPreview)
 
 function onPointerMove(event: PointerEvent) {
   const rect = stage.value!.getBoundingClientRect()
@@ -210,6 +229,7 @@ onBeforeUnmount(() => {
   width: 290px;
   max-height: 100%;
   overflow-y: auto;
+  background: var(--line);
   border-bottom: 1px solid var(--line);
   border-left: 1px solid var(--line);
 }
@@ -219,8 +239,9 @@ onBeforeUnmount(() => {
   flex: none;
 }
 
+/* a dark gap: each panel its own field */
 .section + .section {
-  border-top: 1px solid var(--line);
+  margin-top: 6px;
 }
 
 .tooltip {

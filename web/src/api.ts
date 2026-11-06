@@ -102,9 +102,47 @@ export function textureUrl(path: string): string {
 export interface PreviewOption {
   name: string
   value: boolean
-  // the map's own setting, before the menu's changes
+  // the converter's default (maps.jsonc "options")
   mapValue: boolean
   description: string
+}
+
+// one map's settings, shaped like its maps.jsonc entry; fields the page doesn't know are kept as they are
+export type MapSettings = Record<string, unknown> & {
+  options?: Record<string, unknown>
+  pieces?: Record<string, unknown>
+}
+
+export interface RunInfo {
+  id: string
+  time: string
+  kind: string
+  commit: string | null
+  output: string
+  outputName: string
+  // settings fields that didn't read when it ran
+  leftOut: number
+  settings: MapSettings
+}
+
+// what a map opens with: the settings a convert would use now, and where they came from
+export interface MapState {
+  // the original's UID: drafts are kept per family
+  family: string
+  familyName: string
+  uids: number
+  settings: MapSettings
+  // "maps.jsonc" or "draft of …"
+  from: string
+  // the run (or "maps.jsonc") the draft started from
+  draftFrom: string | null
+  // the original's maps.jsonc entry
+  seed: MapSettings
+  // every option with its default and description
+  defaults: PreviewOption[]
+  // newest first
+  runs: RunInfo[]
+  unreadable: string[]
 }
 
 export interface PreviewDecision {
@@ -142,23 +180,23 @@ export interface PreviewResult {
   // per kind what a piece can be picked to become ("" = as the rules say), and the kinds' names
   choices: Record<string, PieceChoice[]>
   kindLabels: Record<string, string>
+  // settings fields left out because they don't read; picks for pieces this map doesn't have
+  problems: string[]
+  stalePicks: string[]
 }
 
-export interface PreviewAsk {
-  settings: Record<string, boolean>
-  // piece key -> choice, from the manual flow
-  picks: Record<string, string>
-}
-
-export async function fetchPreview(map: string, ask: PreviewAsk): Promise<PreviewResult> {
-  const set = Object.entries(ask.settings).map(([name, value]) => `${name}=${value}`).join(',')
+export async function fetchPreview(map: string, settings: MapSettings): Promise<PreviewResult> {
   const query = new URLSearchParams({ map })
-  if (set) query.set('set', set)
-  return (await check(await fetch(`/api/preview?${query}`, { method: 'POST', body: JSON.stringify({ picks: ask.picks }) }))).json()
+  return (await check(await fetch(`/api/preview?${query}`, { method: 'POST', body: JSON.stringify({ settings }) }))).json()
 }
 
-export async function fetchOptions(map: string): Promise<PreviewOption[]> {
-  return (await check(await fetch(`/api/options?${new URLSearchParams({ map })}`))).json()
+export async function fetchMapState(map: string): Promise<MapState> {
+  return (await check(await fetch(`/api/settings?${new URLSearchParams({ map })}`))).json()
+}
+
+// null: drop the draft, back to maps.jsonc
+export async function saveDraft(map: string, settings: MapSettings | null, from: string | null): Promise<void> {
+  await check(await fetch(`/api/draft?${new URLSearchParams({ map })}`, { method: 'POST', body: JSON.stringify({ settings, from }) }))
 }
 
 export async function fetchPreviewScene(id: string): Promise<{ manifest: SceneManifest; geometry: ArrayBuffer }> {

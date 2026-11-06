@@ -11,12 +11,13 @@ public sealed class MapConverter(HashSet<string> knownBlocks, Translations trans
     private readonly SurfaceParents surfaceParents = new(knownBlocks, shapes);
     private readonly Dictionary<string, List<(Vector3 A, Vector3 B, Vector3 C)>> flatTops = [];
 
-    public ConversionReport Convert(CGameCtnChallenge map) => Run(map).Report;
+    // own: the map's settings (MapSettings.Read); null: its maps.jsonc entry
+    public ConversionReport Convert(CGameCtnChallenge map, Translations? own = null) => Run(map, own).Report;
 
-    internal ConversionRun Run(CGameCtnChallenge map)
+    internal ConversionRun Run(CGameCtnChallenge map, Translations? own = null)
     {
         var collection = map.Collection?.ToString() ?? "Stadium2020";
-        var rules = translations.For(map.MapName);
+        var rules = translations.For(map.MapName, own);
         shapes.Environment = items.Environment = collection;
         items.Style = new ItemStyle(rules.Options.SnowOnZoneSides, rules.Options.SnowOnGroundDeco, rules.SkinLift ?? ItemStyle.DefaultSkinLift, rules.SkinEdge ?? ItemStyle.DefaultSkinEdge);
         var run = new ConversionRun(map, collection, rules, translations, knownBlocks, shapes, items, surfaceParents, flatTops);

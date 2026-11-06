@@ -54,7 +54,6 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
             else if (path == "/api/scene") await Scene(request, response);
             else if (path == "/api/geometry") await Geometry(request, response);
             else if (path == "/api/texture") await Texture(request, response);
-            else if (path == "/api/preview") await Preview(request, response);
             else if (path == "/api/preview-build") await Json(response, preview.Building());
             else if (path == "/api/preview-scene")
             {
@@ -62,9 +61,9 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
                 else if (request.QueryString["part"] == "geometry") await Bytes(response, 200, "application/octet-stream", scene.Geometry);
                 else await Bytes(response, 200, "application/json", scene.Manifest);
             }
-            else if (path == "/api/options")
+            else if (path == "/api/settings")
             {
-                if (MapFile(request) is { } map) await Json(response, preview.OptionsOf(map));
+                if (MapFile(request) is { } map) await Json(response, await Task.Run(() => preview.StateOf(map)).ConfigureAwait(false));
                 else await Text(response, 404, "no such map");
             }
             else if (path.StartsWith("/api/")) await Text(response, 404, "no such endpoint");
@@ -94,6 +93,7 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
         else if (path is "/api/answer" or "/api/shot")
             await Text(response, live.Answered(request.QueryString["id"], body.ToArray()) ? 200 : 404, "");
         else if (path == "/api/preview") await Preview(request, response, body.ToArray());
+        else if (path == "/api/draft") await Draft(request, response, body.ToArray());
         else if (path == "/api/command")
         {
             var command = Encoding.UTF8.GetString(body.ToArray());
@@ -174,33 +174,39 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
         await SendFile(response, file, "application/octet-stream");
     }
 
-    // set=name=true,name=false: options over the map's own
-    // POST body: { "picks": { "<piece key>": "<choice>" } }
-    private async Task Preview(HttpListenerRequest request, HttpListenerResponse response, byte[]? body = null)
+    // POST body: { "settings": { …as a maps.jsonc entry… } }
+    private async Task Preview(HttpListenerRequest request, HttpListenerResponse response, byte[] body)
     {
-        var picks = new Dictionary<string, string>();
-        if (body is { Length: > 0 })
-        {
-            try
-            {
-                using var doc = JsonDocument.Parse(body);
-                if (doc.RootElement.TryGetProperty("picks", out var list))
-                    foreach (var pick in list.EnumerateObject())
-                        if (pick.Value.GetString() is { } choice && Translations.PieceChoices.Contains(choice)) picks[pick.Name] = choice;
-                        else { await Text(response, 400, $"bad pick for '{pick.Name}'"); return; }
-            }
-            catch (JsonException e) { await Text(response, 400, e.Message); return; }
-        }
         if (MapFile(request) is not { } map) { await Text(response, 404, "no such map"); return; }
-        var settings = new List<(string, bool)>();
-        foreach (var pair in (request.QueryString["set"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
+        var (settings, _, error) = SettingsIn(body);
+        if (error is not null) { await Text(response, 400, error); return; }
+        await Json(response, await Task.Run(() => preview.For(map, settings ?? MapSettings.Parse("{}"))).ConfigureAwait(false));
+    }
+
+    // POST body: { "settings": {…} | null, "from": "<run id>" | null }; null settings drops the draft
+    private async Task Draft(HttpListenerRequest request, HttpListenerResponse response, byte[] body)
+    {
+        if (MapFile(request) is not { } map) { await Text(response, 404, "no such map"); return; }
+        var (settings, from, error) = SettingsIn(body);
+        if (error is not null) { await Text(response, 400, error); return; }
+        await Task.Run(() => preview.SaveDraft(map, settings, from)).ConfigureAwait(false);
+        await Text(response, 200, "ok");
+    }
+
+    private static (MapSettings? Settings, string? From, string? Error) SettingsIn(byte[] body)
+    {
+        try
         {
-            if (pair.Split('=') is not [var name, var value] || !bool.TryParse(value, out var on)) { await Text(response, 400, $"bad setting '{pair}'"); return; }
-            try { new ConvertOptions().With(name, on); }
-            catch (FormatException e) { await Text(response, 400, e.Message); return; }
-            settings.Add((name, on));
+            if (System.Text.Json.Nodes.JsonNode.Parse(body) is not System.Text.Json.Nodes.JsonObject root) return (null, null, "body must be an object");
+            var from = root["from"] is System.Text.Json.Nodes.JsonValue f && f.TryGetValue<string>(out var text) ? text : null;
+            return root["settings"] switch
+            {
+                System.Text.Json.Nodes.JsonObject o => (new MapSettings(o.DeepClone().AsObject()), from, null),
+                null => (null, from, null),
+                _ => (null, null, "settings must be an object or null"),
+            };
         }
-        await Json(response, await Task.Run(() => preview.For(map, settings, picks)).ConfigureAwait(false));
+        catch (JsonException e) { return (null, null, e.Message); }
     }
 
     private async Task Texture(HttpListenerRequest request, HttpListenerResponse response)

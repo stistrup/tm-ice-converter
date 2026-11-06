@@ -11,5 +11,8 @@ data/local.jsonc
 STATUS.md
 review *
 
+# Conversion runs, drafts and map links (Paths.SettingsStore)
+settings/
+
 # Archives
 archive/

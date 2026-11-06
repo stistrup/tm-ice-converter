@@ -11,6 +11,8 @@
     "importerWinePrefix": "~/.local/share/tm-ice-wine",
     // where --final and --release write, under Maps
     "finishedFolder": "ICE finished",
+    // optional: where conversion runs and GUI drafts are kept (default: settings/ in the repo)
+    "settings": "",
     // optional: the uploader also mirrors each upload to <releaseCopy>/<version>
     "releaseCopy": ""
   },

@@ -58,7 +58,9 @@ internal sealed partial class ConversionPreview(string dataDir)
         // originals drawn for real in the added scene (or gone): hidden in the view
         List<int> HiddenBlocks, List<int> HiddenItems,
         // builds finished before this result; a later one means the missing pieces are there now
-        int Builds)
+        int Builds,
+        // settings fields that didn't read, and picks for pieces this map doesn't have
+        List<string> Problems, List<string> StalePicks)
     {
         public Dictionary<string, List<Choice>> Choices => ConversionPreview.Choices;
         public Dictionary<string, string> KindLabels => ConversionPreview.KindLabels;
@@ -124,20 +126,48 @@ internal sealed partial class ConversionPreview(string dataDir)
         lock (addedScenes) return addedScenes.TryGetValue(id, out var scene) ? scene : null;
     }
 
-    // the map's own settings, nothing worked out; the map's default run starts in the background, so Preview is quick
-    public List<Option> OptionsOf(string mapPath)
+    // a run as the page lists it
+    public sealed record RunInfo(string Id, DateTime Time, string Kind, string? Commit, string Output, string OutputName, int LeftOut, System.Text.Json.Nodes.JsonObject Settings);
+
+    // what the page starts from: the settings a convert would use now, the original's maps.jsonc entry, the family's runs
+    public sealed record MapState(string Family, string FamilyName, int Uids, System.Text.Json.Nodes.JsonObject Settings, string From, string? DraftFrom,
+        System.Text.Json.Nodes.JsonObject Seed, List<Option> Defaults, List<RunInfo> Runs, List<string> Unreadable);
+
+    // nothing worked out; the map's run with these settings starts in the background, so Preview is quick
+    public MapState StateOf(string mapPath)
     {
-        var name = Gbx.ParseHeaderNode<CGameCtnChallenge>(mapPath).MapName;
-        var own = Translations.Load(dataDir).For(name).Options;
+        var (family, header, log) = FamilyOf(mapPath);
+        var data = Translations.Load(dataDir);
+        var (settings, from) = log.Current(family, data, header.MapName);
+        var seed = MapSettings.Seed(data, family.RootName is { Length: > 0 } n ? n : header.MapName);
+        var defaults = data.For("", new Translations()).Options;
         _ = Task.Run(async () =>
         {
-            try { await For(mapPath, []); }
+            try { await For(mapPath, settings); }
             catch (Exception e) { Console.Error.WriteLine($"preview warm-up {mapPath}: {e.Message}"); }
         });
-        return OptionList(own, own);
+        var runs = family.Runs.AsEnumerable().Reverse()
+            .Select(r => new RunInfo(r.Id, r.Time, r.Kind, r.Commit, r.Output.File, r.Output.Name, r.Problems?.Count ?? 0, r.Settings)).ToList();
+        return new MapState(family.Root, family.RootName, family.Uids.Count, settings.Json, from, log.DraftOf(family)?.From, seed.Json,
+            OptionList(defaults, defaults), runs, log.Problems);
     }
 
-    public async Task<Result> For(string mapPath, IReadOnlyList<(string Name, bool Value)> settings, IReadOnlyDictionary<string, string>? picks = null)
+    // settings null: drop the draft (back to maps.jsonc)
+    public void SaveDraft(string mapPath, MapSettings? settings, string? from)
+    {
+        var (family, _, log) = FamilyOf(mapPath);
+        if (settings is null) log.DropDraft(family);
+        else log.SaveDraft(family, settings, from);
+    }
+
+    private static (MapFamily Family, CGameCtnChallenge Header, RunLog Log) FamilyOf(string mapPath)
+    {
+        var header = Gbx.ParseHeaderNode<CGameCtnChallenge>(mapPath);
+        var log = RunLog.Default;
+        return (log.FamilyOf(header.MapUid, () => ConvertCommand.Layout(mapPath)), header, log);
+    }
+
+    public async Task<Result> For(string mapPath, MapSettings settings)
     {
         await one.WaitAsync();
         try
@@ -153,27 +183,23 @@ internal sealed partial class ConversionPreview(string dataDir)
                 recent.Clear();
                 iceLooks = IceLooks(shapes);
             }
-            picks ??= new Dictionary<string, string>();
-            var key = $"{mapPath}|{File.GetLastWriteTimeUtc(mapPath).Ticks}|{string.Join(",", settings.OrderBy(s => s.Name).Select(s => $"{s.Name}={s.Value}"))}"
-                + $"|{string.Join(",", picks.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => $"{p.Key}={p.Value}"))}";
+            var key = $"{mapPath}|{File.GetLastWriteTimeUtc(mapPath).Ticks}|{settings.Json.ToJsonString()}";
             if (cachedBuilds != builds) recent.Clear();
             cachedBuilds = builds;
             if (recent.TryGetValue(key, out var known)) return known with { Milliseconds = clock.ElapsedMilliseconds };
             var map = Gbx.ParseNode<CGameCtnChallenge>(mapPath);
-            var mapOptions = translations!.For(map.MapName).Options;
-            translations.RunSettings.Clear();
-            translations.RunSettings.AddRange(settings);
-            translations.RunPieces.Clear();
-            foreach (var (k, v) in picks) translations.RunPieces[k] = v;
-            var options = translations.For(map.MapName).Options;
+            var problems = new List<string>();
+            var own = settings.Read(problems);
+            var rulesNow = translations!.For(map.MapName, own);
+            var options = rulesNow.Options;
+            var defaults = translations.For(map.MapName, new Translations()).Options;
 
             var blocks = map.GetBlocks().ToList();
             var blockKeys = blocks.Select(b => KeyOf(b.Name, b)).ToList();
             var names = blocks.Select(b => b.Name).ToList();
             var items = (map.AnchoredObjects ?? []).Select(o => (Item: o, o.ItemModel.Id, o.AbsolutePositionInMap)).ToList();
-            var run = converter.Run(map);
+            var run = converter.Run(map, own);
 
-            var rulesNow = translations.For(map.MapName);
             var blockDecisions = blocks.Index().ToDictionary(b => b.Index, b => Of(run, b.Item) is var d
                 ? d with { Kind = KindOf(run, names[b.Index], d.Rule), Key = blockKeys[b.Index], Picked = rulesNow.Pieces.GetValueOrDefault(Normal(blockKeys[b.Index])) } : null!);
             var now = (map.AnchoredObjects ?? []).ToHashSet(ReferenceEqualityComparer.Instance);
@@ -210,8 +236,11 @@ internal sealed partial class ConversionPreview(string dataDir)
             var addedCount = convertedItems.Count(o => !itemOrigin.ContainsKey(o));
             var sceneId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..16];
             var scene = SceneBundle.InMemory(part);
-            var result = new Result(OptionList(options, mapOptions), blockDecisions, itemDecisions, addedCount, clock.ElapsedMilliseconds, iceLooks.Swaps, iceLooks.Looks,
-                sceneId, hiddenBlocks.Order().ToList(), hiddenItems.Order().ToList(), builds);
+            var keys = blockKeys.Concat(items.Select(o => $"{o.Id} {Inv(o.AbsolutePositionInMap.X)}, {Inv(o.AbsolutePositionInMap.Y)}, {Inv(o.AbsolutePositionInMap.Z)}"))
+                .Select(Normal).ToHashSet();
+            var stale = rulesNow.Pieces.Keys.Where(k => !keys.Contains(k)).Order(StringComparer.Ordinal).ToList();
+            var result = new Result(OptionList(options, defaults), blockDecisions, itemDecisions, addedCount, clock.ElapsedMilliseconds, iceLooks.Swaps, iceLooks.Looks,
+                sceneId, hiddenBlocks.Order().ToList(), hiddenItems.Order().ToList(), builds, problems, stale);
             StartBuilds();
             if (recent.Count >= 16)
             {
@@ -222,12 +251,7 @@ internal sealed partial class ConversionPreview(string dataDir)
             recent[key] = result;
             return result;
         }
-        finally
-        {
-            translations?.RunSettings.Clear();
-            translations?.RunPieces.Clear();
-            one.Release();
-        }
+        finally { one.Release(); }
     }
 
     private static string Normal(string key) => System.Text.RegularExpressions.Regex.Replace(key.Trim(), @"\s*,\s*", ",");
