@@ -17,6 +17,16 @@ internal static class Placement
         return turn * Matrix4x4.CreateTranslation(corner - new Vector3(MathF.Round(footprint.Min(c => c.X)), 0, MathF.Round(footprint.Min(c => c.Z))));
     }
 
+    // the map stores the item's pivot negated: mesh point = position + turn(scale(v + PivotPosition))
+    public static Matrix4x4 Of(CGameCtnAnchoredObject item)
+    {
+        var (p, r, pivot) = (item.AbsolutePositionInMap, item.YawPitchRoll, item.PivotPosition);
+        return Matrix4x4.CreateTranslation(pivot.X, pivot.Y, pivot.Z)
+            * Matrix4x4.CreateScale(item.Scale is > 0 and var s ? s : 1)
+            * Matrix4x4.CreateFromYawPitchRoll(r.X, r.Y, r.Z)
+            * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
+    }
+
     // how much lower grid Y sits than on Stadium
     public static float EnvironmentDrop(string? collection)
     {

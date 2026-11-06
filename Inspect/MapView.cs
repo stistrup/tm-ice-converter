@@ -74,8 +74,8 @@ public sealed class MapView(BlockCatalog shapes)
             if (name.EndsWith("Pillar") && shapes.FindPlacedBlockParts(name, ground, variant, mobil, new HashSet<int>()) is null
                 && shapes.ClipSides(name, ground, variant).Count == 0)
                 (meshName, ground, variant, mobil) = (name[..^"Pillar".Length], false, 0, 0);
-            // a custom block clips as the block it was made from (the game draws that block's clips around our body)
-            if (CustomBlockMesh.Parse(meshName) is { } custom) meshName = custom.Source;
+            // a custom block clips as its archetype (the game draws that block's clips around our body)
+            if (CustomBlockMesh.Parse(meshName) is { } custom) meshName = custom.Archetype;
             var units = shapes.Units(meshName, ground, variant) ?? [new Int3(0, 0, 0)];
             var place = Placement.Of(block, (units.Max(u => u.X) + 1, units.Max(u => u.Z) + 1));
             grid.Add((block, new ClipResolver.Placed(meshName, ground, variant, place), mobil));
@@ -110,7 +110,7 @@ public sealed class MapView(BlockCatalog shapes)
         }
     }
 
-    // the shown clips of the block a custom block was made from: the game still draws them (terrain ones included)
+    // the shown clips of a custom block's archetype: the game still draws them (terrain ones included)
     private void AddClipsOf(string source, bool ground, int variant, int mobil, Matrix4x4 place, HashSet<int> clips, Dictionary<string, object> info)
     {
         if (clips.Count == 0) return;
@@ -203,6 +203,7 @@ public sealed class MapView(BlockCatalog shapes)
         if (meshes[key] is not { Count: > 0 }) return false;
         info["kind"] = "custom block";
         info["sourceBlock"] = custom.Source;
+        if (custom.Stacked) info["stacked"] = true;
         if (shapes.IsTerrain(custom.Source)) info["tags"] = info.TryGetValue("tags", out var t) ? $"{t}, terrain" : "terrain";
         instances.Add(new SceneInstance(key, Flatten(place), info));
         if (shapes.Waypoint(custom.Source) is { } w) waypoints.Add(new SceneWaypoint(w, key, Flatten(place)));
@@ -229,11 +230,8 @@ public sealed class MapView(BlockCatalog shapes)
         {
             if (only is not null && !only.Contains(item)) continue;
             var id = item.ItemModel.Id;
-            var (p, r, pivot) = (item.AbsolutePositionInMap, item.YawPitchRoll, item.PivotPosition);
-            var place = Matrix4x4.CreateTranslation(-pivot.X, -pivot.Y, -pivot.Z)
-                * Matrix4x4.CreateScale(item.Scale is > 0 and var s ? s : 1)
-                * Matrix4x4.CreateFromYawPitchRoll(r.X, r.Y, r.Z)
-                * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
+            var p = item.AbsolutePositionInMap;
+            var place = Placement.Of(item);
             var key = "item:" + id;
             string? waypoint = null;
             var info = new Dictionary<string, object> { ["kind"] = "item", ["item"] = itemIndex, ["name"] = id, ["position"] = new[] { p.X, p.Y, p.Z }, ["color"] = (int)item.Color };

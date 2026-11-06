@@ -44,6 +44,10 @@ interface Placed {
   ownsGround: boolean
   // block colour: 0 Default (as painted), 1 White .. 5 Black
   tint: number
+  // ground blocks cut the terrain around them, custom ones too (they don't own the ground, the game still reshapes it)
+  cuts: boolean
+  // ice stacked 1 cm over the same native block: too close for the depth buffer, drawn in front
+  stacked: boolean
   // where it sits in the instanced meshes, one per geometry
   slots: { mesh: InstancedMesh; n: number }[]
 }
@@ -67,6 +71,18 @@ const hidden = new Matrix4().makeScale(0, 0, 0)
 const CUT_LAYER = 1
 
 // ground blocks (not terrain) are what the terrain gets cut around
+// polygon offset only while this mesh draws: the material stays shared
+function drawOver(mesh: InstancedMesh) {
+  mesh.onBeforeRender = (_r, _s, _c, _g, material) => {
+    material.polygonOffset = true
+    material.polygonOffsetFactor = -1
+    material.polygonOffsetUnits = -4
+  }
+  mesh.onAfterRender = (_r, _s, _c, _g, material) => {
+    material.polygonOffset = false
+  }
+}
+
 function markCutter(mesh: InstancedMesh) {
   const material = mesh.material as ShaderMaterial
   if (material.uniforms?.terrain?.value === 1) return
@@ -324,10 +340,13 @@ export class MapScene {
         return { geometry, material: materials.materials[piece.material] as Material }
       }),
     )
-    const byMesh = new Map<number, typeof manifest.instances>()
-    for (const instance of manifest.instances) byMesh.set(instance.mesh, [...(byMesh.get(instance.mesh) ?? []), instance])
-    for (const [index, list] of byMesh) {
-      for (const { geometry, material } of pieces[index]) {
+    const byMesh = new Map<string, typeof manifest.instances>()
+    for (const instance of manifest.instances) {
+      const key = `${instance.mesh}|${instance.info.stacked === true}`
+      byMesh.set(key, [...(byMesh.get(key) ?? []), instance])
+    }
+    for (const list of byMesh.values()) {
+      for (const { geometry, material } of pieces[list[0].mesh]) {
         const mesh = new InstancedMesh(geometry, material, list.length)
         list.forEach((instance, n) => {
           mesh.setMatrixAt(n, new Matrix4().fromArray(instance.m))
@@ -336,6 +355,7 @@ export class MapScene {
         mesh.matrixAutoUpdate = false
         const info = list[0].info
         if (/\bground\b/.test(info.tags ?? '') && !/\bterrain\b/.test(info.tags ?? '')) markCutter(mesh)
+        if (info.stacked === true) drawOver(mesh)
         meshes.push(mesh)
       }
     }
@@ -610,13 +630,16 @@ export class MapScene {
     const keepsTerrain = custom && /On[A-Z][a-z]+(Cliff|Hill)/.test(String(info.sourceBlock ?? ''))
     const ownsGround = info.kind.includes('block') && (!custom || keepsTerrain) && /\b(ground|terrain)\b/.test(info.tags ?? '')
     const tint = typeof info.color === 'number' ? info.color : 0
-    this.placed.push({ meshKey, geometries, materials, matrix: new Matrix4().fromArray(m), category: categoryOf(info), ownsGround, tint, slots: [] })
+    const stacked = info.stacked === true
+    const category = categoryOf(info)
+    const cuts = info.kind.includes('block') && /\bground\b/.test(info.tags ?? '') && !/\bterrain\b/.test(info.tags ?? '')
+    this.placed.push({ meshKey, geometries, materials, matrix: new Matrix4().fromArray(m), category, ownsGround, cuts, tint, stacked, slots: [] })
   }
 
   private buildInstances() {
     const groups = new Map<string, Placed[]>()
     for (const placed of this.placed) {
-      const key = `${placed.meshKey}|${placed.category}`
+      const key = `${placed.meshKey}|${placed.category}|${placed.stacked}|${placed.cuts}`
       const group = groups.get(key)
       if (group) group.push(placed)
       else groups.set(key, [placed])
@@ -632,7 +655,8 @@ export class MapScene {
           placed.slots.push({ mesh, n })
         })
         mesh.matrixAutoUpdate = false
-        if (group[0].ownsGround && category !== 'terrain') markCutter(mesh)
+        if (group[0].cuts) markCutter(mesh)
+        if (group[0].stacked) drawOver(mesh)
         this.scene.add(mesh)
         const list = this.categoryMeshes.get(category)
         if (list) list.push(mesh)

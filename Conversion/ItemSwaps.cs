@@ -114,9 +114,7 @@ internal static class ItemSwaps
             run.FlatTops[key] = tops;
         }
         if (tops.Count == 0) return false;
-        var (p, r, pivot) = (item.AbsolutePositionInMap, item.YawPitchRoll, item.PivotPosition);
-        var place = Matrix4x4.CreateTranslation(-pivot.X, -pivot.Y, -pivot.Z) * Matrix4x4.CreateScale(item.Scale is > 0 and var sc ? sc : 1)
-            * Matrix4x4.CreateFromYawPitchRoll(r.X, r.Y, r.Z) * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
+        var place = Placement.Of(item);
         var area = 0f;
         foreach (var (a, b, c) in tops)
         {
