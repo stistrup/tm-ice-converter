@@ -5,11 +5,14 @@ import MapViewport from './components/MapViewport.vue'
 import StatusBar from './components/StatusBar.vue'
 import { startLiveLink } from './live'
 import { useMapStore } from './stores/map'
+import { useConvertStore } from './stores/convert'
 
 const store = useMapStore()
 
 onMounted(() => {
   void store.loadMaps()
+  // a conversion still running in the backend (or just finished) shows again
+  void useConvertStore().poll()
   startLiveLink()
 })
 </script>

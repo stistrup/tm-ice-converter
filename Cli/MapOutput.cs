@@ -10,15 +10,16 @@ namespace TmIceConverter;
 // what a converted map needs before it's a valid file of its own
 internal static class MapOutput
 {
-    public static void Prepare(CGameCtnChallenge map, string name, string uid, bool testrun, bool release)
+    // fakeAuthorTime: validated with a dummy 1:00:00; asAuthor: the local account (testrunAuthor) as author
+    public static void Prepare(CGameCtnChallenge map, string name, string uid, bool fakeAuthorTime, bool asAuthor)
     {
         map.MapName = name;
         map.MapUid = uid;
         map.Kind = CGameCtnChallenge.MapKind.InProgress;
         EnsureHeaderChunks(map);
         ClearValidation(map);
-        if (testrun) DummyValidation(map);
-        if (testrun || release) AsAuthor(map);
+        if (fakeAuthorTime) DummyValidation(map);
+        if (asAuthor) AsAuthor(map);
         // clubs reject maps without a lightmap declared
         (map.LightmapVersion, map.LightmapFrames, map.LightmapCache) = (null, null, null);
     }

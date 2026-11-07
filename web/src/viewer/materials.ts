@@ -302,7 +302,7 @@ export class SceneMaterials {
     const lowerName = source.name.toLowerCase()
     const shader = source.shader ?? ''
     const isDecal = lowerName.includes('decal') || shader.toLowerCase().includes('decal')
-    const isCutout = source.name.includes('Fence')
+    const isCutout = source.name.includes('Fence') || shader === 'VegetLeaf'
     const material = flatMaterial(fallbackColor(source.name))
     material.uniforms.cutout.value = isCutout ? 1 : 0
     material.uniforms.decal.value = isDecal ? 1 : 0

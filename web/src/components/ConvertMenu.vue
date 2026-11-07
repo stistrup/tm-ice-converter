@@ -82,7 +82,7 @@ function loadFrom(value: string) {
       :aria-expanded="preview.open"
       @click="preview.open ? preview.close() : preview.show()"
     >
-      <span :class="$style.grow">Conversion</span>
+      <span :class="$style.grow">Conversion options</span>
       <span v-if="preview.open && preview.result && !preview.loading" :class="$style.muted">{{ (preview.result.milliseconds / 1000).toFixed(1) }} s</span>
       <span :class="[$style.chevron, { [$style.up]: preview.open }]" />
     </button>
@@ -184,8 +184,6 @@ function loadFrom(value: string) {
         <span>Preview</span>
         <span v-if="!preview.showOriginal && preview.loading" :class="$style.spinner" aria-label="Calculating" />
       </label>
-      <span :class="$style.grow" />
-      <button type="button" :class="[$style.button, $style.primary]" disabled title="not wired up yet">Convert</button>
     </div>
   </section>
 </template>
@@ -328,29 +326,6 @@ function loadFrom(value: string) {
   padding: 0 8px 8px;
 }
 
-.button {
-  height: 20px;
-  padding: 0 10px;
-  cursor: default;
-  background: #3a3a3a;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-}
-
-.button:hover:not(:disabled) {
-  background: #454545;
-}
-
-.button:disabled {
-  color: var(--muted);
-}
-
-.button {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-}
-
 .source {
   margin-bottom: 8px;
   padding-bottom: 8px;
@@ -467,16 +442,5 @@ function loadFrom(value: string) {
   to {
     transform: rotate(360deg);
   }
-}
-
-.primary,
-.primary:disabled {
-  font-weight: 600;
-  color: #1a1a1a;
-  background: var(--accent);
-}
-
-.primary:hover:not(:disabled) {
-  background: #f0a04a;
 }
 </style>

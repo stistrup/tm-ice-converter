@@ -113,11 +113,13 @@ public sealed class ItemBuilder(string dataDir)
             && materials.Any(m => m.MaterialUserInst is { } u && ((u.MaterialName ?? "") + (u.Link ?? "")).Contains("PlatformIce"));
 
     // false when nothing was planned
-    public bool BuildPlanned()
+    // progress: (built, of)
+    public bool BuildPlanned(Action<int, int>? progress = null)
     {
         var jobs = TakePlanned();
         if (jobs.Count == 0) return false;
-        RunBuilds(jobs);
+        progress?.Invoke(0, jobs.Count);
+        RunBuilds(jobs, n => progress?.Invoke(n, jobs.Count));
         return true;
     }
 

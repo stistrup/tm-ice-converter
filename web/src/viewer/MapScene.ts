@@ -50,6 +50,18 @@ interface Placed {
   stacked: boolean
   // where it sits in the instanced meshes, one per geometry
   slots: { mesh: InstancedMesh; n: number }[]
+  // 'b3' / 'i7': block or item index in the map, what the preview's converted pieces point back to
+  origin: string | null
+}
+
+// a converted piece in the preview layer, by the original it replaces
+interface LayerPiece extends PieceParts {
+  key: string
+  matrix: Matrix4
+}
+
+function originOf(info: InstanceInfo, block: string, item: string): string | null {
+  return typeof info[block] === 'number' ? `b${info[block]}` : typeof info[item] === 'number' ? `i${info[item]}` : null
 }
 
 // the preview's redraw of one piece: per geometry a material (null = left out), on the whole piece or only on its upward faces
@@ -163,7 +175,8 @@ export class MapScene {
   private tintOverlay: InstancedMesh[] = []
   private readonly tintMaterials = new Map<number, Material>()
   private readonly lookMaterials = new Map<string, Material>()
-  private layer: { meshes: InstancedMesh[]; materials: SceneMaterials; dispose: () => void } | null = null
+  private layer: { meshes: InstancedMesh[]; materials: SceneMaterials; pieces: Map<string, LayerPiece>; dispose: () => void } | null = null
+  private selection: number[] = []
   private layerMaterials: SceneMaterials | null = null
   private extent: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null
   private cutTarget: WebGLRenderTarget | null = null
@@ -326,6 +339,7 @@ export class MapScene {
     this.setLook(draw?.looks ?? [])
     this.setTints(draw?.tints ?? [])
     this.layerMaterials = layer?.materials ?? null
+    this.setSelection(this.selection)
     this.scheduleCut()
   }
 
@@ -341,7 +355,16 @@ export class MapScene {
       }),
     )
     const byMesh = new Map<string, typeof manifest.instances>()
+    const byOrigin = new Map<string, LayerPiece>()
     for (const instance of manifest.instances) {
+      const origin = originOf(instance.info, 'originBlock', 'originItem')
+      if (origin && !byOrigin.has(origin))
+        byOrigin.set(origin, {
+          key: `layer:${instance.mesh}`,
+          geometries: pieces[instance.mesh].map((p) => p.geometry),
+          materials: pieces[instance.mesh].map((p) => p.material),
+          matrix: new Matrix4().fromArray(instance.m),
+        })
       const key = `${instance.mesh}|${instance.info.stacked === true}`
       byMesh.set(key, [...(byMesh.get(key) ?? []), instance])
     }
@@ -363,6 +386,7 @@ export class MapScene {
     return {
       meshes,
       materials,
+      pieces: byOrigin,
       dispose: () => {
         for (const mesh of meshes) {
           this.scene.remove(mesh)
@@ -414,7 +438,7 @@ export class MapScene {
           mesh.setMatrixAt(n, hidden)
           mesh.instanceMatrix.needsUpdate = true
         }
-      // drawn by the changed layer: the picture keeps the original for now
+      // drawn by the changed layer: partsOf takes it from there
       if (change.topsOnly || change.materials.some((m) => m !== null)) this.looks.set(change.index, this.lookOf(placed, change))
       const key = `${placed.meshKey}|${change.topsOnly}|${change.materials.map((m) => m?.uuid ?? '-').join(',')}`
       const group = groups.get(key)
@@ -503,6 +527,7 @@ export class MapScene {
   }
 
   setSelection(indices: number[]) {
+    this.selection = indices
     this.selectOverlay = this.replaceOverlay(this.selectOverlay, indices, this.selectMaterial)
     this.invalidate()
   }
@@ -521,7 +546,10 @@ export class MapScene {
   // null without a real mesh: boxes and cones stand in for those
   partsOf(index: number): PieceParts | null {
     const placed = this.placed[index]
-    if (!placed || placed.meshKey.startsWith('placeholder:') || placed.meshKey.startsWith('box:')) return null
+    if (!placed) return null
+    const converted = this.converted(placed)
+    if (converted) return converted
+    if (placed.meshKey.startsWith('placeholder:') || placed.meshKey.startsWith('box:')) return null
     return this.looks.get(index) ?? placed
   }
 
@@ -636,7 +664,8 @@ export class MapScene {
     const stacked = info.stacked === true
     const category = categoryOf(info)
     const cuts = info.kind.includes('block') && /\bground\b/.test(info.tags ?? '') && !/\bterrain\b/.test(info.tags ?? '')
-    this.placed.push({ meshKey, geometries, materials, matrix: new Matrix4().fromArray(m), category, ownsGround, cuts, tint, stacked, slots: [] })
+    const origin = originOf(info, 'block', 'item')
+    this.placed.push({ meshKey, geometries, materials, matrix: new Matrix4().fromArray(m), category, ownsGround, cuts, tint, stacked, slots: [], origin })
   }
 
   private buildInstances() {
@@ -730,18 +759,25 @@ export class MapScene {
     return material
   }
 
+  // the preview's converted piece that replaces this one, while the preview shows it
+  private converted(placed: Placed): LayerPiece | null {
+    return (placed.origin && this.layer?.pieces.get(placed.origin)) || null
+  }
+
+  // in the preview, converted pieces are outlined as converted
   private replaceOverlay(old: InstancedMesh[], indices: number[], material: Material): InstancedMesh[] {
     for (const mesh of old) {
       this.scene.remove(mesh)
       mesh.dispose()
     }
-    const groups = new Map<string, Placed[]>()
+    const groups = new Map<string, { geometries: BufferGeometry[]; matrix: Matrix4 }[]>()
     for (const index of indices) {
       const placed = this.placed[index]
       if (!placed) continue
-      const group = groups.get(placed.meshKey)
-      if (group) group.push(placed)
-      else groups.set(placed.meshKey, [placed])
+      const shown = this.converted(placed) ?? { key: placed.meshKey, geometries: placed.geometries, matrix: placed.matrix }
+      const group = groups.get(shown.key)
+      if (group) group.push(shown)
+      else groups.set(shown.key, [shown])
     }
     const overlay: InstancedMesh[] = []
     for (const group of groups.values()) {

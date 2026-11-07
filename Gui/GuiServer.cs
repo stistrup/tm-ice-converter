@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Globalization;
 using System.Net;
 using System.Text;
@@ -9,7 +10,7 @@ using GBX.NET.Engines.Game;
 namespace TmIceConverter;
 
 // localhost only; HttpListener rejects other Host headers
-internal sealed partial class GuiServer(string url, string webRoot, ConversionPreview preview)
+internal sealed partial class GuiServer(string url, string webRoot, ConversionPreview preview, ConvertJobs jobs, string dataDir)
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -51,6 +52,16 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
             else if (path == "/api/shot") await Shot(response);
             else if (path == "/api/pick") await Pick(request, response);
             else if (path == "/api/maps") await Json(response, ListMaps());
+            else if (path == "/api/folders") await Json(response, ListFolders());
+            else if (path == "/api/author") await Json(response, AuthorNow());
+            // a conversion's target: folder + name under Maps (case as the game's file system ignores it)
+            else if (path == "/api/convert") await Json(response, jobs.Current);
+            else if (path == "/api/output-name")
+            {
+                if (MapFile(request) is { } source) await Json(response, OutputName(source));
+                else await Text(response, 404, "no such map");
+            }
+            else if (path == "/api/exists") await Json(response, TargetExists(request.QueryString["folder"] ?? "", request.QueryString["name"] ?? ""));
             else if (path == "/api/scene") await Scene(request, response);
             else if (path == "/api/geometry") await Geometry(request, response);
             else if (path == "/api/texture") await Texture(request, response);
@@ -94,6 +105,27 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
             await Text(response, live.Answered(request.QueryString["id"], body.ToArray()) ? 200 : 404, "");
         else if (path == "/api/preview") await Preview(request, response, body.ToArray());
         else if (path == "/api/draft") await Draft(request, response, body.ToArray());
+        else if (path == "/api/convert") await Convert(request, response, body.ToArray());
+        else if (path == "/api/convert-dismiss")
+        {
+            jobs.Dismiss(request.QueryString["id"] ?? "");
+            await Text(response, 200, "ok");
+        }
+        else if (path == "/api/author")
+        {
+            AuthorEntry? author;
+            try { author = JsonSerializer.Deserialize<AuthorEntry>(body.ToArray(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
+            catch (JsonException e) { await Text(response, 400, e.Message); return; }
+            if (author is not { Login.Length: > 0 }) { await Text(response, 400, "a user ID is needed"); return; }
+            var login = author.Login.Trim();
+            // nickname and zone as the game wrote them into your own maps; typed only when none has the ID
+            var (nickname, zone) = author.Nickname?.Trim() is { Length: > 0 } typed
+                ? (typed, author.Zone?.Trim() is { Length: > 0 } z ? z : "World")
+                : await Task.Run(() => KnownAuthor(login)) ?? (null!, null!);
+            if (nickname is null) { await Text(response, 404, "no map of yours carries this ID"); return; }
+            Paths.SaveTestrunAuthor(login, nickname, zone);
+            await Json(response, AuthorNow());
+        }
         else if (path == "/api/command")
         {
             var command = Encoding.UTF8.GetString(body.ToArray());
@@ -144,13 +176,78 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
             .ToList();
     }
 
+    private static bool TargetExists(string folder, string name)
+    {
+        if (MapNames.FileName(name) is not { } file || Inside(Paths.Maps, Path.Combine(folder.Trim(), "x")) is not { } inside) return false;
+        var dir = Path.GetDirectoryName(inside)!;
+        return Directory.Exists(dir) && Directory.EnumerateFiles(dir, "*.Map.Gbx", new EnumerationOptions { MatchCasing = MatchCasing.CaseInsensitive })
+            .Any(f => string.Equals(Path.GetFileName(f), file, StringComparison.OrdinalIgnoreCase));
+    }
+
+    // what a conversion names it by default (maps.jsonc names included)
+    private string OutputName(string map) => MapNames.DefaultOutput(Gbx.ParseHeaderNode<CGameCtnChallenge>(map).MapName, Translations.Load(dataDir));
+
+    private sealed record ConvertRequest(JsonObject? Settings, string? Name, string? Folder, bool FakeAuthorTime, bool MeAsAuthor, bool RebuildBlocks, bool Overwrite);
+
+    // starts it in the background; GET /api/convert follows it
+    private async Task Convert(HttpListenerRequest request, HttpListenerResponse response, byte[] body)
+    {
+        if (MapFile(request) is not { } map) { await Text(response, 404, "no such map"); return; }
+        ConvertRequest? ask;
+        try { ask = JsonSerializer.Deserialize<ConvertRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
+        catch (JsonException e) { await Text(response, 400, e.Message); return; }
+        if (ask is null || ask.Name?.Trim() is not { Length: > 0 } name) { await Text(response, 400, "a map name is needed"); return; }
+        if (MapNames.FileName(name) is null) { await Text(response, 400, "the name can't hold < > : \" / \\ | ? * or end in a dot"); return; }
+        var folder = ask.Folder?.Trim() ?? "";
+        var outDir = folder.Length == 0 ? Paths.Maps : Inside(Paths.Maps, folder);
+        if (outDir is null) { await Text(response, 400, "the folder must be under Maps"); return; }
+        if (TargetExists(folder, name) && !ask.Overwrite) { await Text(response, 409, "a map of that name is already there"); return; }
+        if (ask.MeAsAuthor && Paths.TestrunAuthorIfSet is null) { await Text(response, 400, "no user ID saved for Me as author"); return; }
+        var choices = new ConvertCommand.Choices(outDir, name, ask.FakeAuthorTime, ask.MeAsAuthor, ask.RebuildBlocks, ask.Overwrite)
+            { Settings = new MapSettings(ask.Settings ?? new JsonObject()) };
+        if (jobs.Start(map, choices, name) is { } started) await Json(response, started);
+        else await Text(response, 409, "a conversion is already running");
+    }
+
+    private sealed record AuthorEntry(string Login, string? Nickname, string? Zone);
+
+    // the newest map under Maps by this account: its nickname and zone
+    private static (string Nickname, string Zone)? KnownAuthor(string login)
+    {
+        foreach (var file in Directory.EnumerateFiles(Paths.Maps, "*.Map.Gbx", new EnumerationOptions { RecurseSubdirectories = true, MatchCasing = MatchCasing.CaseInsensitive })
+            .OrderByDescending(File.GetLastWriteTimeUtc))
+        {
+            try
+            {
+                var map = Gbx.ParseHeaderNode<CGameCtnChallenge>(file);
+                if (map.AuthorLogin == login && map.AuthorNickname is { Length: > 0 } nickname) return (nickname, map.AuthorZone is { Length: > 0 } zone ? zone : "World");
+            }
+            catch (Exception) { }
+        }
+        return null;
+    }
+
+    // the account a converted map can carry as its author (local.jsonc "testrunAuthor"), null if none
+    private static AuthorEntry? AuthorNow() => Paths.TestrunAuthorIfSet is { } a ? new AuthorEntry(a.Login, a.Nickname, a.Zone) : null;
+
+    private sealed record FolderList(List<string> Folders, string Progress);
+
+    // every folder under Maps, empty ones too, "/" separated; and where a conversion goes by default
+    private static FolderList ListFolders()
+    {
+        static string Rel(string dir) => Path.GetRelativePath(Paths.Maps, dir).Replace('\\', '/');
+        var folders = Directory.EnumerateDirectories(Paths.Maps, "*", new EnumerationOptions { RecurseSubdirectories = true })
+            .Select(Rel).Order(StringComparer.OrdinalIgnoreCase).ToList();
+        return new FolderList(folders, Rel(Paths.OutFolder));
+    }
+
     // as the game lists it
     private string DisplayName(FileInfo file)
     {
         lock (names)
             if (names.TryGetValue(file.FullName, out var known) && known.Modified == file.LastWriteTimeUtc) return known.Name;
         string name;
-        try { name = FormatCodes().Replace(Gbx.ParseHeaderNode<CGameCtnChallenge>(file.FullName).MapName, ""); }
+        try { name = MapNames.Plain(Gbx.ParseHeaderNode<CGameCtnChallenge>(file.FullName).MapName); }
         catch (Exception) { name = file.Name[..^".Map.Gbx".Length]; }
         lock (names) names[file.FullName] = (file.LastWriteTimeUtc, name);
         return name;
@@ -259,8 +356,6 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
         await response.OutputStream.WriteAsync(bytes);
     }
 
-    [GeneratedRegex(@"\$([0-9a-fA-F]{3}|[lLhHpP](\[[^\]]*\])?|.)")]
-    private static partial Regex FormatCodes();
 
     private sealed record MapEntry(string Path, string Name, string Folder, long Size, DateTime Modified);
 }

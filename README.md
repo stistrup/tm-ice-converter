@@ -13,15 +13,15 @@ Turns Trackmania 2020 maps into ice versions. Blocks that have a native ice vers
 ## Use
 
 ```
-tools/ice-convert convert path/to/Map.Map.Gbx -o out/folder
+tools/ice-convert convert path/to/Map.Map.Gbx --folder "ICE in progress"
 ```
 
-writes `out/folder/Map (ICE).Map.Gbx` and a `.report.md` next to it saying what happened to every block. Without `-o` it goes to `Maps/ICE in progress/`, with `--final` to `Maps/ICE finished/` or whatever `finishedFolder` says in `data/local.jsonc`. Running `tools/ice-convert` with no arguments converts every map in `Maps/To Ice/` that changed since its last conversion.
+writes `Maps/ICE in progress/<map name> (ICE).Map.Gbx` and a `.report.md` next to it saying what happened to every block. The options are the GUI's Convert popup: `--name`, `--folder` (under Maps, or an absolute path), `--fake-author-time`, `--me-as-author`, `--rebuild-blocks`, `--overwrite` (an overwritten map keeps its UID; a new file name gets a UID of its own). `tools/ice-convert convert --help` lists them all; with no arguments it prints the help.
 
 Restart the game if new items were built, then open the map in the editor.
 
 ```
-tools/ice-convert convert <maps or folders> [-o dir]   --final, --testrun, --release, -t <tag>, --set opt=value
+tools/ice-convert convert <maps or folders> [options] --folder, --name, --fake-author-time, --me-as-author, --overwrite, …
 tools/ice-convert gui                                  web interface: browse maps, look through them in 3D
 tools/ice-convert view <map>                           Blender scene + renders of a map
 tools/ice-convert inspect <map>                        same scene with a panel to look up and mark blocks

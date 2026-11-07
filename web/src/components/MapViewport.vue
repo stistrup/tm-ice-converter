@@ -4,11 +4,13 @@ import { useMapStore } from '../stores/map'
 import { MapScene, type LookChange } from '../viewer/MapScene'
 import { iceMaterialName, lookPrefix, wallMaterials } from '../viewer/iceLook'
 import ConvertMenu from './ConvertMenu.vue'
+import ConvertDialog from './ConvertDialog.vue'
 import InspectPanel from './InspectPanel.vue'
 import { displayName } from '../viewer/names'
 import { outcomes } from '../viewer/outcomes'
 import { usePreviewStore } from '../stores/preview'
 import { useHistoryStore } from '../stores/history'
+import { useConvertStore } from '../stores/convert'
 
 const store = useMapStore()
 const stage = ref<HTMLDivElement>()
@@ -18,6 +20,7 @@ const canvasKey = ref(0)
 const canvas = ref<HTMLCanvasElement>()
 const preview = usePreviewStore()
 const history = useHistoryStore()
+const converting = useConvertStore()
 
 // changed pieces drawn as converted where their meshes exist (originals hidden), else in the converter's own materials;
 // what's left (swapped, sunk, removed without a mesh) keeps a colour
@@ -178,6 +181,9 @@ onBeforeUnmount(() => {
         <ConvertMenu :class="$style.section" />
         <InspectPanel :class="$style.section" />
       </div>
+      <div v-if="store.scene || converting.job" :class="$style.convert">
+        <ConvertDialog />
+      </div>
     </div>
   </main>
 </template>
@@ -227,7 +233,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   width: 290px;
-  max-height: 100%;
+  /* room for the convert button below */
+  max-height: calc(100% - 46px);
   overflow-y: auto;
   background: var(--line);
   border-bottom: 1px solid var(--line);
@@ -242,6 +249,13 @@ onBeforeUnmount(() => {
 /* a dark gap: each panel its own field */
 .section + .section {
   margin-top: 6px;
+}
+
+.convert {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 1;
 }
 
 .tooltip {

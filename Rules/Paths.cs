@@ -22,13 +22,11 @@ public static class Paths
 
     public static string DropFolder => Path.Combine(Maps, "To Ice");
     public static string OutFolder => Path.Combine(Maps, "ICE in progress");
-    public static string FinishedFolder => Path.Combine(Maps, Local.Value.Paths?.GetValueOrDefault("finishedFolder") is { Length: > 0 } f ? f : "ICE finished");
 
-    public static string TestrunFolder => Path.Combine(Maps, "Ice testrun");
-    // bump for fresh test run UIDs
-    public const int TestrunGeneration = 7;
-    // bump for new map IDs on re-released maps; 1 = the first releases
-    public const int ReleaseGeneration = 4;
+    // relative to Maps with "/" when under it, else the full path
+    public static string MapsRelativeOrFull(string path)
+        => Path.GetRelativePath(Maps, Path.GetFullPath(path)) is var relative && !relative.StartsWith("..") && !Path.IsPathRooted(relative)
+            ? relative.Replace('\\', '/') : Path.GetFullPath(path);
 
     public static string LocalSettings { get; set; } = "local.jsonc";
 
@@ -36,15 +34,37 @@ public static class Paths
     public static string SettingsStore => Local.Value.Paths?.GetValueOrDefault("settings") is { Length: > 0 }
         ? Local.Value.Folder("settings") : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(LocalSettings))!, "..", "settings"));
 
-    public static (string Login, string Nickname, string Zone) TestrunAuthor => testrunAuthor.Value;
+    public static (string Login, string Nickname, string Zone) TestrunAuthor => TestrunAuthorIfSet
+        ?? throw new InvalidOperationException($"no \"testrunAuthor\" in {LocalSettings}");
+
+    public static (string Login, string Nickname, string Zone)? TestrunAuthorIfSet => savedAuthor
+        ?? (Local.Value.TestrunAuthor is { Login.Length: > 0 } a ? (a.Login, a.Nickname, a.Zone) : null);
+
+    private static (string, string, string)? savedAuthor;
+
+    // into local.jsonc as text: its comments stay
+    public static void SaveTestrunAuthor(string login, string nickname, string zone)
+    {
+        var entry = "\"testrunAuthor\": " + System.Text.Json.JsonSerializer.Serialize(new { login, nickname, zone });
+        var text = File.ReadAllText(LocalSettings);
+        var existing = System.Text.RegularExpressions.Regex.Match(text, "\"testrunAuthor\"\\s*:\\s*\\{[^}]*\\}");
+        if (existing.Success) text = text[..existing.Index] + entry + text[(existing.Index + existing.Length)..];
+        else
+        {
+            // the comma goes after the last value, not into a comment line after it
+            var end = text.LastIndexOf('}');
+            var lines = text[..end].TrimEnd().Split('\n').ToList();
+            var last = lines.FindLastIndex(l => l.Trim() is { Length: > 0 } t && !t.StartsWith("//"));
+            if (last >= 0 && lines[last].TrimEnd() is var value && !value.EndsWith(',') && !value.EndsWith('{')) lines[last] = value + ",";
+            text = string.Join('\n', lines) + "\n  " + entry + "\n" + text[end..];
+        }
+        File.WriteAllText(LocalSettings, text);
+        savedAuthor = (login, nickname, zone);
+    }
 
     private static readonly Lazy<LocalFile> Local = new(() => File.Exists(LocalSettings)
         ? Jsonc.Load<LocalFile>(LocalSettings)
         : throw new InvalidOperationException($"no {LocalSettings}: copy data/local.example.jsonc and fill in your folders"));
-
-    private static readonly Lazy<(string, string, string)> testrunAuthor = new(() =>
-        Local.Value.TestrunAuthor is { } a ? (a.Login, a.Nickname, a.Zone)
-            : throw new InvalidOperationException($"--testrun needs \"testrunAuthor\" in {LocalSettings}"));
 
     private sealed record LocalFile(Dictionary<string, string>? Paths, Author? TestrunAuthor)
     {

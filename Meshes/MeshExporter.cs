@@ -23,6 +23,9 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
 
     // moving parts (flags, pistons) in their rest pose: for viewing only, a block can't move them
     public bool DynaObjects { get; init; }
+
+    // game tree models (VegetTreeModel) as meshes, one LOD: for viewing only
+    public bool VegetTrees { get; init; }
     public bool PlatformLayout { get; init; }
 
     // material for visual faces that touch a border (the road lip under it): null = as usual, "" = left out
@@ -40,7 +43,8 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
         return trees;
     }
 
-    public List<MeshPiece>? ExportItem(string itemPath, out string? reason)
+    // variant: the placed one (item flags bits 8-12), refs in variant order when GBX.NET can't read the entity
+    public List<MeshPiece>? ExportItem(string itemPath, out string? reason, int variant = 0)
     {
         reason = null;
         var item = Gbx.ParseNode<CGameItemModel>(itemPath);
@@ -48,7 +52,8 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
         var pieces = new List<MeshPiece>();
         switch (item.EntityModel)
         {
-            case NPlugItem_SVariantList { Variants: [{ EntityModelFile: { } file }, ..] }:
+            case NPlugItem_SVariantList { Variants: [{ EntityModelFile: { } first }, ..] variants }:
+                var file = variant < variants.Length && variants[variant].EntityModelFile is { } placed ? placed : first;
                 return PrefabOrStatic(GameFiles.ResolveRef(itemPath, ancestor, file.FilePath), pieces, out reason);
             case CPlugPrefab prefab:
                 AddPrefab(prefab, itemPath, Matrix4x4.Identity, pieces, depth: 0);
@@ -57,8 +62,10 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
                 AddStaticObject(som, Matrix4x4.Identity, Path.GetFileNameWithoutExtension(itemPath), pieces, itemPath);
                 break;
             // entity in a separate file: take it from the ref table
-            case null when Gbx.ParseHeader(itemPath).RefTable?.Files.FirstOrDefault(f => f.FilePath.EndsWith(".Prefab.Gbx", StringComparison.OrdinalIgnoreCase)) is { } prefabRef:
-                return PrefabOrStatic(GameFiles.ResolveRef(itemPath, ancestor, prefabRef.FilePath), pieces, out reason);
+            case null when Gbx.ParseHeader(itemPath).RefTable?.Files
+                    .Where(f => f.FilePath.EndsWith(".Prefab.Gbx", StringComparison.OrdinalIgnoreCase) || f.FilePath.EndsWith(".VegetTreeModel.Gbx", StringComparison.OrdinalIgnoreCase))
+                    .ToList() is [var firstRef, ..] refs:
+                return PrefabOrStatic(GameFiles.ResolveRef(itemPath, ancestor, (variant < refs.Count ? refs[variant] : firstRef).FilePath), pieces, out reason);
             case var other:
                 reason = other?.GetType().Name ?? "no entity model";
                 return null;
@@ -70,14 +77,19 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
     {
         reason = null;
         var kind = Path.GetExtension(Path.GetFileNameWithoutExtension(target)).TrimStart('.');
-        if (kind is not ("Prefab" or "StaticObject")) { reason = kind; return null; }
+        if (kind is not ("Prefab" or "StaticObject") && !(kind == "VegetTreeModel" && VegetTrees)) { reason = kind; return null; }
         if (!File.Exists(target))
         {
             files.Missing.Add(files.RelativeToGameData(target));
             reason = "not extracted";
             return null;
         }
-        if (kind == "Prefab") AddPrefab(target, Matrix4x4.Identity, pieces, depth: 0);
+        if (kind == "VegetTreeModel")
+        {
+            // a cut extract: the plain cone stays
+            if (!AddTree(target, Matrix4x4.Identity, pieces)) { reason = kind; return null; }
+        }
+        else if (kind == "Prefab") AddPrefab(target, Matrix4x4.Identity, pieces, depth: 0);
         else if (files.LoadStaticObject(target) is { } som) AddStaticObject(som, Matrix4x4.Identity, Path.GetFileNameWithoutExtension(target), pieces, target);
         return pieces;
     }
@@ -143,7 +155,10 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
                         if (pieces is not null && DynaObjects && files.LoadDynaObject(target) is { } fileDyna) AddDynaObject(fileDyna, world, $"{label}_{i}", pieces, target);
                     }
                     else if (target.EndsWith(".VegetTreeModel.Gbx", StringComparison.OrdinalIgnoreCase))
+                    {
                         trees?.Add((Path.GetFileName(target)[..^".VegetTreeModel.Gbx".Length], world));
+                        if (pieces is not null && VegetTrees) AddTree(target, world, pieces);
+                    }
                     else if (pieces is not null)
                         files.Warnings.Add($"skipped {file.FilePath} (not a prefab)");
                     break;
@@ -153,6 +168,30 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
             }
         }
     }
+
+    // the game's far LOD (from 100 m): a forest map has thousands, the full one is ~15x the triangles; false: cut extract
+    private bool AddTree(string path, Matrix4x4 world, List<MeshPiece> pieces)
+    {
+        VegetTree tree;
+        try { tree = VegetTree.Read(path); }
+        catch (Exception e) when (e is InvalidDataException or EndOfStreamException) { return false; }
+        var lod = tree.Lods[^1];
+        var label = Path.GetFileName(path).Split('.')[0];
+        foreach (var (part, i) in lod.Select((p, i) => (p, i)))
+        {
+            if (part.Visual.IndexBuffer?.Indices is not { } idx || VertsOf(part.Visual, idx) is not { } vertices) continue;
+            pieces.Add(new MeshPiece($"_notcollidable_{label}_v{i}", VegetMaterialName(path, part.Material), Visible: true, Collidable: false,
+                Transform(vertices.Positions, world), vertices.Normals is { } n ? TransformNormals(n, world) : null, FlipV(vertices.Uv0), null, idx));
+        }
+        return true;
+    }
+
+    // tree V runs the other way (checked: leaf cards land on the alpha only flipped)
+    private static float[]? FlipV(float[]? uv) => uv?.Select((x, i) => i % 2 == 1 ? 1 - x : x).ToArray();
+
+    public const string VegetPrefix = "veget:";
+
+    private string VegetMaterialName(string treePath, int material) => $"{VegetPrefix}{files.RelativeToGameData(treePath)}#{material}";
 
     private CPlugSolid2Model? ExternalMesh(GbxRefTableFile? file, string source)
         => file is null ? null : files.LoadMesh(GameFiles.ResolveRef(source, Gbx.ParseHeader(source).RefTable?.AncestorLevel ?? 0, file.FilePath));

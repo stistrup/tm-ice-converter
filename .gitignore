@@ -5,7 +5,7 @@ node_modules/
 web/dist/
 
 # Kept local, never published: this machine's user and the working notes.
-# Your account (convert --testrun); format in data/local.example.jsonc.
+# Your account (convert --me-as-author); format in data/local.example.jsonc.
 data/local.jsonc
 # Working notes: progress log, decisions, open questions.
 STATUS.md

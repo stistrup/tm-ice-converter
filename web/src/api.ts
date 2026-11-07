@@ -70,6 +70,100 @@ export async function fetchMaps(): Promise<MapEntry[]> {
   return (await check(await fetch('/api/maps'))).json()
 }
 
+// folders under Maps ("/" separated) and where a conversion goes by default
+export interface FolderList {
+  folders: string[]
+  progress: string
+}
+
+// the account a converted map can carry as author (local.jsonc "testrunAuthor"); null when none is set
+export interface Author {
+  login: string
+  nickname: string
+  zone: string
+}
+
+export async function fetchAuthor(): Promise<Author | null> {
+  return (await check(await fetch('/api/author'))).json()
+}
+
+export async function saveAuthor(author: Author): Promise<Author | null> {
+  return (await check(await fetch('/api/author', { method: 'POST', body: JSON.stringify(author) }))).json()
+}
+
+export interface ConvertRequest {
+  settings: MapSettings
+  name: string
+  folder: string
+  fakeAuthorTime: boolean
+  meAsAuthor: boolean
+  rebuildBlocks: boolean
+  overwrite: boolean
+}
+
+// output: relative to Maps (or a full path outside it)
+export interface ConvertOutcome {
+  output: string
+  name: string
+  runId: string
+  from: string
+  summary: string
+  problems: string[]
+  failures: string[]
+  missingFiles: number
+}
+
+// step -1: not started; step = stepNames.length: finished
+export interface ConvertProgress {
+  step: number
+  done: number
+  total: number
+  detail: string | null
+  percent: number
+  stepNames: string[]
+}
+
+export interface ConvertJob {
+  id: string
+  map: string
+  name: string
+  state: 'running' | 'done' | 'failed'
+  progress: ConvertProgress
+  started: string
+  ended: string | null
+  outcome: ConvertOutcome | null
+  error: string | null
+}
+
+// starts it in the background
+export async function startConvert(map: string, request: ConvertRequest): Promise<ConvertJob> {
+  const query = new URLSearchParams({ map })
+  return (await check(await fetch(`/api/convert?${query}`, { method: 'POST', body: JSON.stringify(request) }))).json()
+}
+
+// the running or last finished one; null when there's none
+export async function fetchConvertJob(): Promise<ConvertJob | null> {
+  return (await check(await fetch('/api/convert'))).json()
+}
+
+export async function dismissConvert(id: string): Promise<void> {
+  await check(await fetch(`/api/convert-dismiss?${new URLSearchParams({ id })}`, { method: 'POST', body: '' }))
+}
+
+// what a conversion names the map by default (maps.jsonc names included)
+export async function fetchOutputName(map: string): Promise<string> {
+  return (await check(await fetch(`/api/output-name?${new URLSearchParams({ map })}`))).json()
+}
+
+// whether <folder>/<name>.Map.Gbx is already there under Maps
+export async function targetExists(folder: string, name: string): Promise<boolean> {
+  return (await check(await fetch(`/api/exists?${new URLSearchParams({ folder, name })}`))).json()
+}
+
+export async function fetchFolders(): Promise<FolderList> {
+  return (await check(await fetch('/api/folders'))).json()
+}
+
 export async function fetchScene(map: string, rebuild: boolean): Promise<SceneManifest> {
   const query = new URLSearchParams({ map })
   if (rebuild) query.set('rebuild', '1')

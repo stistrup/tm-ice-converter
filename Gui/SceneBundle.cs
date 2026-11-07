@@ -11,7 +11,7 @@ namespace TmIceConverter;
 internal static class SceneBundle
 {
     // bump when the output changes
-    private const int Format = 26;
+    private const int Format = 27;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 

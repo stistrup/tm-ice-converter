@@ -34,10 +34,25 @@ uint DiskSize(const string &in gamePath)
 void RunVeget()
 {
     g_running = true;
-    // pack folders list nothing until opened; look files up by path (veget-list.txt, one game path per line)
-    IO::File list(IO::FromDataFolder("Plugins/IceConverterExtract/veget-list.txt"), IO::FileMode::Read);
-    auto paths = list.ReadToEnd().Split("\n");
-    list.Close();
+    // pack folders list nothing until opened: every tree model already on disk (cut or not), looked up by path;
+    // only <env>/Media/VegetTreeModel, the whole tree times out
+    array<string> paths;
+    auto envs = IO::IndexFolder(OnDisk("GameData"), false);
+    for (uint e = 0; e < envs.Length; e++) {
+        string env = envs[e].Replace("\\", "/");
+        if (env.EndsWith("/")) env = env.SubStr(0, env.Length - 1);
+        string name = env.SubStr(env.LastIndexOf("/") + 1);
+        string folder = OnDisk("GameData/" + name + "/Media/VegetTreeModel");
+        if (!IO::FolderExists(folder)) continue;
+        auto files = IO::IndexFolder(folder, false);
+        for (uint i = 0; i < files.Length; i++) {
+            string file = files[i].Replace("\\", "/");
+            if (file.ToLower().EndsWith(".vegettreemodel.gbx"))
+                paths.InsertLast("GameData/" + name + "/Media/VegetTreeModel/" + file.SubStr(file.LastIndexOf("/") + 1));
+        }
+        yield();
+    }
+    print("vegetation: " + paths.Length + " tree models");
     array<string> lines;
     int full = 0, cut = 0;
     {

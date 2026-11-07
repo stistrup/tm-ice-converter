@@ -11,7 +11,7 @@ public sealed class MapView(BlockCatalog shapes)
 {
     private static readonly string GameData = Path.GetDirectoryName(Paths.ExtractedStadium)!;
 
-    private readonly MeshExporter exporter = new(shapes.Files, new Dictionary<string, string>()) { DynaObjects = true };
+    private readonly MeshExporter exporter = new(shapes.Files, new Dictionary<string, string>()) { DynaObjects = true, VegetTrees = true };
     private readonly Dictionary<string, List<ScenePiece>?> meshes = [];
     private readonly Dictionary<string, SceneMaterial> materials = [];
     private readonly List<SceneInstance> instances = [];
@@ -232,7 +232,8 @@ public sealed class MapView(BlockCatalog shapes)
             var id = item.ItemModel.Id;
             var p = item.AbsolutePositionInMap;
             var place = Placement.Of(item);
-            var key = "item:" + id;
+            var variant = (item.Flags & 0x1F00) >> 8;
+            var key = "item:" + id + (variant > 0 && !id.StartsWith("IceConverter\\") ? $"#{variant}" : "");
             string? waypoint = null;
             var info = new Dictionary<string, object> { ["kind"] = "item", ["item"] = itemIndex, ["name"] = id, ["position"] = new[] { p.X, p.Y, p.Z }, ["color"] = (int)item.Color };
             if (id.StartsWith("IceConverter\\"))
@@ -254,7 +255,7 @@ public sealed class MapView(BlockCatalog shapes)
                 {
                     List<MeshPiece>? pieces;
                     string? reason;
-                    try { pieces = exporter.ExportItem(path, out reason); }
+                    try { pieces = exporter.ExportItem(path, out reason, variant); }
                     catch (Exception e) { pieces = null; reason = $"can't read ({e.GetType().Name})"; }
                     meshes[key] = pieces is null ? null : Pieces(pieces, null);
                     if (reason is not null) skipReasons[key] = reason;
@@ -280,6 +281,7 @@ public sealed class MapView(BlockCatalog shapes)
 
     private string MaterialKey(string name, MaterialModifier? modifier, bool ours)
     {
+        if (name.StartsWith(MeshExporter.VegetPrefix)) return VegetMaterialKey(name);
         string? path = null;
         if (modifier is not null && modifier.Swaps.TryGetValue(name, out var swap) && FindFile(modifier.Folder, swap + ".Material.Gbx") is { } m) path = m;
         else if (name.IndexOf('_') is > 0 and var u
@@ -290,6 +292,23 @@ public sealed class MapView(BlockCatalog shapes)
         var key = path is null ? name : shapes.Files.RelativeToGameData(path);
         if (!materials.ContainsKey(key)) materials[key] = path is null ? new SceneMaterial(name, null, []) : Material(name, path);
         return key;
+    }
+
+    // tree models carry their materials inline: dds refs, a leaf (alpha cut) or bark kind
+    private string VegetMaterialKey(string name)
+    {
+        if (materials.ContainsKey(name)) return name;
+        var hash = name.LastIndexOf('#');
+        var material = VegetTree.Read(Path.Combine(GameData, name[MeshExporter.VegetPrefix.Length..hash])).Materials[int.Parse(name[(hash + 1)..])];
+        var textures = new List<SceneTexture>();
+        foreach (var (role, image) in new[] { "D", "N", "R" }.Zip(material.Images))
+        {
+            if (image.Length == 0) continue;
+            if (!File.Exists(image)) missing.Add(shapes.Files.RelativeToGameData(image));
+            textures.Add(new SceneTexture(role, Stem(image), File.Exists(image) ? image : null));
+        }
+        materials[name] = new SceneMaterial(material.Name, material.Kind == VegetKind.Leaf ? "VegetLeaf" : "VegetBark", textures);
+        return name;
     }
 
     private SceneMaterial Material(string name, string path)

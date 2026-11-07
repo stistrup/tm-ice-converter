@@ -228,10 +228,11 @@ internal sealed partial class ConversionPreview(string dataDir)
             var stillThere = converted.ToHashSet(ReferenceEqualityComparer.Instance);
             var hiddenBlocks = blocks.Index().Where(b => !stillThere.Contains(b.Item)).Select(b => b.Index).ToHashSet();
             var hiddenItems = items.Index().Where(o => !now.Contains(o.Item.Item)).Select(o => o.Index).ToHashSet();
+            // origin: the original it replaces, for the properties picture
             foreach (var info in part.Instances.Select(i => i.Info))
             {
-                if (info.TryGetValue("block", out var b) && blockOrigin.TryGetValue(converted[(int)b], out var ob)) hiddenBlocks.Add(ob);
-                if (info.TryGetValue("item", out var it) && itemOrigin.TryGetValue(convertedItems[(int)it], out var oi)) hiddenItems.Add(oi);
+                if (info.TryGetValue("block", out var b) && blockOrigin.TryGetValue(converted[(int)b], out var ob)) { hiddenBlocks.Add(ob); info["originBlock"] = ob; }
+                if (info.TryGetValue("item", out var it) && itemOrigin.TryGetValue(convertedItems[(int)it], out var oi)) { hiddenItems.Add(oi); info["originItem"] = oi; }
             }
             var addedCount = convertedItems.Count(o => !itemOrigin.ContainsKey(o));
             var sceneId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..16];

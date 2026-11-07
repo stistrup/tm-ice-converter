@@ -147,6 +147,18 @@ export const usePreviewStore = defineStore('preview', () => {
     }
   }
 
+  // after a conversion: its run listed, the working settings left as they are
+  async function refreshRuns() {
+    const current = map.currentMap
+    if (!current || !state.value) return
+    try {
+      const loaded = await fetchMapState(current.path)
+      if (map.currentMap === current && state.value) state.value = { ...state.value, runs: loaded.runs }
+    } catch {
+      // the list stays as it was
+    }
+  }
+
   // a past run's settings (or the maps.jsonc entry) become the working ones
   function load(source: RunInfo | null) {
     const seed = state.value?.seed
@@ -263,6 +275,7 @@ export const usePreviewStore = defineStore('preview', () => {
     picks,
     pick,
     load,
+    refreshRuns,
     building,
     changed,
     lookVersion,
