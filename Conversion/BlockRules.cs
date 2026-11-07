@@ -47,7 +47,7 @@ internal static partial class BlockRules
             }
     }
 
-    // chosen per piece (maps.jsonc "pieces", the GUI); snow goes through the snowTerrain areas, plain renames and lets the rules go on
+    // chosen per piece ("pieces" in the map's settings, the GUI); snow goes through the snowTerrain areas, plain renames and lets the rules go on
     private static bool Picked(CGameCtnBlock block, ConversionRun run)
     {
         switch (run.Rules.PieceChoice(block))
@@ -68,6 +68,11 @@ internal static partial class BlockRules
             case "plain" when Gates.PlainOf(block.Name, run) is { } plain:
                 block.Name = plain;
                 return false;
+            // presets off: only a picked snow column changes an unpicked block
+            case null when !run.Rules.Presets:
+                if (SnowRules.TerrainCell(block, run) || SnowRules.DecoInTerrain(block, run)) return true;
+                Bump(run.Report.KeptByList, block.Name);
+                return true;
             default:
                 return false;
         }

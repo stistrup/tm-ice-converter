@@ -54,7 +54,7 @@ internal static class Lightmaps
         var path = Path.Combine(Paths.Items, itemName + ".Item.gbx");
         var gbx = Gbx.Parse<CGameItemModel>(path);
         var mesh = ((CGameCommonItemEntityModel)gbx.Node.EntityModel!).StaticObject!.Mesh!;
-        ToNative(mesh, Jsonc.Load<List<MeshPiece>>(Path.Combine(Paths.Work, "Mesh", itemName + ".pieces.json")), itemName);
+        ToNative(mesh, Jsonc.Load<List<MeshPiece>>(Path.Combine(Paths.Pieces, itemName + ".pieces.json")), itemName);
         gbx.Save(path);
     }
 

@@ -18,24 +18,43 @@ const list = ref<FolderList | null>(null)
 const folders = computed(() => list.value?.folders ?? [])
 const targetFolder = computed(() => (folderMode.value === 'pick' ? pickedFolder.value : typedFolder.value).trim())
 
-// a map file of that name already in the folder (by file name): converting replaces it only when ticked
-const exists = ref(false)
+// the maps ticked in the list; with none (or Only the open map) it converts the open one
+const chosen = computed(() => store.maps.filter((map) => store.chosenMaps.has(map.path)))
+const onlyOpen = ref(false)
+const batch = computed(() => chosen.value.length > 0 && !(onlyOpen.value && store.currentMap))
+// each ticked map's default name without "(ICE)", by path; the suffix goes after it
+const batchBases = ref<Record<string, string>>({})
+const suffix = ref('(ICE)')
+const batchNames = computed(() =>
+  Object.fromEntries(Object.entries(batchBases.value).map(([path, base]) => [path, suffix.value.trim() ? `${base} ${suffix.value.trim()}` : base])),
+)
+const openLabel = computed(() =>
+  chosen.value.length ? `Convert ${chosen.value.length} map${chosen.value.length === 1 ? '' : 's'}…` : 'Convert…',
+)
+
+// map files of those names already in the folder (by file name): converting replaces them only when ticked
+const existing = ref<string[]>([])
+const exists = computed(() => existing.value.length > 0)
 const overwrite = ref(false)
 let existsCall = 0
 let existsTimer: ReturnType<typeof setTimeout> | undefined
 
-watch([targetFolder, outputName], () => {
+async function existsAs(name: string) {
+  try {
+    return name.trim() !== '' && (await targetExists(targetFolder.value, name))
+  } catch {
+    return false
+  }
+}
+
+watch([targetFolder, outputName, batch, () => JSON.stringify(batchNames.value)], () => {
   overwrite.value = false
   clearTimeout(existsTimer)
   existsTimer = setTimeout(async () => {
     const call = ++existsCall
-    let found = false
-    try {
-      found = await targetExists(targetFolder.value, outputName.value)
-    } catch {
-      found = false
-    }
-    if (call === existsCall) exists.value = found
+    const names = batch.value ? chosen.value.map((map) => batchNames.value[map.path] ?? '') : [outputName.value]
+    const found = await Promise.all(names.map(existsAs))
+    if (call === existsCall) existing.value = names.filter((_, i) => found[i])
   }, 200)
 })
 
@@ -44,17 +63,27 @@ const job = computed(() => converting.job)
 const running = computed(() => job.value?.state === 'running')
 // the dialog shows the conversion (running or its result) instead of the form
 const showingJob = computed(() => job.value !== null && converting.inDialog)
-const canConvert = computed(() => !running.value && outputName.value.trim().length > 0 && (!exists.value || overwrite.value))
+const heading = computed(() => {
+  const j = job.value
+  if (!j) return ''
+  if (j.state === 'running') return j.cancelling ? 'Cancelling' : 'Converting'
+  return { done: 'Converted', cancelled: 'Cancelled', failed: 'Conversion failed:' }[j.state]
+})
+const canConvert = computed(
+  () => !running.value && (batch.value || (store.currentMap !== null && outputName.value.trim().length > 0)) && (!exists.value || overwrite.value),
+)
 
-// with the settings the preview shows (the working ones); it runs in the backend
+// one map with the settings the preview shows (the working ones), several with their own (drafts); it runs in the backend
 async function convert() {
   const current = store.currentMap
-  if (!current || !canConvert.value) return
+  if (!canConvert.value || (!batch.value && !current)) return
   startError.value = ''
   try {
-    await converting.start(current.path, {
-      settings: preview.working,
-      name: outputName.value.trim(),
+    await converting.start(batch.value ? '' : current!.path, {
+      settings: batch.value ? null : preview.working,
+      name: batch.value ? '' : outputName.value.trim(),
+      maps: batch.value ? chosen.value.map((map) => map.path) : undefined,
+      suffix: batch.value ? suffix.value.trim() : undefined,
       folder: targetFolder.value,
       fakeAuthorTime: fakeAuthorTime.value,
       meAsAuthor: meAsAuthor.value,
@@ -130,12 +159,17 @@ async function open() {
   if (job.value) void converting.dismiss()
   startError.value = ''
   const current = store.currentMap
-  if (!current) return
-  outputName.value = `${(current.name ?? '').replace(/\s*\(ice[^)]*\)$/i, '')} (ICE)`
+  if (!current && !chosen.value.length) return
+  onlyOpen.value = false
+  outputName.value = current ? `${(current.name ?? '').replace(/\s*\(ice[^)]*\)$/i, '')} (ICE)` : ''
   dialog.value?.showModal()
-  fetchOutputName(current.path).then((name) => {
-    if (store.currentMap === current) outputName.value = name
-  }, () => undefined)
+  if (current)
+    fetchOutputName(current.path).then((name) => {
+      if (store.currentMap === current) outputName.value = name
+    }, () => undefined)
+  batchBases.value = {}
+  for (const map of chosen.value)
+    fetchOutputName(map.path).then((name) => (batchBases.value[map.path] = name.replace(/ \(ICE\)$/, '')), () => undefined)
   editing.value = false
   const [folderList, account] = await Promise.allSettled([fetchFolders(), fetchAuthor()])
   list.value = folderList.status === 'fulfilled' ? folderList.value : null
@@ -181,8 +215,9 @@ function onClosed() {
     <div v-if="job && !converting.inDialog" :class="[$style.bar, $style[job.state]]">
       <button type="button" :class="$style.barMain" :title="`Show the conversion of ${job.name}`" @click="showJob">
         <span :class="$style.barText">
-          <template v-if="job.state === 'running'">Converting {{ job.name }} · {{ stepNow }}</template>
+          <template v-if="job.state === 'running'">{{ job.cancelling ? 'Cancelling' : 'Converting' }} {{ job.name }} · {{ stepNow }}</template>
           <template v-else-if="job.state === 'done'">Converted {{ job.name }}</template>
+          <template v-else-if="job.state === 'cancelled'">Cancelled {{ job.name }}</template>
           <template v-else>Conversion of {{ job.name }} failed</template>
         </span>
         <span v-if="job.state === 'running'" :class="$style.barPercent">{{ percent }}%</span>
@@ -190,13 +225,21 @@ function onClosed() {
       </button>
       <button v-if="job.state !== 'running'" type="button" :class="$style.barClose" aria-label="Dismiss" @click="converting.dismiss()">×</button>
     </div>
-    <button type="button" :class="$style.open" :disabled="!store.currentMap" @click="open">Convert…</button>
+    <button
+      v-if="!(job?.state === 'running' && !converting.inDialog)"
+      type="button"
+      :class="$style.open"
+      :disabled="!store.currentMap && !chosen.length"
+      @click="open"
+    >
+      {{ openLabel }}
+    </button>
   </div>
   <dialog ref="dialog" :class="$style.dialog" aria-labelledby="convert-title" @click="onClick" @close="onClosed">
     <div v-if="showingJob && job" :class="$style.form">
       <header :class="$style.header">
         <span id="convert-title">
-          {{ job.state === 'running' ? 'Converting' : job.state === 'done' ? 'Converted' : 'Conversion failed:' }} {{ job.name }}
+          {{ heading }} {{ job.name }}
         </span>
       </header>
       <div :class="$style.body">
@@ -213,6 +256,14 @@ function onClosed() {
           <span :class="$style.track" aria-hidden="true"><span :class="$style.fill" :style="{ width: `${percent}%` }" /></span>
           <span :class="$style.count">{{ percent }}%</span>
         </div>
+        <ul v-if="job.count > 1 && (job.results.length || job.state === 'cancelled')" :class="$style.results" role="status">
+          <li v-for="result in job.results" :key="result.map">
+            <span v-if="result.output" :class="$style.ok">✓ {{ result.output }}</span>
+            <span v-else :class="$style.error">✗ {{ result.map }}: {{ result.error }}</span>
+          </li>
+          <li v-if="job.state === 'cancelled'" :class="$style.muted">Cancelled: {{ job.results.filter((r) => r.output).length }} of {{ job.count }} maps saved.</li>
+          <li v-if="job.state === 'done'" :class="$style.muted">Shadows aren't computed. Compute them in the editor, or for a whole folder in Openplanet: Plugins › Compute shadows for every map in… and pick the folder.</li>
+        </ul>
         <div v-if="job.outcome" :class="$style.result" role="status">
           <p :class="$style.ok">Saved: {{ job.outcome.output.startsWith('/') ? '' : 'Maps/' }}{{ job.outcome.output }}</p>
           <p :class="$style.muted">{{ job.outcome.summary }}</p>
@@ -221,23 +272,45 @@ function onClosed() {
             {{ job.outcome.failures.length }} piece(s) failed to build, see the report next to the map
           </p>
           <p v-if="job.outcome.missingFiles" :class="$style.warn">
-            {{ job.outcome.missingFiles }} game files aren't extracted: in game, Openplanet › Extract block meshes, then convert again
+            {{ job.outcome.missingFiles }} game files aren't extracted: in Openplanet: Plugins › Extract game files, then convert again
           </p>
-          <p :class="$style.muted">Don't forget to calculate shadows.</p>
+          <p :class="$style.muted">Shadows aren't computed. Compute them in the editor, or for a whole folder in Openplanet: Plugins › Compute shadows for every map in… and pick the folder.</p>
         </div>
         <p v-if="job.error" :class="$style.error" role="alert">{{ job.error }}</p>
       </div>
       <footer :class="$style.actions">
-        <button v-if="running" type="button" :class="$style.button" @click="background">Continue in background</button>
+        <template v-if="running">
+          <button type="button" :class="$style.button" :disabled="job.cancelling" @click="converting.cancel()">
+            {{ job.cancelling ? 'Cancelling…' : 'Cancel' }}
+          </button>
+          <button type="button" :class="$style.button" @click="background">Continue in background</button>
+        </template>
         <button v-else type="button" :class="$style.button" @click="close">Close</button>
       </footer>
     </div>
     <form v-else method="dialog" :class="$style.form" @submit.prevent="convert">
       <header :class="$style.header">
-        <span id="convert-title">Convert {{ store.currentMap?.name }}</span>
+        <span id="convert-title">{{ batch ? `Convert ${chosen.length} map${chosen.length === 1 ? '' : 's'}` : `Convert ${store.currentMap?.name}` }}</span>
       </header>
       <div :class="$style.body">
-        <label :class="$style.field">
+        <label v-if="chosen.length && store.currentMap" :class="$style.option">
+          <input v-model="onlyOpen" type="checkbox" />
+          <span>Only the open map ({{ store.currentMap.path }})</span>
+        </label>
+        <label v-if="batch" :class="$style.field">
+          <span>Suffix</span>
+          <input v-model="suffix" type="text" placeholder="Added after each map name" />
+        </label>
+        <div v-if="batch" :class="$style.field">
+          <span>Maps</span>
+          <ul :class="$style.batch">
+            <li v-for="map in chosen" :key="map.path" :title="`Saved as ${batchNames[map.path] ?? '…'}`">
+              <span :class="$style.grow">{{ map.path }}</span>
+              <span v-if="existing.includes(batchNames[map.path] ?? '')" :class="$style.warn">exists</span>
+            </li>
+          </ul>
+        </div>
+        <label v-else :class="$style.field">
           <span>Map name</span>
           <input v-model="outputName" type="text" />
           <span :class="$style.muted">Same name, same map in game: a new name makes a new map (its own UID).</span>
@@ -275,7 +348,8 @@ function onClosed() {
           </div>
           <label :class="$style.option">
             <input v-model="rebuildBlocks" type="checkbox" />
-            <span>Rebuild custom blocks</span>
+            <span>DEV: Rebuild custom blocks</span>
+            <span :class="$style.info" title="Write the custom blocks again even when their items didn't change" aria-label="What it does">i</span>
           </label>
         </div>
         <fieldset :class="$style.field">
@@ -300,10 +374,11 @@ function onClosed() {
           />
         </fieldset>
         <div v-if="exists" :class="$style.exists">
-          <p :class="$style.warn">{{ targetFolder || 'Maps' }} already has “{{ outputName.trim() }}”.</p>
+          <p v-if="batch" :class="$style.warn">{{ targetFolder || 'Maps' }} already has {{ existing.length }} of them.</p>
+          <p v-else :class="$style.warn">{{ targetFolder || 'Maps' }} already has “{{ outputName.trim() }}”.</p>
           <label :class="$style.option">
             <input v-model="overwrite" type="checkbox" />
-            <span>Overwrite it</span>
+            <span>{{ batch && existing.length > 1 ? 'Overwrite them' : 'Overwrite it' }}</span>
           </label>
         </div>
         <p v-if="startError" :class="$style.error" role="alert">{{ startError }}</p>
@@ -674,6 +749,50 @@ function onClosed() {
 
 .ok {
   color: var(--strong);
+}
+
+.info {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  font-size: 9px;
+  font-style: italic;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: default;
+  border: 1px solid var(--muted);
+  border-radius: 50%;
+}
+
+.info:hover {
+  color: var(--strong);
+  border-color: var(--strong);
+}
+
+.results,
+.batch {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+
+.batch {
+  max-height: 160px;
+  padding: 4px 6px;
+  overflow-y: auto;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
+.batch li {
+  display: flex;
+  gap: 6px;
 }
 
 .exists {

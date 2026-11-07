@@ -7,6 +7,9 @@
     "TechnicsScreen"
   ],
 
+  // items never converted, whatever the options or picks (global, not per map)
+  "untouchedItems": ["Podium"],
+
   // ice blocks an environment lacks
   "unavailableIn": {
     "*": ["OpenIceZone"]

@@ -13,7 +13,7 @@ internal sealed class LiveLink
 
     public string State => state;
 
-    public static string ShotFile => Path.Combine(Paths.Work, "Gui", "shot.png");
+    public static string ShotFile => Path.Combine(Paths.Cache, "Gui", "shot.png");
 
     public void SetState(string json) => state = json;
 

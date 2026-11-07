@@ -7,9 +7,11 @@ public static partial class MapNames
     // without the game's $ codes (colours, styles, links)
     public static string Plain(string name) => FormatCodes().Replace(name, "");
 
-    // the converter's default: the map's name (or its maps.jsonc name), its old ice tag dropped, " (ICE)"
-    public static string DefaultOutput(string mapName, Translations translations, string? own = null)
-        => (own ?? translations.NameFor(IceTag().Replace(mapName, ""))) + " (ICE)";
+    // the converter's default: the name the map's settings give it, else its own with the old ice tag dropped, then the suffix
+    public static string DefaultOutput(string mapName, string? own = null, string suffix = DefaultSuffix)
+        => (own ?? IceTag().Replace(mapName, "")) + (suffix.Trim() is { Length: > 0 } s ? " " + s : "");
+
+    public const string DefaultSuffix = "(ICE)";
 
     // a file name for a map name; null when Windows wouldn't take it (the game runs there or under Wine)
     public static string? FileName(string mapName)

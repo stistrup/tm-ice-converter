@@ -4,19 +4,8 @@ bool g_running = false;
 
 void RenderMenu()
 {
-    if (UI::MenuItem("\\$9cf" + Icons::Snowflake + "\\$z Extract block meshes", "", false, !g_running)) {
-        startnew(Run);
-    }
-    if (UI::MenuItem("\\$9cf" + Icons::Snowflake + "\\$z Extract block definitions of the loaded map", "", false, !g_running)) {
-        startnew(RunMapBlocks);
-    }
-    if (UI::MenuItem("\\$9cf" + Icons::Snowflake + "\\$z Extract the loaded map's environment folder", "", false, !g_running)) {
-        startnew(RunEnvironment);
-    }
-    if (UI::MenuItem("\\$9cf" + Icons::Snowflake + "\\$z Extract vegetation models (full size)", "", false, !g_running)) {
-        startnew(RunVeget);
-    }
-    RenderDumpMenu();
+    if (UI::MenuItem("\\$9cf" + Icons::Snowflake + "\\$z Extract game files", "", false, !g_running)) startnew(RunDumpAll);
+    if (g_running && UI::MenuItem("\\$f99" + Icons::Stop + "\\$z Stop extracting")) g_dumpStop = true;
     RenderShadowsMenu();
 }
 
@@ -30,12 +19,10 @@ uint DiskSize(const string &in gamePath)
     return size;
 }
 
-// the plain extract cuts tree models at 4/8 KB; the hook method may not
-void RunVeget()
+// the plain extract cuts tree models at 4/8 KB; the hook method gets them whole
+void HookTreeModels()
 {
-    g_running = true;
-    // pack folders list nothing until opened: every tree model already on disk (cut or not), looked up by path;
-    // only <env>/Media/VegetTreeModel, the whole tree times out
+    // pack folders list nothing until opened: tree models already on disk, looked up by path
     array<string> paths;
     auto envs = IO::IndexFolder(OnDisk("GameData"), false);
     for (uint e = 0; e < envs.Length; e++) {
@@ -50,110 +37,16 @@ void RunVeget()
             if (file.ToLower().EndsWith(".vegettreemodel.gbx"))
                 paths.InsertLast("GameData/" + name + "/Media/VegetTreeModel/" + file.SubStr(file.LastIndexOf("/") + 1));
         }
+    }
+    for (uint i = 0; i < paths.Length && !g_dumpStop; i++) {
+        auto fid = Fids::GetGame(paths[i]);
+        // compressed or not, a whole tree model is ByteSize on disk
+        if (fid is null || DiskSize(paths[i]) == fid.ByteSize) continue;
+        if (IO::FileExists(OnDisk(paths[i]))) IO::Delete(OnDisk(paths[i]));
+        Fids::Extract(fid, true);
+        if (DiskSize(paths[i]) == fid.ByteSize) g_dumpHooked++; else g_dumpCut++;
         yield();
     }
-    print("vegetation: " + paths.Length + " tree models");
-    array<string> lines;
-    int full = 0, cut = 0;
-    {
-        for (uint i = 0; i < paths.Length; i++) {
-            string path = paths[i].Trim();
-            if (path.Length == 0) continue;
-            auto fid = Fids::GetGame(path);
-            if (fid is null) { lines.InsertLast(path + " NOT FOUND"); continue; }
-            if (IO::FileExists(OnDisk(path))) IO::Delete(OnDisk(path));
-            Fids::Extract(fid);
-            uint plain = DiskSize(path);
-            uint hooked = 0;
-            if (plain != fid.ByteSize) {
-                if (IO::FileExists(OnDisk(path))) IO::Delete(OnDisk(path));
-                Fids::Extract(fid, true);
-                hooked = DiskSize(path);
-            }
-            bool ok = (hooked > 0 ? hooked : plain) == fid.ByteSize;
-            if (ok) full++; else cut++;
-            lines.InsertLast(path + " bytesize=" + fid.ByteSize + " compressed=" + fid.Compressed + " plain=" + plain + " hook=" + hooked + (ok ? " ok" : " CUT"));
-            yield();
-        }
-    }
-    IO::File f(IO::FromDataFolder("Plugins/IceConverterExtract/veget-sizes.txt"), IO::FileMode::Write);
-    for (uint i = 0; i < lines.Length; i++) f.WriteLine(lines[i]);
-    f.Close();
-    print("DONE vegetation full=" + full + " cut=" + cut + " (veget-sizes.txt)");
-    UI::ShowNotification("Ice Converter", "Vegetation models: " + full + " full, " + cut + " cut");
-    g_running = false;
-}
-
-int g_ok = 0, g_failed = 0;
-
-void ExtractFolder(CSystemFidsFolder@ folder, const string &in path)
-{
-    for (uint i = 0; i < folder.Leaves.Length; i++) {
-        if (Fids::Extract(folder.Leaves[i])) g_ok++; else g_failed++;
-        if ((g_ok + g_failed) % 100 == 0) yield();
-    }
-    for (uint i = 0; i < folder.Trees.Length; i++) ExtractFolder(folder.Trees[i], path + "/" + folder.Trees[i].DirName);
-    for (uint i = 0; i < folder.Leaves.Length; i++) FollowTable(path + "/" + folder.Leaves[i].FileName, true);
-}
-
-void RunEnvironment()
-{
-    g_running = true;
-    auto map = GetApp().RootMap;
-    if (map is null) {
-        UI::ShowNotification("Ice Converter", "Load a map first (editor or play)");
-        g_running = false;
-        return;
-    }
-    string env = map.CollectionName;
-    auto folder = Fids::GetGameFolder("GameData/" + env);
-    if (folder is null) {
-        UI::ShowNotification("Ice Converter", "No GameData/" + env + " folder");
-        g_running = false;
-        return;
-    }
-    g_ok = 0; g_failed = 0; g_byTable = 0;
-    g_followed.DeleteAll();
-    g_stillMissing.RemoveRange(0, g_stillMissing.Length);
-    ExtractFolder(folder, "GameData/" + env);
-    print("DONE " + env + " extracted=" + g_ok + " (+" + g_byTable + " referenced) failed=" + g_failed);
-    UI::ShowNotification("Ice Converter", env + ": extracted " + g_ok + " (+" + g_byTable + " referenced), failed " + g_failed);
-    g_running = false;
-}
-
-// env block definitions: take them from the loaded map
-void RunMapBlocks()
-{
-    g_running = true;
-    auto map = GetApp().RootMap;
-    if (map is null) {
-        UI::ShowNotification("Ice Converter", "Load a map first (editor or play)");
-        g_running = false;
-        return;
-    }
-    dictionary seen;
-    array<string> lines;
-    int ok = 0, failed = 0;
-    for (uint i = 0; i < map.Blocks.Length; i++) {
-        auto info = map.Blocks[i].BlockInfo;
-        if (info is null) continue;
-        auto fid = GetFidFromNod(info);
-        if (fid is null) continue;
-        // pack files all say "<virtual>"
-        string path = fid.FileName;
-        if (seen.Exists(path)) continue;
-        seen.Set(path, true);
-        bool done = Fids::Extract(fid);
-        if (done) ok++; else failed++;
-        lines.InsertLast((done ? "ok " : "failed ") + path);
-        if (i % 200 == 0) yield();
-    }
-    IO::File f(IO::FromDataFolder("Plugins/IceConverterExtract/blockinfo-paths.txt"), IO::FileMode::Write);
-    for (uint i = 0; i < lines.Length; i++) f.WriteLine(lines[i]);
-    f.Close();
-    print("DONE block definitions extracted=" + ok + " failed=" + failed);
-    UI::ShowNotification("Ice Converter", "Block definitions: extracted " + ok + ", failed " + failed);
-    g_running = false;
 }
 
 dictionary g_followed;
@@ -317,9 +210,9 @@ int Extract(const string &in path)
     return found ? 2 : 1;
 }
 
-void Run()
+// mesh-refs.txt and the files conversions asked for (view-refs.txt): found by path even where packs list nothing
+void ExtractListed()
 {
-    g_running = true;
     IO::FileSource meshRefs("mesh-refs.txt");
     auto paths = meshRefs.ReadToEnd().Split("\n");
     string viewRefs = IO::FromDataFolder("Plugins/IceConverterExtract/view-refs.txt");
@@ -328,38 +221,10 @@ void Run()
         auto more = f.ReadToEnd().Split("\n");
         for (uint i = 0; i < more.Length; i++) paths.InsertLast(more[i]);
     }
-
-    int ok = 0, missing = 0, failed = 0;
-    g_followed.DeleteAll();
-    g_deeper = 0; g_byTable = 0;
-    g_stillMissing.RemoveRange(0, g_stillMissing.Length);
-    for (uint i = 0; i < paths.Length; i++) {
+    for (uint i = 0; i < paths.Length && !g_dumpStop; i++) {
         string path = paths[i].Trim();
         if (path.Length == 0) continue;
-
-        int result = Extract(path);
-        if (result == 0) {
-            ok++;
-        } else if (result == 1) {
-            missing++;
-            if (missing <= 10) warn("not found: " + path);
-        } else {
-            failed++;
-            if (failed <= 10) warn("extract failed: " + path);
-        }
-
-        if (i % 50 == 0) {
-            trace("progress " + i + "/" + paths.Length);
-            yield();
-        }
+        if (Extract(path) != 0) g_dumpUnavailable.InsertLast(path);
+        DumpYield();
     }
-    IO::File list(IO::FromDataFolder("Plugins/IceConverterExtract/still-missing.txt"), IO::FileMode::Write);
-    for (uint i = 0; i < g_stillMissing.Length; i++) list.WriteLine(g_stillMissing[i]);
-    list.Close();
-    int referenced = g_deeper + g_byTable;
-    print("DONE extracted=" + ok + " (+" + referenced + " referenced) missing=" + missing + " failed=" + failed
-        + " unavailable references=" + g_stillMissing.Length + " (still-missing.txt)");
-    UI::ShowNotification("Ice Converter", "Extracted " + ok + " (+" + referenced + " referenced), missing " + missing + ", failed " + failed
-        + ", " + g_stillMissing.Length + " references unavailable");
-    g_running = false;
 }

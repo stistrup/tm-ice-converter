@@ -17,8 +17,14 @@ export function outcomeLabel(outcome: string) {
   return outcomes[outcome]?.label ?? outcome
 }
 
+// where the name says less than the option does
+const optionLabels: Record<string, string> = {
+  convertTrees: 'Convert trees on converted blocks',
+}
+
 // convertScenery -> Convert scenery
 export function optionLabel(name: string) {
+  if (optionLabels[name]) return optionLabels[name]
   const words = name.replace(/([A-Z])/g, ' $1').toLowerCase()
   return words[0].toUpperCase() + words.slice(1)
 }

@@ -1,8 +1,7 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
 import { ref } from 'vue'
-import { dismissConvert, fetchConvertJob, startConvert, type ConvertJob, type ConvertRequest } from '../api'
+import { cancelConvert, dismissConvert, fetchConvertJob, startConvert, type ConvertJob, type ConvertRequest } from '../api'
 import { useMapStore } from './map'
-import { usePreviewStore } from './preview'
 
 // the conversion running in the backend: shown in the dialog or as the bar in the corner; found again after a reload
 export const useConvertStore = defineStore('convert', () => {
@@ -22,16 +21,19 @@ export const useConvertStore = defineStore('convert', () => {
     }
     const finished = job.value?.state === 'running' && now?.id === job.value.id && now.state !== 'running'
     job.value = now
-    if (finished && now?.state === 'done') {
-      void useMapStore().loadMaps()
-      void usePreviewStore().refreshRuns()
-    }
+    if (finished && now?.state === 'done') void useMapStore().loadMaps()
     if (now?.state === 'running') timer = setTimeout(poll, 400)
   }
 
   async function start(map: string, request: ConvertRequest) {
     job.value = await startConvert(map, request)
     inDialog.value = true
+    void poll()
+  }
+
+  async function cancel() {
+    if (job.value?.state !== 'running') return
+    await cancelConvert(job.value.id).catch(() => undefined)
     void poll()
   }
 
@@ -43,7 +45,7 @@ export const useConvertStore = defineStore('convert', () => {
     if (id) await dismissConvert(id).catch(() => undefined)
   }
 
-  return { job, inDialog, poll, start, dismiss }
+  return { job, inDialog, poll, start, cancel, dismiss }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useConvertStore, import.meta.hot))

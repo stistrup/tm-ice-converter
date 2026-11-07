@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
@@ -12,7 +13,13 @@ public sealed class ItemBuilder(string dataDir)
     // bump to rebuild every item
     private const int PipelineVersion = 15;
 
-    private readonly BlockCatalog shapes = new(Paths.ExtractedStadium);
+    // per thread: a convert's workers each do one map at a time and set these first (MapConverter.Run)
+    private readonly ThreadLocal<BlockCatalog> shapesOf = new(() => new BlockCatalog(Paths.ExtractedStadium));
+    private readonly ThreadLocal<ItemStyle> styleOf = new(() => new ItemStyle());
+    private BlockCatalog shapes => shapesOf.Value!;
+    // one item or block file is planned, built or written by one map at a time
+    private readonly ConcurrentDictionary<string, object> nameLocks = new();
+    private object NameLock(string name) => nameLocks.GetOrAdd(name, _ => new object());
     private readonly IceMaterials iceMaterials = new(dataDir);
     private readonly Dictionary<string, string> failures = [];
     private readonly HashSet<string> failedItems = [];
@@ -20,7 +27,7 @@ public sealed class ItemBuilder(string dataDir)
 
     private string? tools;
 
-    public IReadOnlyDictionary<string, string> Failures => failures;
+    public IReadOnlyDictionary<string, string> Failures { get { lock (failures) return new Dictionary<string, string>(failures); } }
 
     public HashSet<string> Missing { get; } = [];
 
@@ -29,14 +36,32 @@ public sealed class ItemBuilder(string dataDir)
     // planning: For() only notes what's needed, BuildPlanned() builds it
     public bool Planning { get; set; }
 
-    public ItemStyle Style { get; set; } = new();
+    public ItemStyle Style { get => styleOf.Value!; set => styleOf.Value = value; }
+
+    // planning works out each new item's mesh at once (a convert: one plan, one build);
+    // off for the preview, which answers first and draws the built pieces after
+    public bool MeshWhilePlanning { get; init; }
 
     // once per run: the stale check only sees the item, not the block writer
     public bool RewriteBlocks { get; init; }
 
     private readonly HashSet<string> rewritten = [];
 
-    private readonly Dictionary<string, ItemRequest> planned = [];
+    // the mesh comes with it: worked out while planning, the build only runs Blender and the importer
+    private readonly Dictionary<string, (ItemRequest Request, ItemMeshResult? Made)> planned = [];
+    // whether a planned item has ice on it, known from its mesh before it's built
+    private readonly Dictionary<string, bool> iceSurfaces = [];
+    // planned items whose mesh changed: Blender and the importer run (the rest only get a new stamp)
+    private readonly HashSet<string> plannedImports = [];
+
+    // what building the planned items takes: (importer runs, all)
+    public (int Imports, int All) PlannedWork
+    {
+        get { lock (planned) lock (plannedCopies) return (plannedImports.Count + plannedCopies.Count, planned.Count + plannedCopies.Count); }
+    }
+
+    // jobs mostly wait on Blender and Wine start-up; two cores left for the desktop
+    public static int BuildsAtOnce => Math.Max(1, System.Environment.ProcessorCount - 2);
     // incomplete items never turn current: build once per run
     private readonly HashSet<string> built = [];
 
@@ -44,35 +69,67 @@ public sealed class ItemBuilder(string dataDir)
     {
         var request = new ItemRequest(block, ground, variant, mobil, clips, kind, tilt, Environment, Style);
         var name = ItemRecipe.ItemName(request, shapes);
-        if (failedItems.Contains(name)) return null;
+        lock (failures) if (failedItems.Contains(name)) return null;
         lock (emptyItems) if (emptyItems.Contains(name) || IsKnownEmpty(name) && emptyItems.Add(name)) return IceItem.Nothing;
         if (shapes.Units(block, ground, variant) is not null && shapes.FindPlacedBlockParts(block, ground, variant, mobil, clips) is null)
             return IceItem.Nothing;
         var path = Path.Combine(Paths.Items, name + ".Item.gbx");
-        bool builtThisRun;
-        lock (built) builtThisRun = built.Contains(name);
-        if (!builtThisRun && !IsCurrent(name, path, out var builtFrom))
+        lock (NameLock(name))
         {
-            if (Planning)
+            bool builtThisRun;
+            lock (built) builtThisRun = built.Contains(name);
+            if (!builtThisRun && !IsCurrent(name, path, out var builtFrom))
             {
-                planned.TryAdd(name, request);
-                return new IceItem(new Ident($"IceConverter\\{name}.Item.gbx", new Id(26), "IceConverter"), path, shapes.BlockSize(block, ground, variant));
-            }
-            var error = Build(request, builtFrom, Console.Out);
-            if (error is ItemMesh.NothingToCover)
-            {
-                lock (emptyItems) emptyItems.Add(name);
-                WriteEmptyStamp(name);
-                return IceItem.Nothing;
-            }
-            if (error is not null)
-            {
-                failures[block] = error;
-                failedItems.Add(name);
-                Console.WriteLine($"  no item for {block}: {error}");
-                return null;
+                if (Planning)
+                {
+                    bool known;
+                    lock (planned) known = planned.ContainsKey(name);
+                    if (!MeshWhilePlanning) lock (planned) planned.TryAdd(name, (request, null));
+                    // empty or not, ice or not: known now, so the plan needn't wait for the build to find out
+                    else if (!known)
+                    {
+                        var made = new ItemMesh(iceMaterials, Missing).Make(request);
+                        if (made.Error is ItemMesh.NothingToCover)
+                        {
+                            lock (emptyItems) emptyItems.Add(name);
+                            WriteEmptyStamp(name);
+                            return IceItem.Nothing;
+                        }
+                        if (made.Error is { } planError)
+                        {
+                            lock (failures) { failures[block] = planError; failedItems.Add(name); }
+                            Console.WriteLine($"  no item for {block}: {planError}");
+                            return null;
+                        }
+                        var import = builtFrom is null || InputHash(MeshPiece.Serialize(made.Pieces)) != builtFrom;
+                        lock (planned)
+                        {
+                            planned[name] = (request, made);
+                            if (import) plannedImports.Add(name);
+                        }
+                        lock (iceSurfaces) iceSurfaces[name] = made.Pieces.Any(p => p.Material.Contains("PlatformIce"));
+                    }
+                    return new IceItem(new Ident($"IceConverter\\{name}.Item.gbx", new Id(26), "IceConverter"), path, shapes.BlockSize(block, ground, variant));
+                }
+                var error = Build(request, builtFrom, Console.Out);
+                lock (built) built.Add(name);
+                if (error is ItemMesh.NothingToCover)
+                {
+                    lock (emptyItems) emptyItems.Add(name);
+                    WriteEmptyStamp(name);
+                    return IceItem.Nothing;
+                }
+                if (error is not null)
+                {
+                    lock (failures) { failures[block] = error; failedItems.Add(name); }
+                    Console.WriteLine($"  no item for {block}: {error}");
+                    return null;
+                }
             }
         }
+        // a background build has it but hasn't written it yet
+        if (Planning && !File.Exists(path))
+            return new IceItem(new Ident($"IceConverter\\{name}.Item.gbx", new Id(26), "IceConverter"), path, shapes.BlockSize(block, ground, variant));
         var header = Gbx.ParseHeaderNode<CGameItemModel>(path).Ident;
         return new IceItem(new Ident($"IceConverter\\{name}.Item.gbx", header.Collection, header.Author), path, shapes.BlockSize(block, ground, variant));
     }
@@ -84,11 +141,11 @@ public sealed class ItemBuilder(string dataDir)
         if (CustomBlockWriter.VariantId(ground, variant, mobil) is not { } variantId
             || For(block, ground, variant, mobil, baked, kind ?? (ground ? lift ? ItemKind.StackedBody : ItemKind.GroundBody : ItemKind.None), tilt) is not { } item || item == IceItem.Nothing) return null;
         // no ice in it: clips draw the surface (penalty slopes), the game would keep them native
-        if (File.Exists(item.FilePath) && !HasIceSurface(item.FilePath)) return null;
+        if (!IceSurface(item.FilePath)) return null;
         var rampKey = ramp == 0 ? "" : $"_r{ramp}" + (Style.SkinLift != ItemStyle.DefaultSkinLift ? $"l{MathF.Round(Style.SkinLift * 1000)}" : "");
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + (archetype == block ? "" : "_on_" + archetype) + (lift ? "_lift1" : "") + rampKey;
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
-        var path = Path.Combine(Paths.Work, "Blocks", name + ".Block.Gbx");
+        var path = Path.Combine(Paths.Blocks, name + ".Block.Gbx");
         WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, archetype, variantId, shapes.Waypoint(block) is not null ? shapes.Spawn(block, ground, variant, mobil) : null,
                 lift ? shapes.BlockSize(block, ground, variant) : null, ramp: ramp == 0 ? null : (ramp, Style.SkinLift, shapes.BlockSize(block, ground, variant))));
         return new IceBlock(ident, path);
@@ -97,15 +154,27 @@ public sealed class ItemBuilder(string dataDir)
     internal void WriteBlock(string path, string itemPath, Action<string> write)
     {
         if (Planning) return;
-        if (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(itemPath)) write(path);
-        else if (RewriteBlocks && rewritten.Add(path))
+        lock (NameLock(path))
         {
-            // an unchanged block keeps its date: the map's embedded zip stores it
-            var fresh = path + ".new";
-            write(fresh);
-            if (File.ReadAllBytes(fresh).SequenceEqual(File.ReadAllBytes(path))) File.Delete(fresh);
-            else File.Move(fresh, path, true);
+            bool first;
+            lock (rewritten) first = rewritten.Add(path);
+            if (!File.Exists(path) || File.GetLastWriteTimeUtc(path) < File.GetLastWriteTimeUtc(itemPath)) write(path);
+            else if (RewriteBlocks && first)
+            {
+                // an unchanged block keeps its date: the map's embedded zip stores it
+                var fresh = path + ".new";
+                write(fresh);
+                if (File.ReadAllBytes(fresh).SequenceEqual(File.ReadAllBytes(path))) File.Delete(fresh);
+                else File.Move(fresh, path, true);
+            }
         }
+    }
+
+    private bool IceSurface(string itemPath)
+    {
+        lock (iceSurfaces)
+            if (iceSurfaces.TryGetValue(Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(itemPath)), out var known)) return known;
+        return !File.Exists(itemPath) || HasIceSurface(itemPath);
     }
 
     private static bool HasIceSurface(string itemPath)
@@ -114,37 +183,54 @@ public sealed class ItemBuilder(string dataDir)
 
     // false when nothing was planned
     // progress: (built, of)
-    public bool BuildPlanned(Action<int, int>? progress = null)
+    public bool BuildPlanned(Action<int, int>? progress = null, CancellationToken cancel = default)
     {
         var jobs = TakePlanned();
         if (jobs.Count == 0) return false;
         progress?.Invoke(0, jobs.Count);
-        RunBuilds(jobs, n => progress?.Invoke(n, jobs.Count));
+        RunBuilds(jobs, n => progress?.Invoke(n, jobs.Count), cancel);
         return true;
     }
 
-    public int PlannedCount => plannedCopies.Count + planned.Count;
+    public int PlannedCount
+    {
+        get { lock (planned) lock (plannedCopies) return plannedCopies.Count + planned.Count; }
+    }
+
+    private List<(ItemRequest Request, ItemMeshResult? Made)> TakeRequests()
+    {
+        lock (planned)
+        {
+            var all = planned.Values.ToList();
+            planned.Clear();
+            plannedImports.Clear();
+            return all;
+        }
+    }
 
     // what planning noted, taken out to build (the GUI builds while the next plans run)
     public List<Action<TextWriter>> TakePlanned()
     {
-        var jobs = plannedCopies.Values.Select(c => (Action<TextWriter>)(log =>
+        List<(string ItemId, string? Environment)> copies;
+        lock (plannedCopies)
+        {
+            copies = [.. plannedCopies.Values];
+            plannedCopies.Clear();
+        }
+        return [.. copies.Select(c => (Action<TextWriter>)(log =>
         {
             var copy = BuildItemCopy(c.ItemId, c.Environment, log, plan: false);
             lock (itemCopies) itemCopies[$"{c.Environment}:{c.ItemId}"] = copy;
-        })).Concat(planned.Values.Select(r => (Action<TextWriter>)(log => BuildRequest(r, log)))).ToList();
-        plannedCopies.Clear();
-        planned.Clear();
-        return jobs;
+        })).Concat(TakeRequests().Select(p => (Action<TextWriter>)(log => BuildRequest(p.Request, log, p.Made))))];
     }
 
-    public static void RunBuilds(List<Action<TextWriter>> jobs, Action<int>? progress = null)
+    // cancel: no new job starts, the running ones finish
+    public static void RunBuilds(List<Action<TextWriter>> jobs, Action<int>? progress = null, CancellationToken cancel = default)
     {
-        // jobs mostly wait on Blender and Wine start-up; two cores left for the desktop
-        var parallel = Math.Max(1, System.Environment.ProcessorCount - 2);
+        var parallel = BuildsAtOnce;
         Console.WriteLine($"Building {jobs.Count} items, {parallel} at a time");
         var done = 0;
-        Parallel.ForEach(jobs, new ParallelOptions { MaxDegreeOfParallelism = parallel }, job =>
+        Parallel.ForEach(jobs, new ParallelOptions { MaxDegreeOfParallelism = parallel, CancellationToken = cancel }, job =>
         {
             var log = new StringWriter();
             job(log);
@@ -154,21 +240,24 @@ public sealed class ItemBuilder(string dataDir)
         });
     }
 
-    private void BuildRequest(ItemRequest r, TextWriter log)
+    private void BuildRequest(ItemRequest r, TextWriter log, ItemMeshResult? made = null)
     {
         var name = ItemRecipe.ItemName(r, new BlockCatalog(Paths.ExtractedStadium) { Environment = r.Environment });
-        lock (built) built.Add(name);
-        if (IsCurrent(name, Path.Combine(Paths.Items, name + ".Item.gbx"), out var builtFrom)
-            || Build(r, builtFrom, log) is not { } error) return;
-        if (error is ItemMesh.NothingToCover)
+        lock (NameLock(name))
         {
-            lock (emptyItems) emptyItems.Add(name);
-            WriteEmptyStamp(name);
-        }
-        else
-        {
-            lock (failures) { failures[r.Block] = error; failedItems.Add(name); }
-            log.WriteLine($"  no item for {r.Block}: {error}");
+            lock (built) built.Add(name);
+            if (IsCurrent(name, Path.Combine(Paths.Items, name + ".Item.gbx"), out var builtFrom)
+                || Build(r, builtFrom, log, made) is not { } error) return;
+            if (error is ItemMesh.NothingToCover)
+            {
+                lock (emptyItems) emptyItems.Add(name);
+                WriteEmptyStamp(name);
+            }
+            else
+            {
+                lock (failures) { failures[r.Block] = error; failedItems.Add(name); }
+                log.WriteLine($"  no item for {r.Block}: {error}");
+            }
         }
     }
 
@@ -199,9 +288,9 @@ public sealed class ItemBuilder(string dataDir)
     private bool IsKnownEmpty(string name)
         => File.Exists(StampPath(name)) && File.ReadAllLines(StampPath(name)) is ["empty", var tool] && tool == Tools();
 
-    private static string PiecesPath(string name) => Path.Combine(Paths.Work, "Mesh", name + ".pieces.json");
+    private static string PiecesPath(string name) => Path.Combine(Paths.Pieces, name + ".pieces.json");
 
-    private static string StampPath(string name) => Path.Combine(Paths.Work, "Mesh", name + ".pipeline");
+    private static string StampPath(string name) => Path.Combine(Paths.Pieces, name + ".pipeline");
 
     private string BuildScript => Path.Combine(dataDir, "..", "tools", "build_fbx.py");
 
@@ -214,11 +303,11 @@ public sealed class ItemBuilder(string dataDir)
         return Build(new ItemRequest(block, false, 0, 0, clips, ItemKind.None, default, null, new ItemStyle()), null, Console.Out);
     }
 
-    private string? Build(ItemRequest r, string? builtFrom, TextWriter log)
+    private string? Build(ItemRequest r, string? builtFrom, TextWriter log, ItemMeshResult? made = null)
     {
         try
         {
-            var made = new ItemMesh(iceMaterials, Missing).Make(r);
+            made ??= new ItemMesh(iceMaterials, Missing).Make(r);
             if (made.Error is not null) return made.Error;
             var name = ItemRecipe.ItemName(r, made.Catalog);
             var result = Finish(name, made.Pieces, made.Waypoint, made.Catalog, builtFrom, log);
@@ -239,10 +328,15 @@ public sealed class ItemBuilder(string dataDir)
     public IceItem? ForItem(string itemId)
     {
         var key = $"{Environment}:{itemId}";
-        lock (itemCopies) if (itemCopies.TryGetValue(key, out var known)) return known;
-        var copy = BuildItemCopy(itemId, Environment, Console.Out, Planning);
-        if (!plannedCopies.ContainsKey(key)) lock (itemCopies) itemCopies[key] = copy;
-        return copy;
+        lock (NameLock("copy:" + key))
+        {
+            lock (itemCopies) if (itemCopies.TryGetValue(key, out var known)) return known;
+            var copy = BuildItemCopy(itemId, Environment, Console.Out, Planning);
+            bool planning;
+            lock (plannedCopies) planning = plannedCopies.ContainsKey(key);
+            if (!planning) lock (itemCopies) itemCopies[key] = copy;
+            return copy;
+        }
     }
 
     private readonly Dictionary<string, (string ItemId, string? Environment)> plannedCopies = [];
@@ -294,6 +388,7 @@ public sealed class ItemBuilder(string dataDir)
     {
         var meshDir = Path.Combine(Paths.Work, "Mesh");
         Directory.CreateDirectory(meshDir);
+        Directory.CreateDirectory(Paths.Pieces);
         var json = PiecesPath(name);
         var piecesJson = MeshPiece.Serialize(pieces);
         var input = InputHash(piecesJson);

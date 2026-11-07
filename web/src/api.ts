@@ -52,7 +52,8 @@ export interface SceneManifest {
   map: string
   environment: string | null
   geometryBytes: number
-  notExtracted: number
+  // game files still to extract, under GameData
+  notExtracted: string[]
   materials: SceneMaterial[]
   meshes: SceneMesh[]
   instances: SceneInstance[]
@@ -91,9 +92,13 @@ export async function saveAuthor(author: Author): Promise<Author | null> {
   return (await check(await fetch('/api/author', { method: 'POST', body: JSON.stringify(author) }))).json()
 }
 
+// maps: several at once, each with its default name and its own settings; else the map started with, by name and settings
 export interface ConvertRequest {
-  settings: MapSettings
+  settings: MapSettings | null
   name: string
+  maps?: string[]
+  // after each map's default name, for maps
+  suffix?: string
   folder: string
   fakeAuthorTime: boolean
   meAsAuthor: boolean
@@ -127,17 +132,22 @@ export interface ConvertJob {
   id: string
   map: string
   name: string
-  state: 'running' | 'done' | 'failed'
+  count: number
+  // cancelled: results are the maps saved before
+  state: 'running' | 'done' | 'failed' | 'cancelled'
   progress: ConvertProgress
   started: string
   ended: string | null
   outcome: ConvertOutcome | null
   error: string | null
+  results: { map: string; output: string | null; error: string | null }[]
+  // Cancel pressed, the builds that started are finishing
+  cancelling: boolean
 }
 
 // starts it in the background
 export async function startConvert(map: string, request: ConvertRequest): Promise<ConvertJob> {
-  const query = new URLSearchParams({ map })
+  const query = new URLSearchParams(map ? { map } : {})
   return (await check(await fetch(`/api/convert?${query}`, { method: 'POST', body: JSON.stringify(request) }))).json()
 }
 
@@ -146,11 +156,16 @@ export async function fetchConvertJob(): Promise<ConvertJob | null> {
   return (await check(await fetch('/api/convert'))).json()
 }
 
+// stops at the next map or step
+export async function cancelConvert(id: string): Promise<void> {
+  await check(await fetch(`/api/convert-cancel?${new URLSearchParams({ id })}`, { method: 'POST', body: '' }))
+}
+
 export async function dismissConvert(id: string): Promise<void> {
   await check(await fetch(`/api/convert-dismiss?${new URLSearchParams({ id })}`, { method: 'POST', body: '' }))
 }
 
-// what a conversion names the map by default (maps.jsonc names included)
+// what a conversion names the map by default (a name from its settings included)
 export async function fetchOutputName(map: string): Promise<string> {
   return (await check(await fetch(`/api/output-name?${new URLSearchParams({ map })}`))).json()
 }
@@ -196,46 +211,26 @@ export function textureUrl(path: string): string {
 export interface PreviewOption {
   name: string
   value: boolean
-  // the converter's default (maps.jsonc "options")
+  // the converter's default (ConvertOptions)
   mapValue: boolean
   description: string
 }
 
-// one map's settings, shaped like its maps.jsonc entry; fields the page doesn't know are kept as they are
+// one map's settings (settings/maps/<uid>.json); fields the page doesn't know are kept as they are
 export type MapSettings = Record<string, unknown> & {
   options?: Record<string, unknown>
   pieces?: Record<string, unknown>
 }
 
-export interface RunInfo {
-  id: string
-  time: string
-  kind: string
-  commit: string | null
-  output: string
-  outputName: string
-  // settings fields that didn't read when it ran
-  leftOut: number
-  settings: MapSettings
-}
-
 // what a map opens with: the settings a convert would use now, and where they came from
 export interface MapState {
-  // the original's UID: drafts are kept per family
-  family: string
-  familyName: string
-  uids: number
   settings: MapSettings
-  // "maps.jsonc" or "draft of …"
+  // "defaults" or "saved …"
   from: string
-  // the run (or "maps.jsonc") the draft started from
-  draftFrom: string | null
-  // the original's maps.jsonc entry
+  // no settings of its own (empty)
   seed: MapSettings
   // every option with its default and description
   defaults: PreviewOption[]
-  // newest first
-  runs: RunInfo[]
   unreadable: string[]
 }
 
@@ -288,9 +283,9 @@ export async function fetchMapState(map: string): Promise<MapState> {
   return (await check(await fetch(`/api/settings?${new URLSearchParams({ map })}`))).json()
 }
 
-// null: drop the draft, back to maps.jsonc
-export async function saveDraft(map: string, settings: MapSettings | null, from: string | null): Promise<void> {
-  await check(await fetch(`/api/draft?${new URLSearchParams({ map })}`, { method: 'POST', body: JSON.stringify({ settings, from }) }))
+// null: back to the defaults
+export async function saveSettings(map: string, settings: MapSettings | null): Promise<void> {
+  await check(await fetch(`/api/save-settings?${new URLSearchParams({ map })}`, { method: 'POST', body: JSON.stringify({ settings }) }))
 }
 
 export async function fetchPreviewScene(id: string): Promise<{ manifest: SceneManifest; geometry: ArrayBuffer }> {
@@ -310,4 +305,38 @@ export interface BuildStatus {
 
 export async function fetchBuildStatus(): Promise<BuildStatus> {
   return (await check(await fetch('/api/preview-build'))).json()
+}
+
+// first-run checklist
+export interface SetupStep {
+  id: string
+  title: string
+  // ok, todo, wait (an earlier step first), running
+  state: 'ok' | 'todo' | 'wait' | 'running'
+  text: string
+  path: string | null
+  found: string[] | null
+  action: string | null
+  link: string | null
+  progress: number | null
+  required: boolean
+}
+
+export interface SetupStatus {
+  steps: SetupStep[]
+  ready: boolean
+  gameRunning: boolean
+}
+
+export async function fetchSetup(): Promise<SetupStatus> {
+  return (await check(await fetch('/api/setup'))).json()
+}
+
+export async function setSetupPath(name: string, value: string): Promise<SetupStatus> {
+  const query = new URLSearchParams({ name })
+  return (await check(await fetch(`/api/setup-path?${query}`, { method: 'POST', body: JSON.stringify(value) }))).json()
+}
+
+export async function setupAction(id: string): Promise<SetupStatus> {
+  return (await check(await fetch(`/api/setup-action?${new URLSearchParams({ id })}`, { method: 'POST', body: '' }))).json()
 }

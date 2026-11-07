@@ -17,9 +17,9 @@ switch (args)
     case ["convert", .. var rest]:
         return new ConvertCommand(dataDir).Run(rest);
     case ["runs", .. var rest]:
-        return new RunsCommand(dataDir).Runs(rest);
+        return new RunsCommand().Runs(rest);
     case ["settings", .. var rest]:
-        return new RunsCommand(dataDir).Settings(rest);
+        return new RunsCommand().Settings(rest);
     case ["plan", .. var rest]:
         return new ConvertCommand(dataDir).Plan(rest);
     case ["watch", .. var rest]:
@@ -47,9 +47,8 @@ switch (args)
                   Local web interface: browse maps and look through them in 3D. Build the page first: npm run build in web/.
             {ConvertCommand.Usage.TrimEnd()}
               runs <map.Gbx>
-                  The conversions in this map's family (the original, its conversions, the game's saves of them) and
-                  which settings a convert would use now.
-              settings <map.Gbx> [draft | seed | <run id>]
+                  The conversions of this map and which settings a convert would use now.
+              settings <map.Gbx> [saved | seed | <run id>]
                   Print settings as JSON (default: what a convert would use); fields that don't read are listed.
               scan [folder]...
                   Add block names from maps to data/known-blocks.txt (native ice blocks are used once seen there or extracted).

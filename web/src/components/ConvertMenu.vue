@@ -10,6 +10,13 @@ const preview = usePreviewStore()
 const store = useMapStore()
 const history = useHistoryStore()
 
+function chooseOpen(on: boolean) {
+  const path = store.currentMap?.path
+  if (!path) return
+  if (on) store.chosenMaps.add(path)
+  else store.chosenMaps.delete(path)
+}
+
 function choose(group: OptionGroup, index: number) {
   const choice = group.choices[index]
   if (!choice) return
@@ -17,13 +24,6 @@ function choose(group: OptionGroup, index: number) {
     for (const [name, value] of Object.entries(choice.set)) preview.set(name, value)
   })
 }
-
-// against what the map's maps.jsonc entry adds up to
-function groupChanged(group: OptionGroup) {
-  return group.current(preview.valueOf) !== group.current(preview.seedValueOf)
-}
-
-const SEED = 'maps.jsonc'
 
 const rulesOpen = ref(false)
 const normal = (key: string) => key.trim().replace(/\s*,\s*/g, ',')
@@ -53,25 +53,6 @@ function removeRule(key: string) {
   hoverRule(null)
   history.change(() => preview.pick([key], ''))
 }
-
-function when(time: string) {
-  return new Date(time).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-}
-
-// where the working settings stand
-const source = computed(() => {
-  const state = preview.state
-  if (!state) return ''
-  const run = state.runs.find((r) => r.id === preview.from)
-  const start = run ? `run ${when(run.time)}` : preview.from === SEED || !preview.from ? SEED : 'a run no longer logged'
-  return state.from === SEED ? SEED : `Draft, from ${start}`
-})
-
-function loadFrom(value: string) {
-  const runs = preview.state?.runs ?? []
-  history.change(() => preview.load(value === SEED ? null : (runs.find((r) => r.id === value) ?? null)))
-}
-
 </script>
 
 <template>
@@ -89,21 +70,11 @@ function loadFrom(value: string) {
     <div v-if="preview.open" :class="$style.body">
       <p v-if="preview.error" :class="$style.error">{{ preview.error }}</p>
 
-      <div v-if="preview.state" :class="$style.source">
-        <label :class="$style.choice">
-          <span :class="$style.option">
-            <span :class="$style.grow" :title="preview.state.familyName ? `Converted from ${preview.state.familyName}` : ''">Settings: {{ source }}</span>
-          </span>
-          <select :class="$style.select" value="" @change="loadFrom(($event.target as HTMLSelectElement).value); ($event.target as HTMLSelectElement).value = ''">
-            <option value="" disabled>Load settings from…</option>
-            <option :value="SEED">maps.jsonc (start over)</option>
-            <option v-for="run in preview.state.runs" :key="run.id" :value="run.id">
-              {{ when(run.time) }} · {{ run.kind }} · {{ run.outputName }}{{ run.leftOut ? ` (${run.leftOut} left out)` : '' }}
-            </option>
-          </select>
-        </label>
-        <p v-if="!preview.state.runs.length" :class="$style.muted">No conversions of this map yet.</p>
-      </div>
+      <label v-if="preview.state" :class="[$style.option, $style.presets]">
+        <input type="checkbox" :checked="preview.presets" @change="history.change(() => preview.setPresets(($event.target as HTMLInputElement).checked))" />
+        <span>Enable global conversion rules</span>
+        <span :class="$style.info" title="Off: only pieces with a manual rule convert" aria-label="What it does">i</span>
+      </label>
 
       <div v-if="preview.result?.problems.length || preview.result?.stalePicks.length || preview.state?.unreadable.length" :class="$style.problems">
         <p v-for="problem in preview.result?.problems ?? []" :key="problem">Left out: {{ problem }}</p>
@@ -113,12 +84,11 @@ function loadFrom(value: string) {
         <p v-for="file in preview.state?.unreadable ?? []" :key="file">Unreadable: {{ file }}</p>
       </div>
 
-      <div v-if="preview.options.length" :class="$style.options">
+      <fieldset v-if="preview.options.length" :class="$style.options" :disabled="!preview.presets">
         <label v-for="group in optionGroups" :key="group.title" :class="$style.choice">
           <span :class="$style.option">
             <span>{{ group.title }}</span>
             <span :class="$style.info" :title="group.description" aria-label="What it does">i</span>
-            <span v-if="groupChanged(group)" :class="$style.changed" title="changed from the map's setting">●</span>
           </span>
           <select
             :class="$style.select"
@@ -136,13 +106,8 @@ function loadFrom(value: string) {
           />
           <span>{{ optionLabel(option.name) }}</span>
           <span v-if="option.description" :class="$style.info" :title="option.description" aria-label="What it does">i</span>
-          <span
-            v-if="preview.valueOf(option.name) !== preview.seedValueOf(option.name)"
-            :class="$style.changed"
-            title="changed from the map's setting"
-          >●</span>
         </label>
-      </div>
+      </fieldset>
       <div :class="$style.rules">
         <button
           type="button"
@@ -183,6 +148,12 @@ function loadFrom(value: string) {
         <input type="radio" name="shown" :checked="!preview.showOriginal" @change="preview.showOriginal = false" />
         <span>Preview</span>
         <span v-if="!preview.showOriginal && preview.loading" :class="$style.spinner" aria-label="Calculating" />
+      </label>
+    </div>
+    <div v-if="preview.open && store.currentMap" :class="$style.actions">
+      <label :class="$style.option">
+        <input type="checkbox" :checked="store.chosenMaps.has(store.currentMap.path)" @change="chooseOpen(($event.target as HTMLInputElement).checked)" />
+        <span>Add to conversion list</span>
       </label>
     </div>
   </section>
@@ -264,6 +235,18 @@ function loadFrom(value: string) {
 .options {
   display: grid;
   gap: 2px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.options:disabled {
+  opacity: 0.5;
+}
+
+.presets {
+  margin-bottom: 8px;
 }
 
 .option {
@@ -313,10 +296,6 @@ function loadFrom(value: string) {
   border-color: var(--strong);
 }
 
-.changed {
-  color: var(--accent, #e5912f);
-  font-size: 9px;
-}
 
 .actions {
   display: flex;
@@ -326,15 +305,6 @@ function loadFrom(value: string) {
   padding: 0 8px 8px;
 }
 
-.source {
-  margin-bottom: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-}
-
-.source p {
-  margin: 0;
-}
 
 .problems {
   display: grid;

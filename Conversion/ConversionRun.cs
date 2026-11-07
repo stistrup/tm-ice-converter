@@ -78,7 +78,7 @@ internal sealed class ConversionRun
 
     // grid blocks by cell, free blocks by position
     public bool OnKeepList(CGameCtnBlock block)
-        => block.IsFree
+        => !Rules.Presets && Rules.PieceChoice(block) is null || (block.IsFree
             ? block.AbsolutePositionInMap is { } p && Rules.Keep.Any(e => Translations.IsAt(e, block.Name, new Vector3(p.X, p.Y, p.Z)) == true)
-            : Rules.Keep.Contains(Translations.KeepKey(block.Name, block.Coord.X, block.Coord.Y, block.Coord.Z));
+            : Rules.Keep.Contains(Translations.KeepKey(block.Name, block.Coord.X, block.Coord.Y, block.Coord.Z)));
 }

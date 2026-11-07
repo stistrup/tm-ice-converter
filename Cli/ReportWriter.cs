@@ -112,6 +112,12 @@ internal static class ReportWriter
             foreach (var (name, n) in report.ItemsNotIced) sb.AppendLine($"- {name} x{n}: {FirstLine(itemFailures[name])}");
         }
 
+        if (report.Untouched.Count > 0)
+        {
+            sb.AppendLine($"\n## Never converted ({report.Untouched.Values.Sum()})\n");
+            foreach (var (name, n) in report.Untouched) sb.AppendLine($"- {name} x{n}");
+        }
+
         if (report.CameraClipsRemoved.Count > 0)
         {
             sb.AppendLine($"\n## Forced cameras removed ({report.CameraClipsRemoved.Count})\n");

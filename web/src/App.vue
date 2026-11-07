@@ -1,24 +1,42 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import MapList from './components/MapList.vue'
 import MapViewport from './components/MapViewport.vue'
+import SetupPage from './components/SetupPage.vue'
 import StatusBar from './components/StatusBar.vue'
 import { startLiveLink } from './live'
 import { useMapStore } from './stores/map'
 import { useConvertStore } from './stores/convert'
+import { useSetupStore } from './stores/setup'
 
 const store = useMapStore()
+const setup = useSetupStore()
+const started = ref(false)
 
-onMounted(() => {
+// the maps need the folders: only after setup
+function start() {
+  if (started.value) return
+  started.value = true
   void store.loadMaps()
   // a conversion still running in the backend (or just finished) shows again
   void useConvertStore().poll()
   startLiveLink()
+}
+
+function leaveSetup() {
+  setup.close()
+  start()
+}
+
+onMounted(async () => {
+  await setup.load()
+  if (!setup.shown) start()
 })
 </script>
 
 <template>
-  <div :class="$style.layout">
+  <SetupPage v-if="setup.shown" @done="leaveSetup" />
+  <div v-else-if="started" :class="$style.layout">
     <div :class="$style.side">
       <MapList v-model:shown="store.mapsShown" :class="[$style.box, { [$style.open]: store.mapsShown }]" />
     </div>

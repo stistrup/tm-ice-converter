@@ -5,20 +5,18 @@ import {
   fetchMapState,
   fetchPreview,
   fetchPreviewScene,
-  saveDraft,
+  saveSettings,
   type BuildStatus,
   type MapSettings,
   type MapState,
   type PreviewDecision,
   type PreviewOption,
   type PreviewResult,
-  type RunInfo,
   type SceneManifest,
 } from '../api'
 import { useMapStore } from './map'
 
 const OPEN_KEY = 'preview-open'
-const SEED = 'maps.jsonc'
 
 function readOpen(): boolean {
   try {
@@ -30,17 +28,15 @@ function readOpen(): boolean {
 
 const clone = (settings: MapSettings): MapSettings => JSON.parse(JSON.stringify(settings))
 
-// the open map's settings (kept as the family's draft while they change) and the converter's decisions with them; nothing is built
+// the open map's settings (saved for the map as they change) and the converter's decisions with them; nothing is built
 export const usePreviewStore = defineStore('preview', () => {
   const map = useMapStore()
   // the panel is always there; folding only hides it
   const open = ref(readOpen())
-  // where the map's settings stand: runs, the maps.jsonc entry, defaults
+  // where the map's settings stand: saved or defaults
   const state = ref<MapState | null>(null)
-  // what the menu edits and the preview runs with, shaped like a maps.jsonc entry
+  // what the menu edits and the preview runs with, shaped like settings/maps/<uid>.json
   const working = ref<MapSettings>({})
-  // the run id (or maps.jsonc) the working settings started from
-  const from = ref<string | null>(null)
   const result = shallowRef<PreviewResult | null>(null)
   const loading = ref(false)
   const error = ref('')
@@ -106,7 +102,7 @@ export const usePreviewStore = defineStore('preview', () => {
     }
   }
 
-  // a draft only exists once the settings differ from the maps.jsonc entry
+  // saved only while the settings differ from the defaults
   let saved = ''
   let saveTimer: ReturnType<typeof setTimeout> | undefined
   function scheduleSave() {
@@ -119,12 +115,10 @@ export const usePreviewStore = defineStore('preview', () => {
       if (json === saved) return
       const same = json === JSON.stringify(seed)
       try {
-        await saveDraft(current.path, same ? null : working.value, same ? null : from.value)
+        await saveSettings(current.path, same ? null : working.value)
         saved = json
-        if (state.value && map.currentMap === current)
-          state.value = { ...state.value, from: same ? SEED : 'draft', draftFrom: same ? null : from.value }
       } catch (e) {
-        error.value = `Draft not saved: ${e instanceof Error ? e.message : String(e)}`
+        error.value = `Settings not saved: ${e instanceof Error ? e.message : String(e)}`
       }
     }, 400)
   }
@@ -139,32 +133,11 @@ export const usePreviewStore = defineStore('preview', () => {
       const loaded = await fetchMapState(current.path)
       if (map.currentMap !== current) return
       state.value = loaded
-      saved = JSON.stringify(loaded.from === SEED ? loaded.seed : loaded.settings)
-      from.value = loaded.from === SEED ? SEED : loaded.draftFrom
+      saved = JSON.stringify(loaded.settings)
       working.value = clone(loaded.settings)
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     }
-  }
-
-  // after a conversion: its run listed, the working settings left as they are
-  async function refreshRuns() {
-    const current = map.currentMap
-    if (!current || !state.value) return
-    try {
-      const loaded = await fetchMapState(current.path)
-      if (map.currentMap === current && state.value) state.value = { ...state.value, runs: loaded.runs }
-    } catch {
-      // the list stays as it was
-    }
-  }
-
-  // a past run's settings (or the maps.jsonc entry) become the working ones
-  function load(source: RunInfo | null) {
-    const seed = state.value?.seed
-    if (!seed) return
-    working.value = clone(source?.settings ?? seed)
-    from.value = source?.id ?? SEED
   }
 
   // folding only hides the panel; the preview stays drawn
@@ -198,7 +171,6 @@ export const usePreviewStore = defineStore('preview', () => {
     () => {
       clearTimeout(saveTimer)
       working.value = {}
-      from.value = null
       error.value = ''
       clear()
       void loadState()
@@ -216,9 +188,6 @@ export const usePreviewStore = defineStore('preview', () => {
   // the box as the working settings have it
   const valueOf = (name: string) => optionIn(working.value, name)
 
-  // as the map's maps.jsonc entry has it
-  const seedValueOf = (name: string) => optionIn(state.value?.seed, name)
-
   // a default is left out, so the settings only say what's special about the map
   function set(name: string, value: boolean) {
     const own = { ...(working.value.options ?? {}) }
@@ -226,6 +195,14 @@ export const usePreviewStore = defineStore('preview', () => {
     else own[name] = value
     const { options: _, ...rest } = working.value
     working.value = Object.keys(own).length ? { ...rest, options: own } : rest
+  }
+
+  // off: only the pieces picked by hand convert
+  const presets = computed(() => working.value.presets !== false)
+
+  function setPresets(on: boolean) {
+    const { presets: _, ...rest } = working.value
+    working.value = on ? rest : { ...rest, presets: false }
   }
 
   const stale = computed(() => JSON.stringify(working.value) !== ranWith.value)
@@ -271,11 +248,8 @@ export const usePreviewStore = defineStore('preview', () => {
   return {
     state,
     working,
-    from,
     picks,
     pick,
-    load,
-    refreshRuns,
     building,
     changed,
     lookVersion,
@@ -291,8 +265,9 @@ export const usePreviewStore = defineStore('preview', () => {
     show,
     close,
     set,
+    presets,
+    setPresets,
     valueOf,
-    seedValueOf,
   }
 })
 

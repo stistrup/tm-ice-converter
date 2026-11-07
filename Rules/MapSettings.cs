@@ -3,14 +3,13 @@ using System.Text.Json.Nodes;
 
 namespace TmIceConverter;
 
-// one map's choices, shaped like its maps.jsonc entry; kept as written, so fields this version can't read survive a save
+// one map's choices (settings/maps/<uid>.json); kept as written, so fields this version can't read survive a save
 public sealed class MapSettings(JsonObject json)
 {
     public JsonObject Json { get; } = json;
 
-    // the map's maps.jsonc entry, or nothing
-    public static MapSettings Seed(Translations data, string mapName)
-        => new(data.MapEntries.TryGetValue(mapName, out var entry) ? entry.DeepClone().AsObject() : []);
+    // nothing of its own: data/options.jsonc as it is
+    public static MapSettings Empty => new([]);
 
     public static MapSettings Parse(string text)
         => JsonNode.Parse(text, documentOptions: new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true }) is JsonObject o

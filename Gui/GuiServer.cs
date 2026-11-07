@@ -25,6 +25,7 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
 
     private readonly SemaphoreSlim building = new(1);
     private readonly LiveLink live = new();
+    private readonly Setup setup = new(dataDir);
     private readonly Dictionary<string, (DateTime Modified, string Name)> names = [];
 
     public async Task RunAsync()
@@ -51,6 +52,7 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
             else if (path == "/api/events") await live.Events(response);
             else if (path == "/api/shot") await Shot(response);
             else if (path == "/api/pick") await Pick(request, response);
+            else if (path == "/api/setup") await Json(response, await Task.Run(setup.Check));
             else if (path == "/api/maps") await Json(response, ListMaps());
             else if (path == "/api/folders") await Json(response, ListFolders());
             else if (path == "/api/author") await Json(response, AuthorNow());
@@ -103,9 +105,28 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
         }
         else if (path is "/api/answer" or "/api/shot")
             await Text(response, live.Answered(request.QueryString["id"], body.ToArray()) ? 200 : 404, "");
+        else if (path is "/api/setup-path" or "/api/setup-action")
+        {
+            try
+            {
+                if (path == "/api/setup-path") setup.SetPath(request.QueryString["name"] ?? "", JsonSerializer.Deserialize<string>(body.ToArray()) ?? "");
+                else setup.Act(request.QueryString["id"] ?? "");
+            }
+            catch (Exception e) when (e is ArgumentException or InvalidOperationException or IOException or JsonException or UnauthorizedAccessException)
+            {
+                await Text(response, 400, e.Message);
+                return;
+            }
+            await Json(response, await Task.Run(setup.Check));
+        }
         else if (path == "/api/preview") await Preview(request, response, body.ToArray());
-        else if (path == "/api/draft") await Draft(request, response, body.ToArray());
+        else if (path == "/api/save-settings") await SaveSettings(request, response, body.ToArray());
         else if (path == "/api/convert") await Convert(request, response, body.ToArray());
+        else if (path == "/api/convert-cancel")
+        {
+            jobs.Cancel(request.QueryString["id"] ?? "");
+            await Text(response, 200, "ok");
+        }
         else if (path == "/api/convert-dismiss")
         {
             jobs.Dismiss(request.QueryString["id"] ?? "");
@@ -184,28 +205,37 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
             .Any(f => string.Equals(Path.GetFileName(f), file, StringComparison.OrdinalIgnoreCase));
     }
 
-    // what a conversion names it by default (maps.jsonc names included)
-    private string OutputName(string map) => MapNames.DefaultOutput(Gbx.ParseHeaderNode<CGameCtnChallenge>(map).MapName, Translations.Load(dataDir));
+    // what a conversion names it by default (a name from its settings included)
+    private static string OutputName(string map, string suffix = MapNames.DefaultSuffix)
+        => Gbx.ParseHeaderNode<CGameCtnChallenge>(map) is var header ? MapNames.DefaultOutput(header.MapName, RunLog.Default.NameOf(header.MapUid), suffix) : "";
 
-    private sealed record ConvertRequest(JsonObject? Settings, string? Name, string? Folder, bool FakeAuthorTime, bool MeAsAuthor, bool RebuildBlocks, bool Overwrite);
+    // Maps: several at once, each with its default name and its own settings (saved, else the defaults); else ?map= with Name and Settings
+    private sealed record ConvertRequest(JsonObject? Settings, string? Name, string? Folder, bool FakeAuthorTime, bool MeAsAuthor, bool RebuildBlocks, bool Overwrite,
+        List<string>? Maps, string? Suffix);
 
     // starts it in the background; GET /api/convert follows it
     private async Task Convert(HttpListenerRequest request, HttpListenerResponse response, byte[] body)
     {
-        if (MapFile(request) is not { } map) { await Text(response, 404, "no such map"); return; }
         ConvertRequest? ask;
         try { ask = JsonSerializer.Deserialize<ConvertRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
         catch (JsonException e) { await Text(response, 400, e.Message); return; }
-        if (ask is null || ask.Name?.Trim() is not { Length: > 0 } name) { await Text(response, 400, "a map name is needed"); return; }
-        if (MapNames.FileName(name) is null) { await Text(response, 400, "the name can't hold < > : \" / \\ | ? * or end in a dot"); return; }
+        if (ask is null) { await Text(response, 400, "nothing asked"); return; }
+        var batch = ask.Maps is { Count: > 0 };
+        var maps = batch ? ask.Maps!.Select(m => Inside(Paths.Maps, m)).ToList() : [MapFile(request)];
+        if (maps.Any(m => m is null || !m.EndsWith(".Map.Gbx", StringComparison.OrdinalIgnoreCase) || !File.Exists(m))) { await Text(response, 404, "no such map"); return; }
+        var name = ask.Name?.Trim() ?? "";
+        if (!batch && name.Length == 0) { await Text(response, 400, "a map name is needed"); return; }
+        if (!batch && MapNames.FileName(name) is null) { await Text(response, 400, "the name can't hold < > : \" / \\ | ? * or end in a dot"); return; }
         var folder = ask.Folder?.Trim() ?? "";
         var outDir = folder.Length == 0 ? Paths.Maps : Inside(Paths.Maps, folder);
         if (outDir is null) { await Text(response, 400, "the folder must be under Maps"); return; }
-        if (TargetExists(folder, name) && !ask.Overwrite) { await Text(response, 409, "a map of that name is already there"); return; }
+        // one that doesn't read fails in the run, with its own message
+        var names = batch ? maps.Select(m => { try { return OutputName(m!, ask.Suffix ?? MapNames.DefaultSuffix); } catch (Exception) { return null; } }).OfType<string>().ToList() : [name];
+        if (!ask.Overwrite && names.Any(n => TargetExists(folder, n))) { await Text(response, 409, "a map of that name is already there"); return; }
         if (ask.MeAsAuthor && Paths.TestrunAuthorIfSet is null) { await Text(response, 400, "no user ID saved for Me as author"); return; }
-        var choices = new ConvertCommand.Choices(outDir, name, ask.FakeAuthorTime, ask.MeAsAuthor, ask.RebuildBlocks, ask.Overwrite)
-            { Settings = new MapSettings(ask.Settings ?? new JsonObject()) };
-        if (jobs.Start(map, choices, name) is { } started) await Json(response, started);
+        var choices = new ConvertCommand.Choices(outDir, batch ? null : name, ask.FakeAuthorTime, ask.MeAsAuthor, ask.RebuildBlocks, ask.Overwrite)
+            { Settings = batch ? null : new MapSettings(ask.Settings ?? new JsonObject()), Suffix = ask.Suffix ?? MapNames.DefaultSuffix };
+        if (jobs.Start(maps!, choices, batch ? $"{maps.Count} maps" : name) is { } started) await Json(response, started);
         else await Text(response, 409, "a conversion is already running");
     }
 
@@ -271,39 +301,39 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
         await SendFile(response, file, "application/octet-stream");
     }
 
-    // POST body: { "settings": { …as a maps.jsonc entry… } }
+    // POST body: { "settings": { …as in settings/maps/<uid>.json… } }
     private async Task Preview(HttpListenerRequest request, HttpListenerResponse response, byte[] body)
     {
         if (MapFile(request) is not { } map) { await Text(response, 404, "no such map"); return; }
-        var (settings, _, error) = SettingsIn(body);
+        var (settings, error) = SettingsIn(body);
         if (error is not null) { await Text(response, 400, error); return; }
-        await Json(response, await Task.Run(() => preview.For(map, settings ?? MapSettings.Parse("{}"))).ConfigureAwait(false));
+        try { await Json(response, await Task.Run(() => preview.For(map, settings ?? MapSettings.Parse("{}"))).ConfigureAwait(false)); }
+        catch (ConversionPreview.Superseded e) { await Text(response, 409, e.Message); }
     }
 
-    // POST body: { "settings": {…} | null, "from": "<run id>" | null }; null settings drops the draft
-    private async Task Draft(HttpListenerRequest request, HttpListenerResponse response, byte[] body)
+    // POST body: { "settings": {…} | null }; null goes back to the defaults
+    private async Task SaveSettings(HttpListenerRequest request, HttpListenerResponse response, byte[] body)
     {
         if (MapFile(request) is not { } map) { await Text(response, 404, "no such map"); return; }
-        var (settings, from, error) = SettingsIn(body);
+        var (settings, error) = SettingsIn(body);
         if (error is not null) { await Text(response, 400, error); return; }
-        await Task.Run(() => preview.SaveDraft(map, settings, from)).ConfigureAwait(false);
+        await Task.Run(() => preview.Save(map, settings)).ConfigureAwait(false);
         await Text(response, 200, "ok");
     }
 
-    private static (MapSettings? Settings, string? From, string? Error) SettingsIn(byte[] body)
+    private static (MapSettings? Settings, string? Error) SettingsIn(byte[] body)
     {
         try
         {
-            if (System.Text.Json.Nodes.JsonNode.Parse(body) is not System.Text.Json.Nodes.JsonObject root) return (null, null, "body must be an object");
-            var from = root["from"] is System.Text.Json.Nodes.JsonValue f && f.TryGetValue<string>(out var text) ? text : null;
+            if (System.Text.Json.Nodes.JsonNode.Parse(body) is not System.Text.Json.Nodes.JsonObject root) return (null, "body must be an object");
             return root["settings"] switch
             {
-                System.Text.Json.Nodes.JsonObject o => (new MapSettings(o.DeepClone().AsObject()), from, null),
-                null => (null, from, null),
-                _ => (null, null, "settings must be an object or null"),
+                System.Text.Json.Nodes.JsonObject o => (new MapSettings(o.DeepClone().AsObject()), null),
+                null => (null, null),
+                _ => (null, "settings must be an object or null"),
             };
         }
-        catch (JsonException e) { return (null, null, e.Message); }
+        catch (JsonException e) { return (null, e.Message); }
     }
 
     private async Task Texture(HttpListenerRequest request, HttpListenerResponse response)

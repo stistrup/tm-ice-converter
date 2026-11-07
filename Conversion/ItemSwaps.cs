@@ -14,8 +14,9 @@ internal static class ItemSwaps
         foreach (var item in run.Map.GetAnchoredObjects())
         {
             if (item.ItemModel is not { Author: "Nadeo" } model) continue;
+            if (run.Translations.Untouched(model.Id)) { Bump(run.Report.Untouched, model.Id); continue; }
             var at = new Vector3(item.AbsolutePositionInMap.X, item.AbsolutePositionInMap.Y, item.AbsolutePositionInMap.Z);
-            var picked = run.Rules.ChoiceAt(model.Id, at);
+            var picked = run.Rules.ChoiceAt(model.Id, at) ?? (run.Rules.Presets ? null : "keep");
             if (picked == "remove" || picked is null && run.Rules.RemovesItem(model.Id, at))
             { removed.Add(item); Bump(run.Report.RemovedByList, model.Id); continue; }
             if (picked == "keep" || picked is null && run.Rules.KeepsItem(model.Id)) { Bump(run.Report.KeptByList, model.Id); continue; }

@@ -9,6 +9,8 @@
     "game": "",
     // only needed on Linux
     "importerWinePrefix": "~/.local/share/tm-ice-wine",
+    // optional: caches and built pieces (default: the user's local app data, TmIceConverter)
+    "cache": "",
     // optional: where conversion runs and GUI drafts are kept (default: settings/ in the repo)
     "settings": "",
     // optional: the uploader also mirrors each upload to <releaseCopy>/<version>

@@ -11,7 +11,7 @@ namespace TmIceConverter;
 internal static class SceneBundle
 {
     // bump when the output changes
-    private const int Format = 27;
+    private const int Format = 29;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -40,17 +40,17 @@ internal static class SceneBundle
     }
 
     private static string CacheDir(string map)
-        => Path.Combine(Paths.Work, "Gui", Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(map)))[..16]);
+        => Path.Combine(Paths.Cache, "Gui", Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(map)))[..16]);
 
     // a scene kept in memory (the preview's added items): manifest json, geometry
     public static (byte[] Manifest, byte[] Geometry) InMemory(SceneData scene)
     {
         using var geometry = new MemoryStream();
-        var manifest = JsonSerializer.SerializeToUtf8Bytes(Write(scene, 0, geometry), JsonOptions);
+        var manifest = JsonSerializer.SerializeToUtf8Bytes(Write(scene, [], geometry), JsonOptions);
         return (manifest, geometry.ToArray());
     }
 
-    private static Manifest Write(SceneData scene, int notExtracted, Stream geometry)
+    private static Manifest Write(SceneData scene, List<string> notExtracted, Stream geometry)
     {
         var gameData = Path.GetDirectoryName(Paths.ExtractedStadium)!;
         var materialKeys = scene.Materials.Keys.ToList();
@@ -99,7 +99,7 @@ internal static class SceneBundle
         string Map,
         string? Environment,
         long GeometryBytes,
-        int NotExtracted,
+        List<string> NotExtracted,
         List<ManifestMaterial> Materials,
         List<ManifestMesh> Meshes,
         List<ManifestInstance> Instances,

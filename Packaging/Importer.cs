@@ -18,7 +18,7 @@ internal static class Importer
             return $"material {dry} drives as {physics[dry]}; map it to an ice material in data/ice-materials.jsonc";
         var standIn = MaterialLib.NativeStandIns(materials, physics);
         var lightmapOnly = string.Join(",", materials.Where(MaterialLib.LightmapOnly));
-        if (!RunQuiet("blender", ["--background", "--factory-startup", "--python", buildScript, "--", json, Path.Combine(meshDir, name + ".fbx"), lightmapOnly], out var blenderLog))
+        if (!RunQuiet(Paths.Blender, ["--background", "--factory-startup", "--python", buildScript, "--", json, Path.Combine(meshDir, name + ".fbx"), lightmapOnly], out var blenderLog))
             return "Blender failed:\n" + blenderLog;
 
         File.WriteAllText(Path.Combine(meshDir, name + ".MeshParams.xml"), $"""
@@ -43,6 +43,8 @@ internal static class Importer
         var collision = Jsonc.Load<List<FbxObject>>(Path.Combine(meshDir, name + ".objects.json"))
             .Where(o => !o.Name.StartsWith("_notcollidable_") && !o.Name.StartsWith("_trigger_"))
             .Select(o => (o.Name, o.Name.StartsWith("_notvisible_pad") ? $"RoadIce:{Pads.PadGameplay(o.Name)}" : physics[o.Material], o.Triangles)).ToList();
+        File.Delete(Path.Combine(meshDir, name + ".fbx"));
+        File.Delete(Path.Combine(meshDir, name + ".objects.json"));
         surfaces = ItemPhysics.Fix(itemPath, collision);
         if (materials.Any(m => m.StartsWith(MaterialLib.NativePrefix))) ItemPatches.PointNative(itemPath, environment);
         if (waypoint is not null) ItemPatches.SetWaypoint(itemPath, waypoint);

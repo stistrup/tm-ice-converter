@@ -9,8 +9,8 @@ internal sealed class InspectCommands(string dataDir)
 {
     public int Show(string[] rest)
     {
-        var outDir = Option(ref rest, "-o") ?? Path.Combine(Paths.Work, "Previews");
-        var meshDir = Path.Combine(Paths.Work, "Mesh");
+        var outDir = Option(ref rest, "-o") ?? Path.Combine(Paths.Cache, "Previews");
+        var meshDir = Paths.Pieces;
         var script = Path.Combine(dataDir, "..", "tools", "render_item.py");
         Directory.CreateDirectory(outDir);
         var failed = 0;
@@ -23,7 +23,7 @@ internal sealed class InspectCommands(string dataDir)
             {
                 var name = Path.GetFileName(pieces)[..^".pieces.json".Length];
                 var png = Path.Combine(outDir, name + ".png");
-                if (Importer.RunQuiet("blender", ["--background", "--factory-startup", "--python-exit-code", "1", "--python", script, "--", pieces, png], out var log))
+                if (Importer.RunQuiet(Paths.Blender, ["--background", "--factory-startup", "--python-exit-code", "1", "--python", script, "--", pieces, png], out var log))
                     Console.WriteLine(png);
                 else { failed++; Console.Error.WriteLine($"{name}: Blender failed:\n{log}"); }
             }
@@ -48,17 +48,18 @@ internal sealed class InspectCommands(string dataDir)
         view.Write(node, scene);
         Console.WriteLine($"Scene: {scene}");
         foreach (var (what, n) in view.Skipped.OrderByDescending(kv => kv.Value)) Console.WriteLine($"  skipped {what} x{n}");
+        foreach (var (what, n) in view.Hidden.OrderByDescending(kv => kv.Value)) Console.WriteLine($"  hidden {what} x{n}");
 
-        if (ExtractList.Add(view.Missing) is > 0 and var missing)
+        if (ExtractList.Add(view.Missing).Count is > 0 and var missing)
         {
             Console.WriteLine($"  {missing} files not extracted yet (textures show as plain colours); listed in the extract plugin's view-refs.txt.");
-            Console.WriteLine("  In game: Openplanet > Extract block meshes, then run view again.");
+            Console.WriteLine("  In game: Openplanet > Extract game files, then run view again.");
         }
         if (noRender) return 0;
 
         var script = Path.Combine(dataDir, "..", "tools", "view_map.py");
         string[] width = blendOnly ? ["0"] : [];
-        if (!Importer.RunQuiet("blender", ["--background", "--factory-startup", "--python-exit-code", "1", "--python", script, "--", scene, outDir, .. width], out var log))
+        if (!Importer.RunQuiet(Paths.Blender, ["--background", "--factory-startup", "--python-exit-code", "1", "--python", script, "--", scene, outDir, .. width], out var log))
             return Fail("Blender failed:\n" + log);
         foreach (var line in log.Split('\n').Where(l => l.StartsWith("wrote ") || l.StartsWith("view: "))) Console.WriteLine("  " + line);
         return 0;
@@ -76,7 +77,7 @@ internal sealed class InspectCommands(string dataDir)
         var blend = Path.Combine(outDir, "map.blend");
         if (!File.Exists(blend)) return Fail($"No map.blend in {outDir}");
         var script = Path.GetFullPath(Path.Combine(dataDir, "..", "tools", "inspect_map.py"));
-        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("blender", [blend, "--python", script]) { UseShellExecute = false });
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Paths.Blender, [blend, "--python", script]) { UseShellExecute = false });
         Console.WriteLine($"Opened {blend}; marks go to {Path.Combine(outDir, "marks.json")}");
         return 0;
     }

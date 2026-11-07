@@ -8,7 +8,8 @@ interface Folder {
   name: string
   folders: Map<string, Folder>
   maps: MapEntry[]
-  count: number
+  // every map under it that the search lets through
+  all: MapEntry[]
 }
 
 type Row =
@@ -57,18 +58,18 @@ watch(
 const needle = computed(() => search.value.trim().toLowerCase())
 
 const tree = computed(() => {
-  const root: Folder = { path: '', name: '', folders: new Map(), maps: [], count: 0 }
+  const root: Folder = { path: '', name: '', folders: new Map(), maps: [], all: [] }
   for (const map of store.maps) {
     if (needle.value && !`${map.folder} ${map.name}`.toLowerCase().includes(needle.value)) continue
     let folder = root
-    folder.count++
+    folder.all.push(map)
     for (const part of map.folder.split(/[\\/]/).filter(Boolean)) {
       let next = folder.folders.get(part)
       if (!next) {
-        next = { path: `${folder.path}/${part}`, name: part, folders: new Map(), maps: [], count: 0 }
+        next = { path: `${folder.path}/${part}`, name: part, folders: new Map(), maps: [], all: [] }
         folder.folders.set(part, next)
       }
-      next.count++
+      next.all.push(map)
       folder = next
     }
     folder.maps.push(map)
@@ -96,6 +97,28 @@ function toggle(path: string) {
   else openFolders.value.add(path)
 }
 
+const chosen = computed(() => store.maps.filter((map) => store.chosenMaps.has(map.path)).length)
+
+function chosenUnder(folder: Folder) {
+  return folder.all.filter((map) => store.chosenMaps.has(map.path)).length
+}
+
+function chooseFolder(folder: Folder, on: boolean) {
+  for (const map of folder.all) {
+    if (on) store.chosenMaps.add(map.path)
+    else store.chosenMaps.delete(map.path)
+  }
+}
+
+function chooseMap(map: MapEntry, on: boolean) {
+  if (on) store.chosenMaps.add(map.path)
+  else store.chosenMaps.delete(map.path)
+}
+
+function checked(event: Event) {
+  return (event.target as HTMLInputElement).checked
+}
+
 function indent(depth: number) {
   return { paddingLeft: `${6 + depth * 12}px` }
 }
@@ -115,33 +138,50 @@ function indent(depth: number) {
     </button>
     <div v-if="shown" :class="$style.search">
       <input v-model="search" type="search" placeholder="Search" aria-label="Search maps" />
+      <div :class="$style.chosen">
+        <span>{{ chosen }} selected</span>
+        <button type="button" :class="$style.clear" :disabled="!chosen" @click="store.chosenMaps.clear()">Clear</button>
+      </div>
     </div>
     <p v-if="shown && store.mapsError" :class="$style.error">{{ store.mapsError }}</p>
     <div v-if="shown" :class="$style.tree">
       <template v-for="row in rows" :key="row.key">
-        <button
+        <div
           v-if="row.kind === 'folder'"
-          type="button"
           :class="[$style.row, $style.folder]"
           :style="indent(row.depth)"
-          :aria-expanded="row.open"
-          @click="toggle(row.folder.path)"
         >
-          <span :class="[$style.arrow, { [$style.open]: row.open }]" />
-          <span :class="$style.name">{{ row.folder.name }}</span>
-          <span :class="$style.count">{{ row.folder.count }}</span>
-        </button>
-        <button
+          <button type="button" :class="$style.label" :aria-expanded="row.open" @click="toggle(row.folder.path)">
+            <span :class="[$style.arrow, { [$style.open]: row.open }]" />
+            <span :class="$style.name">{{ row.folder.name }}</span>
+            <span :class="$style.count">{{ row.folder.all.length }}</span>
+          </button>
+          <input
+            type="checkbox"
+            :class="$style.tick"
+            :checked="chosenUnder(row.folder) === row.folder.all.length"
+            :indeterminate="chosenUnder(row.folder) > 0 && chosenUnder(row.folder) < row.folder.all.length"
+            :aria-label="`Select maps in ${row.folder.name}`"
+            @change="chooseFolder(row.folder, checked($event))"
+          />
+        </div>
+        <div
           v-else
-          type="button"
           :class="[$style.row, { [$style.current]: row.map.path === store.currentMap?.path }]"
           :style="indent(row.depth)"
-          :title="row.map.path"
-          @click="store.openMap(row.map)"
         >
-          <span :class="$style.spacer" />
-          <span :class="$style.name">{{ row.map.name }}</span>
-        </button>
+          <button type="button" :class="$style.label" :title="row.map.path" @click="row.map.path === store.currentMap?.path ? store.closeMap() : store.openMap(row.map)">
+            <span :class="$style.spacer" />
+            <span :class="$style.name">{{ row.map.name }}</span>
+          </button>
+          <input
+            type="checkbox"
+            :class="$style.tick"
+            :checked="store.chosenMaps.has(row.map.path)"
+            :aria-label="`Select ${row.map.name}`"
+            @change="chooseMap(row.map, checked($event))"
+          />
+        </div>
       </template>
       <p v-if="store.maps.length && !rows.length" :class="$style.empty">No matches</p>
     </div>
@@ -189,6 +229,32 @@ function indent(depth: number) {
   padding: 4px;
 }
 
+.chosen {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 20px;
+  padding: 2px 2px 0;
+  color: var(--muted);
+}
+
+.clear {
+  padding: 0 4px;
+  color: var(--text);
+  cursor: default;
+  background: none;
+  border: 0;
+}
+
+.clear:hover:not(:disabled) {
+  color: var(--strong);
+}
+
+.clear:disabled {
+  color: var(--muted);
+  opacity: 0.5;
+}
+
 .tree {
   flex: 1;
   min-height: 0;
@@ -202,6 +268,26 @@ function indent(depth: number) {
   width: 100%;
   height: 21px;
   padding-right: 8px;
+}
+
+.tick {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+}
+
+.label {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  height: 100%;
+  padding: 0 6px 0 0;
+  color: inherit;
   text-align: left;
   cursor: default;
   background: none;

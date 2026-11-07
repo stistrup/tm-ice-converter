@@ -47,9 +47,18 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
     public List<MeshPiece>? ExportItem(string itemPath, out string? reason, int variant = 0)
     {
         reason = null;
-        var item = Gbx.ParseNode<CGameItemModel>(itemPath);
+        CGameItemModel item;
+        // a chunk after the entity model GBX.NET misreads (Podium's clip list) shouldn't cost the mesh
+        try { item = Gbx.ParseNode<CGameItemModel>(itemPath); }
+        catch (Exception) { item = Gbx.ParseNode<CGameItemModel>(itemPath, new GbxReadSettings { IgnoreExceptionsInBody = true }); }
         var ancestor = Gbx.ParseHeader(itemPath).RefTable?.AncestorLevel ?? 0;
         var pieces = new List<MeshPiece>();
+        // a custom block (ours, CustomBlockWriter): the mesh sits in its block variants
+        if (item.EntityModelEdition is CGameBlockItem { CustomizedVariants: [{ Properties.StaticObject: { } blockMesh }, ..] })
+        {
+            AddStaticObject(blockMesh, Matrix4x4.Identity, Path.GetFileNameWithoutExtension(itemPath), pieces, itemPath);
+            return pieces;
+        }
         switch (item.EntityModel)
         {
             case NPlugItem_SVariantList { Variants: [{ EntityModelFile: { } first }, ..] variants }:
@@ -240,11 +249,11 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
                 var piece = new MeshPiece(
                     $"_notcollidable_{label}_v{gi}", MapMaterial(source), Visible: true, Collidable: false,
                     positions, vertices.Normals is { } n ? TransformNormals(n, world) : null,
-                    SnowLaidOut(source) ? RoadLayout.PlainSnowUv(positions) : PlatformLayout || PlatformLaidOut.Contains(source) ? RoadLayout.PlatformUv(positions) : vertices.Uv0,
+                    SnowLaidOut(source) ? RoadLayout.PlainSnowUv(positions) : PlatformLayout || RoadLaidOut(source) ? RoadLayout.PlatformUv(positions) : vertices.Uv0,
                     vertices.Uv1, idx, vertices.Colors);
                 if (Lift != 0) piece = SkinLift.WithSkirt(piece, worldPos, Lift / MathF.Tan(SkirtAngle * MathF.PI / 180));
                 if (piece.Uv1 is null && !source.StartsWith("Decal")) piece = Lightmaps.Projected(piece);
-                if (PlatformLaidOut.Contains(source)) roadLaid.Add(piece);
+                if (RoadLaidOut(source)) roadLaid.Add(piece);
                 pieces.Add(piece);
             }
         }
@@ -274,6 +283,9 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
 
     private static readonly HashSet<string> PlatformLaidOut = ["RoadTech", "RoadBump", "RoadDirt", "ThemeSnowRoad"];
 
+    // only roads that turn into ice; drawn as they are, they keep the game's UVs
+    private bool RoadLaidOut(string source) => PlatformLaidOut.Contains(source) && MapMaterial(source) != source;
+
     private int[] KeptFaces(float[] positions, int[] indices)
     {
         if (KeepFace is null) return indices;
@@ -298,7 +310,21 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
         if (mesh.Materials is { } embedded && index < embedded.Length && embedded[index]?.Node?.ShaderFile?.FilePath is { } shader)
             return Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(shader));
         if (mesh.MaterialIds is { } ids && index < ids.Length) return ids[index];
+        // importer-built: our items keep the importer's name, our custom blocks only the game link
+        if (mesh.CustomMaterials is { } custom && index < custom.Length && custom[index].MaterialUserInst is { } inst)
+        {
+            if (inst.MaterialName is { Length: > 0 } user) return user;
+            if (inst.Link is { Length: > 0 } link) return LinkName(link);
+        }
         return "Unknown";
+    }
+
+    // Stadium\Media\Modifier\PlatformIce\PlatformTech -> PlatformIce_PlatformTech (as the importer names it); Media\Material\X -> X
+    private static string LinkName(string link)
+    {
+        var parts = link.Split('\\', '/');
+        var modifier = Array.FindIndex(parts, p => p.Equals("Modifier", StringComparison.OrdinalIgnoreCase));
+        return modifier >= 0 && modifier + 2 < parts.Length ? parts[modifier + 1] + "_" + parts[^1] : parts[^1];
     }
 
     private sealed record Verts(Vec3[] Positions, Vec3[]? Normals, float[]? Uv0, float[]? Uv1, float[]? Colors);

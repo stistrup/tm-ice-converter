@@ -7,7 +7,6 @@ import { usePreviewStore } from './preview'
 interface Snapshot {
   selection: number[]
   settings: MapSettings
-  from: string | null
 }
 
 // undo/redo over what the user changes on the open map: the selection and the conversion options
@@ -17,13 +16,12 @@ export const useHistoryStore = defineStore('history', () => {
   const past = ref<Snapshot[]>([])
   const future = ref<Snapshot[]>([])
 
-  const now = (): Snapshot => ({ selection: map.selection, settings: preview.working, from: preview.from })
+  const now = (): Snapshot => ({ selection: map.selection, settings: preview.working })
 
   function restore(snapshot: Snapshot) {
     map.selection = snapshot.selection
     // the preview follows the settings by itself
     preview.working = snapshot.settings
-    preview.from = snapshot.from
   }
 
   const same = (a: Snapshot, b: Snapshot) => JSON.stringify(a) === JSON.stringify(b)

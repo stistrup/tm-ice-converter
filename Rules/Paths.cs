@@ -3,10 +3,10 @@ namespace TmIceConverter;
 // from data/local.jsonc
 public static class Paths
 {
-    public static string TrackmaniaUser => Local.Value.Folder("trackmania");
+    public static string TrackmaniaUser => Local.Folder("trackmania");
     public static string Maps => Path.Combine(TrackmaniaUser, "Maps");
-    public static string Game => Local.Value.Folder("game");
-    public static string Openplanet => Local.Value.Folder("openplanet");
+    public static string Game => Local.Folder("game");
+    public static string Openplanet => Local.Folder("openplanet");
 
     public static string ExtractedStadium => Path.Combine(Openplanet, "Extract", "GameData", "Stadium");
     public static IEnumerable<string> BlockInfoDirs(string extractedStadium)
@@ -31,14 +31,14 @@ public static class Paths
     public static string LocalSettings { get; set; } = "local.jsonc";
 
     // conversion runs, drafts and map links (RunLog); "settings" in local.jsonc, else settings/ next to data/
-    public static string SettingsStore => Local.Value.Paths?.GetValueOrDefault("settings") is { Length: > 0 }
-        ? Local.Value.Folder("settings") : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(LocalSettings))!, "..", "settings"));
+    public static string SettingsStore => Local.Paths?.GetValueOrDefault("settings") is { Length: > 0 }
+        ? Local.Folder("settings") : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(LocalSettings))!, "..", "settings"));
 
     public static (string Login, string Nickname, string Zone) TestrunAuthor => TestrunAuthorIfSet
         ?? throw new InvalidOperationException($"no \"testrunAuthor\" in {LocalSettings}");
 
     public static (string Login, string Nickname, string Zone)? TestrunAuthorIfSet => savedAuthor
-        ?? (Local.Value.TestrunAuthor is { Login.Length: > 0 } a ? (a.Login, a.Nickname, a.Zone) : null);
+        ?? (Local.TestrunAuthor is { Login.Length: > 0 } a ? (a.Login, a.Nickname, a.Zone) : null);
 
     private static (string, string, string)? savedAuthor;
 
@@ -62,9 +62,31 @@ public static class Paths
         savedAuthor = (login, nickname, zone);
     }
 
-    private static readonly Lazy<LocalFile> Local = new(() => File.Exists(LocalSettings)
+    private static LocalFile? local;
+    private static LocalFile Local => local ??= File.Exists(LocalSettings)
         ? Jsonc.Load<LocalFile>(LocalSettings)
-        : throw new InvalidOperationException($"no {LocalSettings}: copy data/local.example.jsonc and fill in your folders"));
+        : throw new InvalidOperationException($"no {LocalSettings}: set up the folders in the GUI, or copy data/local.example.jsonc");
+
+    public static bool Configured => File.Exists(LocalSettings);
+    public static string? PathIfSet(string name) => File.Exists(LocalSettings) && Local.Paths?.GetValueOrDefault(name) is { Length: > 0 } ? Local.Folder(name) : null;
+
+    // into local.jsonc as text (from the example when there is none yet): its comments stay
+    public static void SavePath(string name, string value)
+    {
+        var text = File.Exists(LocalSettings) ? File.ReadAllText(LocalSettings)
+            : File.ReadAllText(Path.Combine(Path.GetDirectoryName(LocalSettings)!, "local.example.jsonc"));
+        var json = System.Text.Json.JsonSerializer.Serialize(value);
+        var existing = System.Text.RegularExpressions.Regex.Match(text, $"\"{System.Text.RegularExpressions.Regex.Escape(name)}\"\\s*:\\s*\"(?:[^\"\\\\]|\\\\.)*\"");
+        if (existing.Success) text = text[..existing.Index] + $"\"{name}\": {json}" + text[(existing.Index + existing.Length)..];
+        else
+        {
+            var paths = System.Text.RegularExpressions.Regex.Match(text, "\"paths\"\\s*:\\s*\\{");
+            if (!paths.Success) throw new InvalidOperationException($"no \"paths\" in {LocalSettings}");
+            text = text[..(paths.Index + paths.Length)] + $"\n    \"{name}\": {json}," + text[(paths.Index + paths.Length)..];
+        }
+        File.WriteAllText(LocalSettings, text);
+        local = null;
+    }
 
     private sealed record LocalFile(Dictionary<string, string>? Paths, Author? TestrunAuthor)
     {
@@ -76,9 +98,19 @@ public static class Paths
     private sealed record Author(string Login, string Nickname, string Zone);
 
     public static string Items => Path.Combine(TrackmaniaUser, "Items", "IceConverter");
+    // the importer's input only; it reads nothing outside Work
     public static string Work => Path.Combine(TrackmaniaUser, "Work", "Items", "IceConverter");
-    public static string Views => Path.Combine(Work, "Views");
+    // our own files, outside the game's folders
+    public static string Cache => Local.Paths?.GetValueOrDefault("cache") is { Length: > 0 }
+        ? Local.Folder("cache")
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TmIceConverter");
+    public static string Pieces => Path.Combine(Cache, "Mesh");
+    public static string Blocks => Path.Combine(Cache, "Blocks");
+    public static string Views => Path.Combine(Cache, "Views");
+
+    // "blender" in local.jsonc, else the one on PATH
+    public static string Blender => PathIfSet("blender") ?? "blender";
 
     // only needed on Linux
-    public static string ImporterWinePrefix => Local.Value.Folder("importerWinePrefix");
+    public static string ImporterWinePrefix => Local.Folder("importerWinePrefix");
 }

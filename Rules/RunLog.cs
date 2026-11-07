@@ -9,16 +9,10 @@ public sealed record MapRef(string Uid, string File, string Name, string? Finger
 // one conversion: what went in, what came out, and the settings with every option spelled out
 public sealed record RunRecord(int Version, string Id, DateTime Time, string? Commit, string Kind, MapRef Source, MapRef Output, JsonObject Settings, List<string>? Problems);
 
-// the settings being worked on for a map family, before any run
-public sealed record Draft(int Version, string Family, DateTime Updated, string? From, JsonObject Settings);
+// a map's settings as last edited, by its UID
+public sealed record SavedSettings(int Version, string Uid, DateTime Updated, JsonObject Settings);
 
-// a map saved under a new UID (the game's shadow save), found by its layout
-public sealed record MapLink(int Version, string Uid, string SameAs, string File, DateTime Time);
-
-// every UID a map has had: the original (Root), its conversions and their saves
-public sealed record MapFamily(string Root, string RootName, IReadOnlyList<string> Uids, IReadOnlyList<RunRecord> Runs);
-
-// runs/, drafts/, links/ under the settings store; one file each, read leniently
+// runs/ and maps/ under the settings store; one file each, read leniently
 public sealed class RunLog(string root)
 {
     public const int Version = 1;
@@ -27,7 +21,7 @@ public sealed class RunLog(string root)
 
     public static RunLog Default => new(Paths.SettingsStore);
 
-    // files that didn't read, from the last Runs / FamilyOf
+    // files that didn't read, from the last Runs
     public List<string> Problems { get; } = [];
 
     public RunRecord Add(string kind, MapRef source, MapRef output, MapSettings settings, List<string> problems)
@@ -49,55 +43,25 @@ public sealed class RunLog(string root)
         return File.Exists(file) ? ReadOne<RunRecord>(file) : null;
     }
 
-    // layout: worked out only when the UID is new to the log (a game save), then remembered as a link
-    public MapFamily FamilyOf(string uid, Func<(string Fingerprint, string File)?> layout)
-    {
-        var runs = Runs();
-        var links = ReadAll<MapLink>("links", l => l.Uid is { Length: > 0 } && l.SameAs is { Length: > 0 });
-        var edges = new Dictionary<string, HashSet<string>>();
-        void Edge(string a, string b)
-        {
-            (edges.TryGetValue(a, out var x) ? x : edges[a] = []).Add(b);
-            (edges.TryGetValue(b, out var y) ? y : edges[b] = []).Add(a);
-        }
-        foreach (var run in runs) Edge(run.Source.Uid, run.Output.Uid);
-        foreach (var link in links) Edge(link.Uid, link.SameAs);
+    public List<RunRecord> RunsOf(string uid) => Runs().Where(r => r.Source.Uid == uid).ToList();
 
-        if (!edges.ContainsKey(uid) && layout() is { } seen
-            && (runs.LastOrDefault(r => r.Output.Fingerprint == seen.Fingerprint)?.Output ?? runs.LastOrDefault(r => r.Source.Fingerprint == seen.Fingerprint)?.Source) is { } same)
-        {
-            Write(Path.Combine(Dir("links"), SafeName(uid) + ".json"), new MapLink(Version, uid, same.Uid, seen.File, DateTime.UtcNow));
-            Edge(uid, same.Uid);
-        }
+    private string SavedFile(string uid) => Path.Combine(Dir("maps"), SafeName(uid) + ".json");
 
-        var family = new HashSet<string> { uid };
-        var queue = new Queue<string>([uid]);
-        while (queue.TryDequeue(out var next))
-            foreach (var other in edges.GetValueOrDefault(next) ?? [])
-                if (family.Add(other)) queue.Enqueue(other);
-        var familyRuns = runs.Where(r => family.Contains(r.Source.Uid)).ToList();
-        var outputs = familyRuns.Select(r => r.Output.Uid).ToHashSet();
-        var first = familyRuns.FirstOrDefault(r => !outputs.Contains(r.Source.Uid))?.Source;
-        return new MapFamily(first?.Uid ?? uid, first?.Name ?? "", family.Order(StringComparer.Ordinal).ToList(), familyRuns);
-    }
+    public SavedSettings? SavedOf(string uid)
+        => SavedFile(uid) is var file && File.Exists(file) && ReadOne<SavedSettings>(file) is { Settings: not null } saved ? saved : null;
 
-    public Draft? DraftOf(MapFamily family)
-        => Path.Combine(Dir("drafts"), SafeName(family.Root) + ".json") is var file && File.Exists(file) && ReadOne<Draft>(file) is { Settings: not null } draft ? draft : null;
+    public void Save(string uid, MapSettings settings) => Write(SavedFile(uid), new SavedSettings(Version, uid, DateTime.UtcNow, settings.Clone().Json));
 
-    public Draft SaveDraft(MapFamily family, MapSettings settings, string? from)
-    {
-        var draft = new Draft(Version, family.Root, DateTime.UtcNow, from, settings.Clone().Json);
-        Write(Path.Combine(Dir("drafts"), SafeName(family.Root) + ".json"), draft);
-        return draft;
-    }
+    public void DropSaved(string uid) => File.Delete(SavedFile(uid));
 
-    public void DropDraft(MapFamily family) => File.Delete(Path.Combine(Dir("drafts"), SafeName(family.Root) + ".json"));
+    // what a conversion goes by unless told otherwise: the map's saved settings, else the defaults
+    public (MapSettings Settings, string From) Current(string uid)
+        => SavedOf(uid) is { } saved
+            ? (new MapSettings(saved.Settings), $"saved {saved.Updated.ToLocalTime():yyyy-MM-dd HH:mm}")
+            : (MapSettings.Empty, "defaults");
 
-    // what a conversion goes by unless told otherwise: the family's draft, else the original's maps.jsonc entry
-    public (MapSettings Settings, string From) Current(MapFamily family, Translations data, string mapName)
-        => DraftOf(family) is { } draft
-            ? (new MapSettings(draft.Settings), $"draft of {draft.Updated.ToLocalTime():yyyy-MM-dd HH:mm}")
-            : (MapSettings.Seed(data, family.RootName is { Length: > 0 } n ? n : mapName), "maps.jsonc");
+    // the name its settings give it, if any
+    public string? NameOf(string uid) => SavedOf(uid) is { } saved ? new MapSettings(saved.Settings).Read([]).Name : null;
 
     private string Dir(string name)
     {

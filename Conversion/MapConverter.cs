@@ -11,7 +11,7 @@ public sealed class MapConverter(HashSet<string> knownBlocks, Translations trans
     private readonly SurfaceParents surfaceParents = new(knownBlocks, shapes);
     private readonly Dictionary<string, List<(Vector3 A, Vector3 B, Vector3 C)>> flatTops = [];
 
-    // own: the map's settings (MapSettings.Read); null: its maps.jsonc entry
+    // own: the map's settings (MapSettings.Read); null: the defaults
     public ConversionReport Convert(CGameCtnChallenge map, Translations? own = null) => Run(map, own).Report;
 
     internal ConversionRun Run(CGameCtnChallenge map, Translations? own = null)
@@ -24,7 +24,7 @@ public sealed class MapConverter(HashSet<string> knownBlocks, Translations trans
 
         foreach (var block in map.GetBlocks()) BlockRules.Decide(block, run);
         Neighbours.Keep(run);
-        if (rules.Options.RampToSkins) RampPass.Run(run);
+        if (rules.Presets && rules.Options.RampToSkins) RampPass.Run(run);
 
         // these read the native names
         var snow = new SnowSurfaces(map, run.Replaced.Concat(run.Customs.Keys), run.Renamed, run.Skinned, shapes, rules.Options.SnowOnZoneSides);
@@ -33,10 +33,11 @@ public sealed class MapConverter(HashSet<string> knownBlocks, Translations trans
         RenameCustomBlocks(run);
 
         foreach (var block in run.Replaced.Concat(run.EngineOffGates)) map.RemoveBlock(block);
-        Gates.RemoveEngineOffItems(run);
+        if (rules.Presets) Gates.RemoveEngineOffItems(run);
         ItemSwaps.Run(run, snow);
         // after the swaps: the stand-ins stand on terrain, not ice
         foreach (var (block, name, models) in trees) Trees.Plant(run, block, name, models);
+        if (!rules.Presets) return run;
         MatchPlatformColour(run);
         if (rules.Options.RemoveForcedCameras) RemoveForcedCameras(run);
         return run;

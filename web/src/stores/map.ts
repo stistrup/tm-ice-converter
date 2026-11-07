@@ -13,6 +13,7 @@ const MAP_KEY = 'current-map'
 const SHOWN_KEY = 'maps-shown'
 const HIDDEN_KEY = 'hidden-categories'
 const VIEW_KEY = 'view:'
+const CHOSEN_KEY = 'chosen-maps'
 
 // per map file: where the camera was and what was selected; only while the file is unchanged (indices follow the file)
 export interface ViewMemory {
@@ -55,6 +56,9 @@ export const useMapStore = defineStore('map', () => {
   const loadError = ref('')
   const hovered = ref<number | null>(null)
   const selection = ref<number[]>([])
+  // map paths ticked in the list, for converting several at once
+  const chosenMaps = ref(new Set<string>(readJson<string[]>(CHOSEN_KEY, [])))
+  watch(chosenMaps, (chosen) => writeJson(CHOSEN_KEY, [...chosen]), { deep: true })
   // the last picked piece, the one the properties panel shows
   const selected = computed<number | null>({
     get: () => selection.value.at(-1) ?? null,
@@ -112,6 +116,14 @@ export const useMapStore = defineStore('map', () => {
   function rememberMap(path: string) {
     try {
       localStorage.setItem(MAP_KEY, path)
+    } catch {
+      // only a convenience
+    }
+  }
+
+  function forgetMap() {
+    try {
+      localStorage.removeItem(MAP_KEY)
     } catch {
       // only a convenience
     }
@@ -178,6 +190,17 @@ export const useMapStore = defineStore('map', () => {
     }
   }
 
+  function closeMap() {
+    loadId++
+    currentMap.value = null
+    forgetMap()
+    scene.value = null
+    selected.value = null
+    hovered.value = null
+    status.value = ''
+    loadError.value = ''
+  }
+
   function toggleCategory(category: Category) {
     hidden.value = hidden.value.includes(category)
       ? hidden.value.filter((c) => c !== category)
@@ -188,12 +211,14 @@ export const useMapStore = defineStore('map', () => {
     maps,
     mapsError,
     currentMap,
+    closeMap,
     scene,
     status,
     loadError,
     hovered,
     selected,
     selection,
+    chosenMaps,
     pick,
     paint,
     hidden,

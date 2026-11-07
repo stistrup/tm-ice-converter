@@ -1,0 +1,20 @@
+# skipped by "Extract everything"; a folder ends in /, a file kind starts with *.
+# files that blocks or items reference are still fetched
+GameData/Skins/
+GameData/Menu/
+GameData/Translations/
+GameData/Vehicles/
+GameData/Garage/
+GameData/ShootMania/
+GameData/Stadium256/
+GameData/Media/Fonts/
+GameData/Media/Painter/
+GameData/Media/Manialinks/
+GameData/Media/ManiaApps/
+GameData/Media/Flags/
+GameData/Media/Images/
+*.wav
+*.ogg
+*.webm
+*.mo
+*.script.txt

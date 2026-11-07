@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -12,47 +11,6 @@ public sealed record Translation(
     byte? Variant = null,
     byte? SubVariant = null);
 
-public sealed record ConvertOptions(
-    bool RemoveForcedCameras = false,
-    bool KeepPlasticWalls = false,
-    bool EngineOffToReset = false,
-    bool EffectsToGate = false,
-    bool EngineOffToPlain = false,
-    bool SnowOnZoneSides = false,
-    bool SnowOnGroundDeco = false,
-    bool CustomBlocks = false,
-    bool CustomWaypoints = false,
-    bool ConvertTrees = false,
-    bool ConvertScenery = false,
-    bool SkinsOnly = false,
-    bool SkinWaypoints = false,
-    bool RampToSkins = false)
-{
-    public ConvertOptions With(string name, bool value) => name switch
-    {
-        "removeForcedCameras" => this with { RemoveForcedCameras = value },
-        "keepPlasticWalls" => this with { KeepPlasticWalls = value },
-        "engineOffToReset" => this with { EngineOffToReset = value },
-        "effectsToGate" => this with { EffectsToGate = value },
-        "engineOffToPlain" => this with { EngineOffToPlain = value },
-        "snowOnZoneSides" => this with { SnowOnZoneSides = value },
-        "snowOnGroundDeco" => this with { SnowOnGroundDeco = value },
-        "customBlocks" => this with { CustomBlocks = value },
-        "customWaypoints" => this with { CustomWaypoints = value },
-        "convertTrees" => this with { ConvertTrees = value },
-        "convertScenery" => this with { ConvertScenery = value },
-        "skinsOnly" => this with { SkinsOnly = value },
-        "skinWaypoints" => this with { SkinWaypoints = value },
-        "rampToSkins" => this with { RampToSkins = value },
-        _ => throw new FormatException($"unknown option '{name}' (known: {string.Join(", ", All().Select(o => o.Name))})"),
-    };
-
-    // every option by its jsonc name
-    public IEnumerable<(string Name, bool Value)> All()
-        => typeof(ConvertOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.PropertyType == typeof(bool))
-            .Select(p => (char.ToLowerInvariant(p.Name[0]) + p.Name[1..], (bool)p.GetValue(this)!));
-}
-
 public sealed class Translations
 {
     public Dictionary<string, Translation> Blocks { get; } = [];
@@ -62,14 +20,16 @@ public sealed class Translations
 
     public Dictionary<string, string> ItemsOnSnow { get; } = [];
 
+    // global only, no pick or map setting changes them
+    public List<string> UntouchedItems { get; } = [];
+
+    public bool Untouched(string itemId) => UntouchedItems.Any(p => Matches(itemId, p));
+
     public Dictionary<string, Translations> Maps { get; } = [];
 
-    // the maps.jsonc entries as written: the seed for a map's settings
-    public Dictionary<string, JsonObject> MapEntries { get; } = [];
 
     public string? Name { get; private set; }
 
-    public string NameFor(string mapName) => Maps.GetValueOrDefault(mapName)?.Name ?? mapName;
 
     public List<(string Name, bool Value)> Settings { get; } = [];
 
@@ -77,6 +37,9 @@ public sealed class Translations
     public Dictionary<string, string> Pieces { get; } = [];
 
     public static readonly string[] PieceChoices = ["keep", "custom", "item", "skin", "snow", "tops", "plain", "remove", "frozen"];
+
+    // off: only the pieces picked by hand convert; options, areas and map-wide passes stay out
+    public bool Presets { get; private set; } = true;
 
     public string? PieceChoice(GBX.NET.Engines.Game.CGameCtnBlock block)
         => block.IsFree
@@ -126,20 +89,22 @@ public sealed class Translations
 
     private static string NormalizeKeep(string entry) => Regex.Replace(entry.Trim(), @"\s*,\s*", ",");
 
-    // the global rules with one map's own; own: that map's settings (MapSettings.Read), else its maps.jsonc entry
+    // the global rules with one map's own (MapSettings.Read)
     public Translations For(string mapName, Translations? own = null)
     {
-        own ??= Maps.GetValueOrDefault(mapName) ?? new Translations();
-        var result = new Translations { Name = own.Name };
+        own ??= new Translations();
+        var result = new Translations { Name = own.Name, Presets = own.Presets };
         result.Options = Settings.Concat(own.Settings).Aggregate(new ConvertOptions(), (o, s) => o.With(s.Name, s.Value));
         result.IgnorePrefixes.AddRange(IgnorePrefixes.Concat(own.IgnorePrefixes));
-        if (result.Options.KeepPlasticWalls) result.IgnorePrefixes.Add("PlatformPlasticWall");
         foreach (var (k, v) in Blocks.Concat(own.Blocks)) result.Blocks[k] = v;
         result.Keep.UnionWith(Keep.Concat(own.Keep));
         result.KeepItems.UnionWith(KeepItems.Concat(own.KeepItems));
         result.RemoveItems.UnionWith(RemoveItems.Concat(own.RemoveItems));
-        result.SnowTerrain.AddRange(own.SnowTerrain);
-        result.Skinned.AddRange(own.Skinned);
+        if (own.Presets)
+        {
+            result.SnowTerrain.AddRange(own.SnowTerrain);
+            result.Skinned.AddRange(own.Skinned);
+        }
         result.SkinLift = own.SkinLift;
         result.SkinEdge = own.SkinEdge;
         foreach (var (k, v) in own.Pieces) result.Pieces[NormalizeKeep(k)] = v;
@@ -158,9 +123,9 @@ public sealed class Translations
             || collection != "Stadium2020" && UnavailableIn.TryGetValue("*", out var everywhere) && everywhere.Any(block.StartsWith));
 
     // "From": "To" | null | { "to", "rotate", "offset", "variant" }
-    public static Translations Load(string dataDir) => Load(Path.Combine(dataDir, "swaps.jsonc"), Path.Combine(dataDir, "maps.jsonc"));
+    public static Translations Load(string dataDir) => FromFiles(Path.Combine(dataDir, "swaps.jsonc"));
 
-    private static Translations Load(params string[] paths)
+    private static Translations FromFiles(params string[] paths)
     {
         var options = new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
         var result = new Translations();
@@ -173,16 +138,11 @@ public sealed class Translations
             foreach (var (k, v) in part.UnavailableIn) result.UnavailableIn[k] = v;
             foreach (var (k, v) in part.Items) result.Items[k] = v;
             foreach (var (k, v) in part.ItemsOnSnow) result.ItemsOnSnow[k] = v;
+            result.UntouchedItems.AddRange(part.UntouchedItems);
             result.Settings.AddRange(part.Settings);
             result.Keep.UnionWith(part.Keep);
             result.KeepItems.UnionWith(part.KeepItems);
             result.RemoveItems.UnionWith(part.RemoveItems);
-            if (doc.RootElement.TryGetProperty("maps", out var maps))
-                foreach (var map in maps.EnumerateObject())
-                {
-                    result.Maps[map.Name] = Parse(map.Value);
-                    result.MapEntries[map.Name] = JsonNode.Parse(map.Value.GetRawText())!.AsObject();
-                }
         }
         return result;
     }
@@ -211,6 +171,7 @@ public sealed class Translations
         if (root.ValueKind != JsonValueKind.Object) throw new FormatException("settings must be an object");
 
         if (root.TryGetProperty("name", out var newName)) Read("name", () => result.Name = Text(newName));
+        if (root.TryGetProperty("presets", out var presets)) Read("presets", () => result.Presets = presets.GetBoolean());
 
         if (root.TryGetProperty("options", out var options))
             Read("options", () =>
@@ -255,6 +216,9 @@ public sealed class Translations
 
         if (root.TryGetProperty("ignorePrefixes", out var ignore))
             Read("ignorePrefixes", () => result.IgnorePrefixes.AddRange(Array(ignore).Select(Text)));
+
+        if (root.TryGetProperty("untouchedItems", out var untouched))
+            Read("untouchedItems", () => result.UntouchedItems.AddRange(Array(untouched).Select(Text)));
 
         if (root.TryGetProperty("unavailableIn", out var unavailable))
             Read("unavailableIn", () =>

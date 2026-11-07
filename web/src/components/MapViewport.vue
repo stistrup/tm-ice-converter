@@ -181,7 +181,7 @@ onBeforeUnmount(() => {
         <ConvertMenu :class="$style.section" />
         <InspectPanel :class="$style.section" />
       </div>
-      <div v-if="store.scene || converting.job" :class="$style.convert">
+      <div v-if="store.scene || converting.job || store.chosenMaps.size" :class="$style.convert">
         <ConvertDialog />
       </div>
     </div>

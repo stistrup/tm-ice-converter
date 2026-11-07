@@ -103,18 +103,39 @@ internal sealed partial class ConversionPreview(string dataDir)
     private ItemBuilder? builder;
     private Task building = Task.CompletedTask;
     private int buildDone, buildTotal, builds, cachedBuilds;
+    // the map the page asked for last: runs for others are dropped, their builds stop
+    private volatile string? wanted;
+    private string? buildsFor;
+    private CancellationTokenSource buildCancel = new();
+    private readonly Lock buildLock = new();
+
+    public sealed class Superseded() : Exception("another map was asked for");
+
+    private void Want(string mapPath)
+    {
+        wanted = mapPath;
+        lock (buildLock) if (buildsFor is not null && buildsFor != mapPath) buildCancel.Cancel();
+    }
 
     public BuildStatus Building() => new(!building.IsCompleted, buildDone, buildTotal, builds);
 
     // under `one`: whatever the runs so far planned and found unbuilt
-    private void StartBuilds()
+    private void StartBuilds(string mapPath)
     {
         if (!building.IsCompleted || builder is not { PlannedCount: > 0 }) return;
         var jobs = builder.TakePlanned();
         (buildDone, buildTotal) = (0, jobs.Count);
+        CancellationToken cancel;
+        lock (buildLock)
+        {
+            (buildsFor, buildCancel) = (mapPath, new());
+            cancel = buildCancel.Token;
+        }
         building = Task.Run(() =>
         {
-            try { ItemBuilder.RunBuilds(jobs, n => buildDone = n); }
+            // the skipped ones are planned again when their map is previewed
+            try { ItemBuilder.RunBuilds(jobs, n => buildDone = n, cancel); }
+            catch (OperationCanceledException) { Console.WriteLine($"preview builds: stopped after {buildDone} of {jobs.Count}, another map opened"); }
             catch (Exception e) { Console.Error.WriteLine($"preview builds: {e.Message}"); }
             // results from before point at pieces that exist now
             Interlocked.Increment(ref builds);
@@ -126,52 +147,43 @@ internal sealed partial class ConversionPreview(string dataDir)
         lock (addedScenes) return addedScenes.TryGetValue(id, out var scene) ? scene : null;
     }
 
-    // a run as the page lists it
-    public sealed record RunInfo(string Id, DateTime Time, string Kind, string? Commit, string Output, string OutputName, int LeftOut, System.Text.Json.Nodes.JsonObject Settings);
-
-    // what the page starts from: the settings a convert would use now, the original's maps.jsonc entry, the family's runs
-    public sealed record MapState(string Family, string FamilyName, int Uids, System.Text.Json.Nodes.JsonObject Settings, string From, string? DraftFrom,
-        System.Text.Json.Nodes.JsonObject Seed, List<Option> Defaults, List<RunInfo> Runs, List<string> Unreadable);
+    // what the page starts from: the settings a convert would use now and what "no settings of its own" is
+    public sealed record MapState(System.Text.Json.Nodes.JsonObject Settings, string From, System.Text.Json.Nodes.JsonObject Seed, List<Option> Defaults, List<string> Unreadable);
 
     // nothing worked out; the map's run with these settings starts in the background, so Preview is quick
     public MapState StateOf(string mapPath)
     {
-        var (family, header, log) = FamilyOf(mapPath);
+        Want(mapPath);
+        var header = Gbx.ParseHeaderNode<CGameCtnChallenge>(mapPath);
+        var log = RunLog.Default;
         var data = Translations.Load(dataDir);
-        var (settings, from) = log.Current(family, data, header.MapName);
-        var seed = MapSettings.Seed(data, family.RootName is { Length: > 0 } n ? n : header.MapName);
+        var (settings, from) = log.Current(header.MapUid);
+        var seed = MapSettings.Empty;
         var defaults = data.For("", new Translations()).Options;
         _ = Task.Run(async () =>
         {
             try { await For(mapPath, settings); }
+            catch (Superseded) { }
             catch (Exception e) { Console.Error.WriteLine($"preview warm-up {mapPath}: {e.Message}"); }
         });
-        var runs = family.Runs.AsEnumerable().Reverse()
-            .Select(r => new RunInfo(r.Id, r.Time, r.Kind, r.Commit, r.Output.File, r.Output.Name, r.Problems?.Count ?? 0, r.Settings)).ToList();
-        return new MapState(family.Root, family.RootName, family.Uids.Count, settings.Json, from, log.DraftOf(family)?.From, seed.Json,
-            OptionList(defaults, defaults), runs, log.Problems);
+        return new MapState(settings.Json, from, seed.Json, OptionList(defaults, defaults), log.Problems);
     }
 
-    // settings null: drop the draft (back to maps.jsonc)
-    public void SaveDraft(string mapPath, MapSettings? settings, string? from)
+    // settings null: back to the defaults
+    public void Save(string mapPath, MapSettings? settings)
     {
-        var (family, _, log) = FamilyOf(mapPath);
-        if (settings is null) log.DropDraft(family);
-        else log.SaveDraft(family, settings, from);
-    }
-
-    private static (MapFamily Family, CGameCtnChallenge Header, RunLog Log) FamilyOf(string mapPath)
-    {
-        var header = Gbx.ParseHeaderNode<CGameCtnChallenge>(mapPath);
-        var log = RunLog.Default;
-        return (log.FamilyOf(header.MapUid, () => ConvertCommand.Layout(mapPath)), header, log);
+        var uid = Gbx.ParseHeaderNode<CGameCtnChallenge>(mapPath).MapUid;
+        if (settings is null) RunLog.Default.DropSaved(uid);
+        else RunLog.Default.Save(uid, settings);
     }
 
     public async Task<Result> For(string mapPath, MapSettings settings)
     {
+        Want(mapPath);
         await one.WaitAsync();
         try
         {
+            if (wanted != mapPath) throw new Superseded();
             var clock = Stopwatch.StartNew();
             var stamp = Directory.EnumerateFiles(dataDir, "*.jsonc").Max(File.GetLastWriteTimeUtc);
             if (converter is null || stamp != dataStamp)
@@ -211,7 +223,9 @@ internal sealed partial class ConversionPreview(string dataDir)
                     : item.AbsolutePositionInMap != position ? new("sunk", null, null)
                     : new("unchanged", null, null);
                 var itemKey = $"{id} {Inv(position.X)}, {Inv(position.Y)}, {Inv(position.Z)}";
-                itemDecisions[i] = d with { Kind = "items", Key = itemKey, Picked = rulesNow.Pieces.GetValueOrDefault(Normal(itemKey)) };
+                // no kind: nothing to pick
+                itemDecisions[i] = run.Translations.Untouched(id) ? d with { Key = itemKey }
+                    : d with { Kind = "items", Key = itemKey, Picked = rulesNow.Pieces.GetValueOrDefault(Normal(itemKey)) };
             }
             // what the conversion changed, drawn from the converted map where a real mesh exists; the originals those replace get hidden
             var blockOrigin = blocks.Index().ToDictionary(b => b.Item, b => b.Index, ReferenceEqualityComparer.Instance);
@@ -242,7 +256,7 @@ internal sealed partial class ConversionPreview(string dataDir)
             var stale = rulesNow.Pieces.Keys.Where(k => !keys.Contains(k)).Order(StringComparer.Ordinal).ToList();
             var result = new Result(OptionList(options, defaults), blockDecisions, itemDecisions, addedCount, clock.ElapsedMilliseconds, iceLooks.Swaps, iceLooks.Looks,
                 sceneId, hiddenBlocks.Order().ToList(), hiddenItems.Order().ToList(), builds, problems, stale);
-            StartBuilds();
+            StartBuilds(mapPath);
             if (recent.Count >= 16)
             {
                 recent.Clear();
@@ -272,37 +286,10 @@ internal sealed partial class ConversionPreview(string dataDir)
         return new("unchanged", rule, null);
     }
 
-    private List<Option> OptionList(ConvertOptions options, ConvertOptions mapOptions)
+    private static List<Option> OptionList(ConvertOptions options, ConvertOptions mapOptions)
     {
-        var descriptions = Descriptions();
-        return typeof(ConvertOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.PropertyType == typeof(bool))
-            .Select(p => new Option(char.ToLowerInvariant(p.Name[0]) + p.Name[1..], (bool)p.GetValue(options)!, (bool)p.GetValue(mapOptions)!,
-                descriptions.GetValueOrDefault(char.ToLowerInvariant(p.Name[0]) + p.Name[1..], "")))
-            .ToList();
+        var map = mapOptions.All().ToDictionary(o => o.Name, o => o.Value);
+        var described = ConvertOptions.Described().ToDictionary(o => o.Name, o => o.Description);
+        return [.. options.All().Select(o => new Option(o.Name, o.Value, map[o.Name], described[o.Name]))];
     }
-
-    // the comment lines above each option in maps.jsonc
-    private Dictionary<string, string> Descriptions()
-    {
-        var result = new Dictionary<string, string>();
-        var comment = new List<string>();
-        var inOptions = false;
-        foreach (var raw in File.ReadLines(Path.Combine(dataDir, "maps.jsonc")))
-        {
-            var line = raw.Trim();
-            if (!inOptions) { inOptions = line.StartsWith("\"options\""); continue; }
-            if (line.StartsWith('}')) break;
-            if (line.StartsWith("//")) comment.Add(line[2..].Trim());
-            else if (OptionLine().Match(line) is { Success: true } m)
-            {
-                result[m.Groups[1].Value] = string.Join(" ", comment);
-                comment.Clear();
-            }
-        }
-        return result;
-    }
-
-    [GeneratedRegex("^\"(\\w+)\"\\s*:")]
-    private static partial Regex OptionLine();
 }

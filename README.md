@@ -8,7 +8,7 @@ Turns Trackmania 2020 maps into ice versions. Blocks that have a native ice vers
 - Only tested on Linux, with the game running through Proton. Windows should work but hasn't been tried.
 - For the web interface, Node. In `web/`: `npm install`, then `npm run build`.
 - Copy `data/local.example.jsonc` to `data/local.jsonc` and fill in your folders.
-- Copy `openplanet/IceConverterExtract` into `OpenplanetNext/Plugins/` with Openplanet dev mode on, and run its "Extract block meshes". Expect to run it many times: conversions and `view` list the files they still miss, and the next run fetches them usually.
+- Copy `openplanet/IceConverterExtract` into `OpenplanetNext/Plugins/` with Openplanet dev mode on, and run its "Extract game files" once (6-7 GB; `dump-exclude.txt` lists what it skips). Run it again after a game update; files already on disk are skipped.
 
 ## Use
 
@@ -30,7 +30,7 @@ tools/ice-convert show <item>                          preview a built item
 
 The Blender tools are buggy, experimental and janky, but they somewhat work: `view`, `inspect`, `show`, `tools/zfight.py` and `tools/render_at.py`.
 
-Options and per-map exceptions live in `data/maps.jsonc`, block and item swaps in `data/swaps.jsonc`, material mappings in `data/ice-materials.jsonc`.
+The map-wide options and their defaults are `ConvertOptions` (`Rules/ConvertOptions.cs`). A map's own choices are what the GUI saves for it, `settings/maps/<map UID>.json`; a map without one converts with the defaults. Block and item swaps live in `data/swaps.jsonc`, material mappings in `data/ice-materials.jsonc`.
 
 ## The code
 
@@ -74,6 +74,6 @@ An in-game screenshot of the spot helps a lot, since the Blender scene isn't exa
 - Large maps go over the room limit of 7 MB (likely 7 MiB, 7,340,032 bytes), and the game's shadow save makes them bigger still. Campaigns and solo play have no limit.
 - Frozen trees have other shapes than the originals.
 - The rink markings of the ice texture show on ice laid over roads.
-- Terrain in snow (`snowTerrain` in `data/maps.jsonc`) shows soft lighting steps where two cells meet, like native blocks on hills do.
+- Terrain in snow (`snowTerrain` in a map's settings) shows soft lighting steps where two cells meet, like native blocks on hills do.
 
 Built on [GBX.NET](https://github.com/BigBang1112/gbx-net). Written with extensive help from Claude, steered and tested by hand on best effort.

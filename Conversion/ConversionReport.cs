@@ -10,6 +10,8 @@ public sealed class ConversionReport
     public Dictionary<string, int> ReplacedByItem { get; } = [];
     public Dictionary<string, int> Skinned { get; } = [];
     public Dictionary<string, int> KeptByList { get; } = [];
+    // untouchedItems in swaps.jsonc
+    public Dictionary<string, int> Untouched { get; } = [];
     public Dictionary<string, int> RemovedByList { get; } = [];
     public Dictionary<string, int> Recoloured { get; } = [];
     public Dictionary<string, int> Sunk { get; } = [];

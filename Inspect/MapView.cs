@@ -1,4 +1,6 @@
+using System.IO.Compression;
 using System.Numerics;
+using System.Security.Cryptography;
 using System.Text.Json;
 using GBX.NET;
 using GBX.NET.Engines.Game;
@@ -19,6 +21,8 @@ public sealed class MapView(BlockCatalog shapes)
     private readonly List<SceneInstance> boxes = [];
     private readonly List<SceneWaypoint> waypoints = [];
     private readonly Dictionary<string, int> skipped = [];
+    // not drawn because the game doesn't draw them either
+    private readonly Dictionary<string, int> hidden = [];
     private readonly Dictionary<string, string> skipReasons = [];
     private readonly HashSet<string> missing = [];
     private Dictionary<string, string> restyle = [];
@@ -34,12 +38,14 @@ public sealed class MapView(BlockCatalog shapes)
     public SceneMaterial OwnMaterial(string name) => materials[MaterialKey(name, null, ours: true)];
 
     public IReadOnlyDictionary<string, int> Skipped => skipped;
+    public IReadOnlyDictionary<string, int> Hidden => hidden;
 
     public void Write(CGameCtnChallenge map, string scenePath)
         => File.WriteAllText(scenePath, JsonSerializer.Serialize(Build(map), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
 
     public SceneData Build(CGameCtnChallenge map)
     {
+        this.map = map;
         restyle = VistaRestyle(map.Collection?.ToString());
         AddBlocks(map);
         AddItems(map);
@@ -100,7 +106,7 @@ public sealed class MapView(BlockCatalog shapes)
             if (onlyBlocks?.Contains(block) == false) continue;
             if (shapes.IsTerrain(block.Name) && cellsOf[i].Any(built.Contains))
             {
-                Bump(skipped, $"block {block.Name}: terrain under a placed block, hidden");
+                Bump(hidden, $"block {block.Name}: terrain under a placed block");
                 continue;
             }
             var info = Info(block, null);
@@ -171,7 +177,7 @@ public sealed class MapView(BlockCatalog shapes)
         // a body-less block (pillar) is only its clips: with all of them hidden the game draws nothing there either
         if (meshes[key] is null && clips.Count == 0 && shapes.ClipSides(meshName, ground, variant).Count > 0)
         {
-            Bump(skipped, $"block {meshName}: only clips, all hidden");
+            Bump(hidden, $"block {meshName}: only clips, all hidden");
             return;
         }
         if (meshes[key] is null)
@@ -197,8 +203,14 @@ public sealed class MapView(BlockCatalog shapes)
         var key = "item:" + custom.Item;
         if (!meshes.ContainsKey(key))
         {
-            var json = Path.Combine(Paths.Work, "Mesh", custom.Item + ".pieces.json");
+            var json = Path.Combine(Paths.Pieces, custom.Item + ".pieces.json");
             meshes[key] = File.Exists(json) ? Pieces(Jsonc.Load<List<MeshPiece>>(json), null, ours: true) : null;
+        }
+        // not built here (someone else's map, a fresh install): the block the map carries
+        if (meshes[key] is not { Count: > 0 })
+        {
+            key = "embedded:" + blockName;
+            if (!meshes.ContainsKey(key)) meshes[key] = EmbeddedPieces(blockName[..^"_CustomBlock".Length]);
         }
         if (meshes[key] is not { Count: > 0 }) return false;
         info["kind"] = "custom block";
@@ -213,6 +225,7 @@ public sealed class MapView(BlockCatalog shapes)
     // only some of a map's pieces (the ones a conversion changes), for the preview; only what has a real mesh
     public SceneData BuildPart(CGameCtnChallenge map, IReadOnlySet<CGameCtnBlock> blocks, IReadOnlySet<CGameCtnAnchoredObject> items)
     {
+        this.map = map;
         restyle = VistaRestyle(map.Collection?.ToString());
         onlyBlocks = blocks;
         AddBlocks(map);
@@ -223,6 +236,45 @@ public sealed class MapView(BlockCatalog shapes)
     }
 
     private IReadOnlySet<CGameCtnBlock>? onlyBlocks;
+
+    private CGameCtnChallenge? map;
+    // the map's embedded items and blocks by name (IceConverter\X.Item.gbx), unpacked once into the cache
+    private Dictionary<string, string>? embedded;
+
+    private List<ScenePiece>? EmbeddedPieces(string name)
+    {
+        if (EmbeddedFile(name) is not { } path) return null;
+        // importer materials, drawn as our cached pieces are
+        try { return exporter.ExportItem(path, out _) is { } pieces ? Pieces(pieces, null, ours: true) : null; }
+        catch (Exception) { return null; }
+    }
+
+    private string? EmbeddedFile(string name)
+    {
+        if (embedded is null)
+        {
+            embedded = new(StringComparer.OrdinalIgnoreCase);
+            if (map?.EmbeddedZipData is { Length: > 0 } data)
+            {
+                var dir = Path.GetFullPath(Path.Combine(Paths.Cache, "Embedded", Convert.ToHexString(SHA256.HashData(data))[..16]));
+                using var zip = new ZipArchive(new MemoryStream(data));
+                foreach (var entry in zip.Entries.Where(e => e.Length > 0))
+                {
+                    var file = Path.GetFullPath(Path.Combine(dir, entry.FullName.Replace('\\', '/')));
+                    if (!file.StartsWith(dir + Path.DirectorySeparatorChar)) continue;
+                    if (!File.Exists(file))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
+                        entry.ExtractToFile(file);
+                    }
+                    // under Items/, blocks too
+                    var key = entry.FullName.Replace('/', '\\');
+                    embedded[key.StartsWith("Items\\", StringComparison.OrdinalIgnoreCase) ? key["Items\\".Length..] : key] = file;
+                }
+            }
+        }
+        return embedded.GetValueOrDefault(name);
+    }
 
     private void AddItems(CGameCtnChallenge map, IReadOnlySet<CGameCtnAnchoredObject>? only = null)
     {
@@ -241,8 +293,8 @@ public sealed class MapView(BlockCatalog shapes)
                 var name = id[(id.LastIndexOf('\\') + 1)..^".Item.gbx".Length];
                 if (!meshes.ContainsKey(key))
                 {
-                    var json = Path.Combine(Paths.Work, "Mesh", name + ".pieces.json");
-                    meshes[key] = File.Exists(json) ? Pieces(Jsonc.Load<List<MeshPiece>>(json), null, ours: true) : null;
+                    var json = Path.Combine(Paths.Pieces, name + ".pieces.json");
+                    meshes[key] = File.Exists(json) ? Pieces(Jsonc.Load<List<MeshPiece>>(json), null, ours: true) : EmbeddedPieces(id);
                 }
                 waypoint = shapes.Waypoint(name[..name.IndexOf("_Ice")]);
                 info["kind"] = "ice item";
@@ -334,8 +386,14 @@ public sealed class MapView(BlockCatalog shapes)
                 else if (image?.EndsWith(".Gbx", StringComparison.OrdinalIgnoreCase) == true) image = null;
             }
             else missing.Add(shapes.Files.RelativeToGameData(texPath));
+            // a guess: textures the game builds at run time have no image anywhere, so a miss here isn't "not extracted"
+            var guessed = image is null;
             image ??= Path.Combine(Path.GetDirectoryName(texPath)!, "Image", stem + ".dds");
-            if (!File.Exists(image)) { missing.Add(shapes.Files.RelativeToGameData(image)); image = null; }
+            if (!File.Exists(image))
+            {
+                if (!guessed) missing.Add(shapes.Files.RelativeToGameData(image));
+                image = null;
+            }
             textures.Add(new SceneTexture(role, stem, image));
         }
         var table = refs.FirstOrDefault(f => f.EndsWith(".ColorTable.gbx.json", StringComparison.OrdinalIgnoreCase)) is { } t ? Tints(Resolve(path, ancestor, t)) : null;
