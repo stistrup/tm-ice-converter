@@ -32,6 +32,8 @@ If running first time, just go through the setup phase and follow instructions. 
 
 If new pieces were built, you need to restart the game to try it. Shadows are not computed. No idea how to do that programmatically. If you know, let me know. The extract plugin has a menu for it: with TM in developer mode, Plugins › Compute shadows for every map in… lets you pick a folder, and the plugin runs through the maps and calculates shadows map by map. (This acts as if you click open map, calculate shadows, save etc, only there to save clicks, you still need to let the game do its thing)
 
+The first time you open a map, it takes a while to load and any ice pieces it wants to convert that don't exist yet are built in the background (you'll see "Building missing pieces 12 of 80…"). The preview updates when they're done. Huge maps naturally take much longer. Opening other maps stops the build, and it picks up where it left off next time you open that map. Pieces are shared between maps, so the more you've built, the less the next map has to build.
+
 ### Command line
 
 The same options as the Convert popup:
@@ -72,6 +74,6 @@ For the frontend, run `tools/ice-convert gui --no-open` and `npm run dev` in `we
 
 This is how it was mostly built. Although quite heavily steered to keep the code reasonable and not steer off to a vibe coded mess. Tooling exists to help development and debugging if you wanna fork and experiment yourself. (You can select items in the editor, ask eg. claude code about it and claude can query your selection, what your looking at etc).  
 
-I try to keep the code at a reasonable standard, but have to say I'm kind of walking the tightrope of having AI do a lot for me in an area I know little of, as 3D modelling, game engines etc is way out of my comfort zone, and trying to keep it sensible and debuggable, try to avoid edge case rules and special handling to make it somewhat true to the game and avoid becoming a pile of strange bugs.
+I try to keep the code at a reasonable standard, but have to say I'm kind of walking the tightrope of having AI do a lot for me in an area I know little of, as 3D modelling, game engines etc is way out of my comfort zone, and trying to keep it sensible and debuggable, try to avoid edge case rules and special handling to make it somewhat true to the game and avoid becoming a pile of strange bugs. And this being a hobby project, don't expect too much.
 
 Built on [GBX.NET](https://github.com/BigBang1112/gbx-net). Licensed under the GPL-3.0 (see `LICENSE`), as GBX.NET.LZO is. Third-party licences in `THIRD-PARTY-NOTICES.txt`.
