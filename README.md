@@ -12,7 +12,7 @@ Blocks that have a native ice version are swapped; most others become custom ice
 
 Download the package for your system from [Releases](https://github.com/stistrup/tm-ice-converter/releases) (Windows: `.zip`, Linux: `.tar.gz`), unpack it anywhere and start `TmIceConverter.exe` (Linux: `./TmIceConverter`). It opens in your browser with a setup page that finds your folders and walks you through the rest: Openplanet, NadeoImporter, Blender (Wine if you're on Linux), an extract plugin which runs and a one-time extraction of the game's blocks and models (around 6-7 GB).
 
-I'm running on Linux and haven't tried on Windows, I'll just assume Windows could be suspicious of this program as it isn't signed, or seems normal. If it does (SmartScreen), click More info › Run anyway, and let me know. Or if you have any other problems on Windows for that matter.
+I'm running on Linux and haven't tried on Windows, I'll just assume Windows could be suspicious of this program as it isn't signed, or seems normal. If it does, click More info › Run anyway, and let me know. Or if you have any other problems on Windows for that matter.
 
 To update, just replace everything in old app folder (wherever you put it). Your settings, cache and extracted game files live elsewhere (`%LOCALAPPDATA%\TmIceConverter` on Windows, `~/.local/share/TmIceConverter` on Linux, and Openplanet's own folder)
 
@@ -43,7 +43,7 @@ For working on the converter there are Blender tools: `view <map>` (a scene and 
 
 The map-wide options and their defaults are `ConvertOptions` (`Rules/ConvertOptions.cs`). A map's own choices are what the GUI saves for it, `settings/maps/<map UID>.json` in the user folder; a map without one converts with the defaults. Block and item swaps live in `data/swaps.jsonc`, material mappings in `data/ice-materials.jsonc`.
 
-## The code
+## Code structure
 
 ```
 Cli/           the commands; ConvertCommand is the conversion workflow
@@ -64,7 +64,7 @@ A conversion goes through `MapConverter`: each block runs through the rule list 
 
 For the frontend, run `tools/ice-convert gui --no-open` and `npm run dev` in `web/`; Vite forwards `/api` to it. A map's first open builds a cache in the user folder (`Gui/`). The view is for finding and identifying pieces, previewing conversions and making choices: its lighting and materials are not necessarily true to the game, so judge the results in game.
 
-## Working on it with an AI
+## Working on it with AI
 
 This is how it was mostly built. Although quite heavily steered to keep the code reasonable and not steer off to a vibe coded mess. Tooling exists to help development and debugging if you wanna fork and experiment yourself. (You can select items in the editor, ask eg. claude code about it, have claude take screenshots, debug weird behavior etc).  
 
