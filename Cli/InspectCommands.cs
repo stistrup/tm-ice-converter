@@ -16,7 +16,7 @@ internal sealed class InspectCommands(string dataDir)
         var failed = 0;
         foreach (var arg in rest)
         {
-            var pattern = arg.Contains('*') || arg.Contains("_Ice") ? arg : arg + "_Ice";
+            var pattern = arg.Contains('*') || arg.Contains("_Ice") ? arg : ItemRecipe.Prefix + arg + "_Ice";
             var found = Directory.GetFiles(meshDir, pattern + ".pieces.json");
             if (found.Length == 0) { failed++; Console.Error.WriteLine($"{arg}: no built item (build it with make-item)"); continue; }
             foreach (var pieces in found.Order(StringComparer.Ordinal))

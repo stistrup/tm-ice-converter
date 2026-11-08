@@ -1,6 +1,6 @@
 import type { InstanceInfo } from '../api'
 
-// RoadTechCurve1, not IceConverter\RoadTechCurve1_Ice_BlueBay_none.Block.Gbx_CustomBlock
+// RoadTechCurve1, not IceConverter\gIce_RoadTechCurve1_Ice_BlueBay_none.Block.Gbx_CustomBlock
 // '' for an index from the scene before (a hover can land while the next map loads)
 export function displayName(info: InstanceInfo | undefined): string {
   if (!info) return ''

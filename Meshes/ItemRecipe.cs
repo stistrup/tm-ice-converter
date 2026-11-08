@@ -58,11 +58,21 @@ internal sealed record ItemRecipe(ItemKind Kind, bool Top, bool TopsBody, bool B
     private static bool IsSkin(BlockCatalog catalog, string block, bool ground)
         => ground && !catalog.IsPillarBlock(block) && !BlockNames.IsWholeOnGround(block, catalog.Environment);
 
+    // file names start with it: recognisable in the editor and the items folder
+    public const string Prefix = "gIce_";
+
+    // the block a name was made from; maps built before the prefix don't have it
+    public static string SourceBlock(string name)
+    {
+        var block = name[..name.IndexOf("_Ice")];
+        return block.StartsWith(Prefix) ? block[Prefix.Length..] : block;
+    }
+
     // no dots: the importer cuts the name there
     // skins at another lift (mm) or edge angle (degrees) than the default carry it in the name
     public static string ItemName(ItemRequest r, BlockCatalog catalog)
     {
-        var name = r.Block + "_Ice" + (catalog.DefinedIn(r.Block) is { } env ? "_" + env : "") + KindSuffix(r, catalog)
+        var name = Prefix + r.Block + "_Ice" + (catalog.DefinedIn(r.Block) is { } env ? "_" + env : "") + KindSuffix(r, catalog)
             + (!r.Style.TerrainSnow && OnTerrain(r.Block, r.Ground, r.Kind) ? "_bare" : "") + TiltKey(r.Tilt)
             + (r.Variant == 0 && r.Mobil == 0 ? "" : $"_v{r.Variant}m{r.Mobil}") + "_" + ClipKey.OfSet(r.Clips);
         if (!Regex.IsMatch(name, "_a?skin")) return name;

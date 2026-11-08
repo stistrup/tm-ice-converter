@@ -16,13 +16,13 @@ internal sealed partial record CustomBlockMesh(string Item, string Source, int V
     {
         if (!blockName.StartsWith(Prefix) || !blockName.EndsWith(Suffix)) return null;
         var item = BlockExtras().Replace(blockName[Prefix.Length..^Suffix.Length], "");
-        var ice = item.IndexOf("_Ice");
-        if (ice <= 0) return null;
+        if (item.IndexOf("_Ice") <= 0) return null;
+        var source = ItemRecipe.SourceBlock(item);
         var variant = VariantMark().Match(item);
         var on = OnArchetype().Match(blockName);
         var mesh = variant.Success
-            ? new CustomBlockMesh(item, item[..ice], int.Parse(variant.Groups[1].Value), int.Parse(variant.Groups[2].Value))
-            : new CustomBlockMesh(item, item[..ice], 0);
+            ? new CustomBlockMesh(item, source, int.Parse(variant.Groups[1].Value), int.Parse(variant.Groups[2].Value))
+            : new CustomBlockMesh(item, source, 0);
         return mesh with { Archetype = on.Success ? on.Groups[1].Value : mesh.Source, Stacked = blockName.Contains("_lift1") };
     }
 

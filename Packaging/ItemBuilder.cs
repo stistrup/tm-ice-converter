@@ -146,7 +146,7 @@ public sealed class ItemBuilder(string dataDir)
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + (archetype == block ? "" : "_on_" + archetype) + (lift ? "_lift1" : "") + rampKey;
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Blocks, name + ".Block.Gbx");
-        WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, archetype, variantId, shapes.Waypoint(block) is not null ? shapes.Spawn(block, ground, variant, mobil) : null,
+        WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, block, archetype, variantId, shapes.Waypoint(block) is not null ? shapes.Spawn(block, ground, variant, mobil) : null,
                 lift ? shapes.BlockSize(block, ground, variant) : null, ramp: ramp == 0 ? null : (ramp, Style.SkinLift, shapes.BlockSize(block, ground, variant))));
         return new IceBlock(ident, path);
     }
@@ -361,7 +361,7 @@ public sealed class ItemBuilder(string dataDir)
             if (plain is null || !plain.Any(p => Ices(p.Material))) return null;
 
             var env = Path.GetRelativePath(Path.GetDirectoryName(Paths.ExtractedStadium)!, file).Split('/')[0];
-            var name = itemId + "_Ice" + (env == "Stadium" ? "" : "_" + env);
+            var name = ItemRecipe.Prefix + itemId + "_Ice" + (env == "Stadium" ? "" : "_" + env);
             var path = Path.Combine(Paths.Items, name + ".Item.gbx");
             var ident = new Ident($"IceConverter\\{name}.Item.gbx", new Id(26), "IceConverter");
             if (!IsCurrent(name, path, out var builtFrom))

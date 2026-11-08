@@ -19,7 +19,7 @@ internal static class SnowBlocks
         var name = itemName + (underDeco ? "_snowhollow" : "_snowland");
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Blocks, name + ".Block.Gbx");
-        items.WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, SnowTerrainArchetype, 0,
+        items.WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, block, SnowTerrainArchetype, 0,
             raise: underDeco ? SnowUnderDecoRaise : SnowTerrainRaise, snowAs: SnowTerrainMaterial, lightmapFromAbove: true, hollow: underDeco));
         return new IceBlock(ident, path);
     }
@@ -32,7 +32,7 @@ internal static class SnowBlocks
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + "_decosnow2";
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Blocks, name + ".Block.Gbx");
-        items.WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, block, variantId, snowAs: SnowTerrainMaterial, lightmapFromAbove: true));
+        items.WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, block, block, variantId, snowAs: SnowTerrainMaterial, lightmapFromAbove: true));
         return new IceBlock(ident, path);
     }
 

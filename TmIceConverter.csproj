@@ -17,6 +17,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- parked: see the file -->
+    <Compile Remove="Packaging/Thumbnails.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="GBX.NET" Version="2.4.5" />
     <PackageReference Include="GBX.NET.LZO" Version="2.1.6" />
     <PackageReference Include="GBX.NET.ZLib" Version="1.1.2" />

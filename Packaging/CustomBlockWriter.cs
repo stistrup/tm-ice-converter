@@ -25,6 +25,7 @@ public static class CustomBlockWriter
         string itemPath,
         string blockPath,
         Ident ident,
+        string block,
         string archetype,
         int variantId,
         (Vector3 At, float Pitch, float Roll)? spawn = null,
@@ -60,11 +61,11 @@ public static class CustomBlockWriter
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(ident.Id.Split('\\')[^1]));
         Directory.CreateDirectory(Path.GetDirectoryName(blockPath)!);
         // the game saves blocks uncompressed but loads compressed ones too: half the size
-        new Gbx<CGameItemModel>(Container(ident, name, archetype, ident.Collection, [(variantId, mesh)], spawn)) { BodyCompression = GbxCompression.Compressed }.Save(blockPath);
+        new Gbx<CGameItemModel>(Container(ident, name, block, archetype, ident.Collection, [(variantId, mesh)], spawn)) { BodyCompression = GbxCompression.Compressed }.Save(blockPath);
     }
 
     // same bytes the game writes for a compiled custom block
-    private static CGameItemModel Container(Ident ident, string name, string archetype, Id collection, IEnumerable<(int Id, CPlugStaticObjectModel Mesh)> variants, (Vector3 At, float Pitch, float Roll)? spawn)
+    private static CGameItemModel Container(Ident ident, string name, string page, string archetype, Id collection, IEnumerable<(int Id, CPlugStaticObjectModel Mesh)> variants, (Vector3 At, float Pitch, float Roll)? spawn)
     {
         var item = new CGameItemModel();
         AddChunks(item, (0x2E001003, 8, null), (0x2E001006, null, null), (0x2E002000, null, null), (0x2E002001, 0, null), (0x2E001009, null, null),
@@ -77,8 +78,8 @@ public static class CustomBlockWriter
         SetFields(item, 0x2E00201F, ("U09", -1), ("U10", -1));
         item.Ident = ident;
         item.Name = name;
-        // the editor lists it next to its archetype
-        item.PageName = archetype;
+        // the editor lists it next to the block it replaces
+        item.PageName = page;
         item.Description = "";
         item.ItemType = item.ItemTypeE = CGameItemModel.EItemType.Block;
         item.WaypointType = CGameItemModel.EWaypointType.None;
