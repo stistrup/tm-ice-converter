@@ -6,6 +6,8 @@ A tool to convert Trackmania 2020 maps to ice. It features a web based editor th
 
 This is still under development with a bunch of bugs, missing features, assumptions that might not be true of the game engine etc. Hobby project and not sure where this will end up yet. Lots of ideas, but one thing at a time. 
 
+**NOTE**: the viewer/editor tries to mimic what happens in game too, and is still quite often wrong. So even if something looks off, try a conversion and see what happens in game. The opposite can be true too, looks good in editor and game maybe the shadows looks way off. Let me know if you find these things.
+
 AI has been used quite extensively, and a few features are made to work well with AI. Claude Code run at this repo can see your selections in the editor, take screenshots, run test conversions, inspect bugs etc. 
 
 Blocks that have a native ice version are swapped; most others become custom ice blocks built from Nadeo's own meshes and embedded in the map. Blocks in vistas are made to "inherit" from a block the game accepts in that vista. What can't be a block yet becomes a custom ice item, and walls, concrete and pillars stay native with an ice surface laid on top. Terrain stays as it is. Working on a way to make terrain snow..
@@ -29,6 +31,8 @@ Hopefully the interface is somewhat self-explanatory. If not, here is a short ex
 If running first time, just go through the setup phase and follow instructions. All steps are needed to run the converter as intended. Then, at the gui, tick one or more maps in the map list, check the preview and the conversion options, then press Convert…, fill in options at popup and run the conversion. Each converted map is saved under your Maps folder (with subfolder from the popup) with a `.report.md` next to it that says what happened to every block.
 
 If new pieces were built, you need to restart the game to try it. Shadows are not computed. No idea how to do that programmatically. If you know, let me know. The extract plugin has a menu for it: with TM in developer mode, Plugins › Compute shadows for every map in… lets you pick a folder, and the plugin runs through the maps and calculates shadows map by map. (This acts as if you click open map, calculate shadows, save etc, only there to save clicks, you still need to let the game do its thing)
+
+The first time you open a map, it takes a while to load and any ice pieces it wants to convert that don't exist yet are built in the background (you'll see "Building missing pieces 12 of 80…"). The preview updates when they're done. Huge maps naturally take much longer. Opening other maps stops the build, and it picks up where it left off next time you open that map. Pieces are shared between maps, so the more you've built, the less the next map has to build.
 
 ### Command line
 
@@ -68,8 +72,8 @@ For the frontend, run `tools/ice-convert gui --no-open` and `npm run dev` in `we
 
 ## Working on it with AI
 
-This is how it was mostly built. Although quite heavily steered to keep the code reasonable and not steer off to a vibe coded mess. Tooling exists to help development and debugging if you wanna fork and experiment yourself. (You can select items in the editor, ask eg. claude code about it, have claude take screenshots, debug weird behavior etc).  
+This is how it was mostly built. Although quite heavily steered to keep the code reasonable and not steer off to a vibe coded mess. Tooling exists to help development and debugging if you wanna fork and experiment yourself. (You can select items in the editor, ask eg. claude code about it and claude can query your selection, what your looking at etc).  
 
-I try to keep the code at a reasonable standard, but have to say I'm kind of walking the tightrope of having AI do a lot for me in an area I know little of, as 3D modelling, game engines etc is way out of my comfort zone, and trying to keep it sensible and debuggable so I'll have a fighting chance of making this a solid tool. But just wanted to be clear about AI usage.
+I try to keep the code at a reasonable standard, but have to say I'm kind of walking the tightrope of having AI do a lot for me in an area I know little of, as 3D modelling, game engines etc is way out of my comfort zone, and trying to keep it sensible and debuggable, try to avoid edge case rules and special handling to make it somewhat true to the game and avoid becoming a pile of strange bugs. And this being a hobby project, don't expect too much.
 
 Built on [GBX.NET](https://github.com/BigBang1112/gbx-net). Licensed under the GPL-3.0 (see `LICENSE`), as GBX.NET.LZO is. Third-party licences in `THIRD-PARTY-NOTICES.txt`.
