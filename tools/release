@@ -24,6 +24,7 @@ for rid in win-x64 linux-x64; do
     cp -r web/dist "$out/web/"
     cp -r openplanet/IceConverterExtract "$out/openplanet/"
     cp tools/*.py "$out/tools/"
+    cp LICENSE README.md "$out/"
     if [ "$rid" = win-x64 ]; then
         python3 -I -c 'import shutil, sys; shutil.make_archive(sys.argv[1], "zip", "dist", sys.argv[2])' "dist/$name" "$name"
     else
