@@ -8,7 +8,7 @@ This is still under development with a bunch of bugs, missing features, assumpti
 
 AI has been used quite extensively, and a few features are made to work well with AI. Claude Code run at this repo can see your selections in the editor, take screenshots, run test conversions, inspect bugs etc. 
 
-Blocks that have a native ice version are swapped; most others become custom ice blocks built from Nadeo's own meshes and embedded in the map. Blocks in vistas are made to "inherit" from a block the game accepts in that vista. What can't be a block yet becomes a custom ice item, and walls, ground and concrete stay native with an ice surface laid on top.
+Blocks that have a native ice version are swapped; most others become custom ice blocks built from Nadeo's own meshes and embedded in the map. Blocks in vistas are made to "inherit" from a block the game accepts in that vista. What can't be a block yet becomes a custom ice item, and walls, concrete and pillars stay native with an ice surface laid on top. Terrain stays as it is. Working on a way to make terrain snow..
 
 ## Install
 
