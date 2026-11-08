@@ -11,10 +11,8 @@
     "importerWinePrefix": "~/.local/share/tm-ice-wine",
     // optional: caches and built pieces (default: the user's local app data, TmIceConverter)
     "cache": "",
-    // optional: where conversion runs and GUI drafts are kept (default: settings/ in the repo)
-    "settings": "",
-    // optional: the uploader also mirrors each upload to <releaseCopy>/<version>
-    "releaseCopy": ""
+    // optional: where conversion runs and each map's settings are kept (default: settings/ in the user folder)
+    "settings": ""
   },
   // "Me as author" (convert --me-as-author); the GUI's Convert popup can fill it in
   "testrunAuthor": { "login": "", "nickname": "", "zone": "World|<continent>|<country>" }
