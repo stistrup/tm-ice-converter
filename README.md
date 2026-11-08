@@ -2,7 +2,9 @@
 
 A tool to convert Trackmania 2020 maps to ice. It features a web based editor that allows a rule based conversion on a single or batch of maps. Conversions run either on a per map rule set configurable in the editor, or block by block. 
 
-This is still under development with a bunch of bugs, missing features, assumptions that might not be true of the game engine etc. Hobby project and not sure where this will end up yet. But wanted to make public for others to use or develop further on. One of the gripes I wanted to solve is having ice blocks in vistas, which this tool manages. Working on getting terrain etc have snow but still experimental. 
+<img width="1453" height="1035" alt="image" src="https://github.com/user-attachments/assets/316c5c0c-e108-4762-a412-b40c0a1a084c" />
+
+This is still under development with a bunch of bugs, missing features, assumptions that might not be true of the game engine etc. Hobby project and not sure where this will end up yet. Lots of ideas, but one thing at a time. 
 
 AI has been used quite extensively, and a few features are made to work well with AI. Claude Code run at this repo can see your selections in the editor, take screenshots, run test conversions, inspect bugs etc. 
 
