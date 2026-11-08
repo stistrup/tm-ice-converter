@@ -17,9 +17,14 @@ internal sealed class GuiCommand(string dataDir)
         var url = $"http://localhost:{port}/";
         var preview = new ConversionPreview(dataDir);
         var server = new GuiServer(url, webRoot, preview, new ConvertJobs(new ConvertCommand(dataDir), preview), dataDir);
-        Console.WriteLine($"GUI on {url} (Ctrl+C to stop)");
-        if (!noOpen) Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-        server.RunAsync().GetAwaiter().GetResult();
+        if (!noOpen) server.Started += () => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        try { server.RunAsync().GetAwaiter().GetResult(); }
+        // started twice: the first one is serving, show it
+        catch (System.Net.HttpListenerException)
+        {
+            Console.WriteLine($"Already running on {url}");
+            if (!noOpen) Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+        }
         return 0;
     }
 }

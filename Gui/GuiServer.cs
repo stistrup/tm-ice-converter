@@ -28,11 +28,16 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
     private readonly Setup setup = new(dataDir);
     private readonly Dictionary<string, (DateTime Modified, string Name)> names = [];
 
+    // listening: the browser can open now
+    public event Action? Started;
+
     public async Task RunAsync()
     {
         using var listener = new HttpListener();
         listener.Prefixes.Add(url);
         listener.Start();
+        Console.WriteLine($"Ice Converter is running on {url}. Close this window to quit.");
+        Started?.Invoke();
         while (true)
         {
             var context = await listener.GetContextAsync();
@@ -53,6 +58,7 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
             else if (path == "/api/shot") await Shot(response);
             else if (path == "/api/pick") await Pick(request, response);
             else if (path == "/api/setup") await Json(response, await Task.Run(setup.Check));
+            else if (path == "/api/version") await Json(response, await AppVersion.Check());
             else if (path == "/api/maps") await Json(response, ListMaps());
             else if (path == "/api/folders") await Json(response, ListFolders());
             else if (path == "/api/author") await Json(response, AuthorNow());

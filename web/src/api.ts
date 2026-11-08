@@ -307,6 +307,18 @@ export async function fetchBuildStatus(): Promise<BuildStatus> {
   return (await check(await fetch('/api/preview-build'))).json()
 }
 
+// this build and the newest release; latest null when GitHub didn't answer
+export interface VersionInfo {
+  current: string
+  latest: string | null
+  url: string | null
+  newer: boolean
+}
+
+export async function fetchVersion(): Promise<VersionInfo> {
+  return (await check(await fetch('/api/version'))).json()
+}
+
 // first-run checklist
 export interface SetupStep {
   id: string
@@ -320,6 +332,11 @@ export interface SetupStep {
   link: string | null
   progress: number | null
   required: boolean
+  // the button's action when not the step's own (e.g. turning on developer mode from Game files)
+  actionId: string | null
+  // false: note says what's missing
+  actionEnabled: boolean
+  note: string | null
 }
 
 export interface SetupStatus {

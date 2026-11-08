@@ -5,14 +5,17 @@ node_modules/
 web/dist/
 
 # Kept local, never published: this machine's user and the working notes.
-# Your account (convert --me-as-author); format in data/local.example.jsonc.
+# Your account and folders live in the user folder now (local.jsonc there); this catches an old copy.
 data/local.jsonc
 # Working notes: progress log, decisions, open questions.
 STATUS.md
 review *
 
-# Conversion runs, drafts and map links (Paths.SettingsStore)
+# Old place of the saved settings (now in the user folder, Paths.SettingsStore)
 settings/
+
+# Release builds (tools/release)
+dist/
 
 # Archives
 archive/

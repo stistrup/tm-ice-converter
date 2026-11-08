@@ -7,11 +7,14 @@ Gbx.LZO = new Lzo();
 Gbx.ZLib = new ZLib();
 
 var dataDir = FindDataDir();
-Paths.LocalSettings = Path.Combine(dataDir, "local.jsonc");
+Paths.LocalExample = Path.Combine(dataDir, "local.example.jsonc");
 var inspect = new InspectCommands(dataDir);
 
 switch (args)
 {
+    // a double-click: the GUI
+    case []:
+        return new GuiCommand(dataDir).Run([]);
     case ["gui", .. var rest]:
         return new GuiCommand(dataDir).Run(rest);
     case ["convert", .. var rest]:

@@ -7,8 +7,10 @@ namespace TmIceConverter;
 internal sealed partial class Setup(string dataDir)
 {
     // state: ok, todo, wait (an earlier step first), running
+    // ActionId: what the button does when not the step's own; ActionEnabled false: Note says what's missing
     public sealed record Step(string Id, string Title, string State, string Text, string? Path = null, List<string>? Found = null,
-        string? Action = null, string? Link = null, double? Progress = null, bool Required = true);
+        string? Action = null, string? Link = null, double? Progress = null, bool Required = true,
+        string? ActionId = null, bool ActionEnabled = true, string? Note = null);
 
     public sealed record Status(List<Step> Steps, bool Ready, bool GameRunning);
 
@@ -29,9 +31,9 @@ internal sealed partial class Setup(string dataDir)
         steps.Add(BlenderStep());
         if (!OperatingSystem.IsWindows()) steps.Add(Wine());
         var openplanet = steps.First(s => s.Id == "openplanet").State == "ok";
-        steps.Add(DevMode(openplanet, running));
-        var plugin = Plugin(openplanet && steps.First(s => s.Id == "devmode").State == "ok", running);
+        var plugin = Plugin(openplanet);
         steps.Add(plugin);
+        // developer mode and the running game are only needed while extracting: they gate the button, not setup
         steps.Add(Extract(plugin.State == "ok", running));
         return new Status(steps, steps.All(s => s.State == "ok" || !s.Required), running);
     }
@@ -124,14 +126,6 @@ internal sealed partial class Setup(string dataDir)
         return File.Exists(ini) ? File.ReadLines(ini).FirstOrDefault(l => l.StartsWith("DeveloperMode=")) : null;
     }
 
-    private static Step DevMode(bool openplanetOk, bool running)
-    {
-        const string title = "Openplanet developer mode";
-        if (!openplanetOk) return new Step("devmode", title, "wait", "Needs Openplanet");
-        if (DevModeLine() == "DeveloperMode=true") return new Step("devmode", title, "ok", "Lets the extract plugin run");
-        return new Step("devmode", title, "todo", running ? "Close the game, then turn it on" : "Lets the extract plugin run", Action: running ? null : "Turn on");
-    }
-
     // Openplanet reads it at start and writes it back on exit
     private static void SetDevMode()
     {
@@ -144,17 +138,15 @@ internal sealed partial class Setup(string dataDir)
         File.WriteAllLines(ini, lines);
     }
 
-    private Step Plugin(bool ready, bool running)
+    private Step Plugin(bool ready)
     {
         const string title = "Extract plugin";
-        if (!ready) return new Step("plugin", title, "wait", "Needs Openplanet in developer mode");
+        if (!ready) return new Step("plugin", title, "wait", "Needs Openplanet");
         var source = Directory.GetFiles(PluginSource);
         var missing = source.Count(f => System.IO.Path.Combine(Paths.ExtractPlugin, System.IO.Path.GetFileName(f)) is var t
             && !(File.Exists(t) && File.ReadAllBytes(t).AsSpan().SequenceEqual(File.ReadAllBytes(f))));
         var fresh = !Directory.Exists(Paths.ExtractPlugin);
         if (missing > 0) return new Step("plugin", title, "todo", fresh ? "Not installed" : "Out of date", Action: fresh ? "Install" : "Update");
-        // Openplanet loads plugins at game start: one installed or updated later isn't running yet
-        if (running && !PluginAlive()) return new Step("plugin", title, "todo", "Installed. Restart the game, or load/reload it in Openplanet's Developer menu");
         return new Step("plugin", title, "ok", "Installed in Openplanet's Plugins");
     }
 
@@ -181,14 +173,22 @@ internal sealed partial class Setup(string dataDir)
             return new Step("extract", title, "running", text + " · keep the game open", Action: "Stop", Progress: share);
         }
         if (asked) return new Step("extract", title, "running", running ? "Waiting for the plugin" : "Starts when the game runs");
-        if (state == "done" && extracted) return new Step("extract", title, "ok", "Extracted. (On game update, you might need to do this again)", Action: "Extract again");
-        var why = state switch
+        var done = state == "done" && extracted;
+        var said = done ? "Extracted. (On game update, you might need to do this again)" : state switch
         {
             "running" => "Stopped when the game closed. Extract again to go on",
             "stopped" => "Stopped. Extract again to go on",
             _ => "Copies the game's blocks and models to build ice from. Only needed once. The extracted files take 6-7 GB",
         };
-        return new Step("extract", title, "todo", why, Action: "Extract");
+        var step = new Step("extract", title, done ? "ok" : "todo", said, Action: done ? "Extract again" : "Extract");
+        // what extracting needs, in order: developer mode (Openplanet only reads it at start), the game, the plugin loaded in it
+        if (DevModeLine() != "DeveloperMode=true")
+            return running ? step with { Action = "Turn on developer mode", ActionEnabled = false, Note = "Close the game to turn on developer mode" }
+                : step with { Action = "Turn on developer mode", ActionId = "devmode" };
+        if (!running) return step with { ActionEnabled = false, Note = "Start the game to extract" };
+        // Openplanet loads plugins at game start: one installed or updated later isn't running yet
+        if (!PluginAlive()) return step with { ActionEnabled = false, Note = "Restart the game, or load/reload the plugin in Openplanet's Developer menu" };
+        return step;
     }
 
     private static Dictionary<string, string> ReadProgress(string file) => File.Exists(file)

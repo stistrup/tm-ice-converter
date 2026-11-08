@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# release: builds the page and a self-contained app per OS into dist/: TmIceConverter-<version>-win-x64.zip and -linux-x64.tar.gz.
+# The version is <Version> in TmIceConverter.csproj; a GitHub release tagged v<version> is what the GUI's update check finds.
+set -euo pipefail
+root="$(dirname "$(readlink -f "$0")")/.."
+cd "$root"
+version=$(grep -o '<Version>[^<]*' TmIceConverter.csproj | cut -d'>' -f2)
+[ -n "$version" ] || { echo "no <Version> in TmIceConverter.csproj" >&2; exit 1; }
+
+echo "page"
+(cd web && { [ -d node_modules ] || npm ci; } && npm run build >/dev/null)
+
+rm -rf dist
+mkdir -p dist
+for rid in win-x64 linux-x64; do
+    name="TmIceConverter-$version-$rid"
+    out="dist/$name"
+    echo "$rid"
+    dotnet publish TmIceConverter.csproj -c Release -r "$rid" --self-contained -v q --nologo \
+        -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=none -o "$out" >/dev/null
+    # what the app reads next to itself: data (never someone's local.jsonc), the page, the plugin, the Blender scripts
+    mkdir -p "$out/data" "$out/web" "$out/openplanet" "$out/tools"
+    find data -maxdepth 1 -type f ! -name 'local.jsonc' -exec cp {} "$out/data/" \;
+    cp -r web/dist "$out/web/"
+    cp -r openplanet/IceConverterExtract "$out/openplanet/"
+    cp tools/*.py "$out/tools/"
+    if [ "$rid" = win-x64 ]; then
+        python3 -I -c 'import shutil, sys; shutil.make_archive(sys.argv[1], "zip", "dist", sys.argv[2])' "dist/$name" "$name"
+    else
+        tar -czf "dist/$name.tar.gz" -C dist "$name"
+    fi
+done
+ls -lh dist/*.zip dist/*.tar.gz

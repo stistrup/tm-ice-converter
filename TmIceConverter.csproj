@@ -5,7 +5,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <DefaultItemExcludes>$(DefaultItemExcludes);archive/**;web/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);archive/**;web/**;dist/**</DefaultItemExcludes>
+    <!-- the release; the GUI shows it and checks GitHub for a newer one -->
+    <Version>0.1.0</Version>
     <!-- maps convert on several threads at once: about a third faster than the desktop GC, same peak memory -->
     <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>

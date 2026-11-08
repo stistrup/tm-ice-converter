@@ -1,4 +1,4 @@
-// copy to data/local.jsonc and fill in
+// the GUI's setup writes local.jsonc in the user folder from this (%LOCALAPPDATA%\TmIceConverter, ~/.local/share/TmIceConverter)
 {
   "paths": {
     // Documents/Trackmania

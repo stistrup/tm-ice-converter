@@ -2,13 +2,19 @@
 
 Turns Trackmania 2020 maps into ice versions. Blocks that have a native ice version are swapped; most others become custom ice blocks built from Nadeo's own meshes and embedded in the map, on Stadium and on the vistas. What can't be a block yet becomes a custom ice item, and walls, ground and concrete stay native with an ice surface laid on top.
 
-## Setup
+## Install
 
-- .NET 10, Blender and the game's NadeoImporter. On Linux also Wine, to run the importer.
-- Only tested on Linux, with the game running through Proton. Windows should work but hasn't been tried.
-- For the web interface, Node. In `web/`: `npm install`, then `npm run build`.
-- Copy `data/local.example.jsonc` to `data/local.jsonc` and fill in your folders.
-- Copy `openplanet/IceConverterExtract` into `OpenplanetNext/Plugins/` with Openplanet dev mode on, and run its "Extract game files" once (6-7 GB; `dump-exclude.txt` lists what it skips). Run it again after a game update; files already on disk are skipped.
+Download the zip for your system from [Releases](https://github.com/stistrup/tm-ice-converter/releases), unzip it anywhere and start `TmIceConverter.exe` (Linux: `./TmIceConverter`). It opens in your browser with a setup page that finds your folders and walks you through the rest: Openplanet, NadeoImporter, Blender (and Wine on Linux), the extract plugin, and a one-time copy of the game's blocks and models (6-7 GB). The window it starts in is the converter; close it to quit.
+
+The exe isn't signed, so Windows asks before the first start: More info › Run anyway.
+
+Only tested on Linux, with the game running through Proton. Windows should work but hasn't been tried yet.
+
+To update, replace the app folder with the new zip. Your settings, cache and extracted game files live elsewhere (`%LOCALAPPDATA%\TmIceConverter`, `~/.local/share/TmIceConverter` on Linux, and Openplanet's own folder) and stay.
+
+## From source
+
+.NET 10 and Node. In `web/`: `npm install`, then `npm run build`. `tools/ice-convert` runs it from the repo (no arguments: the GUI). `tools/release` builds the release zips into `dist/`.
 
 ## Use
 
@@ -30,7 +36,7 @@ tools/ice-convert show <item>                          preview a built item
 
 The Blender tools are buggy, experimental and janky, but they somewhat work: `view`, `inspect`, `show`, `tools/zfight.py` and `tools/render_at.py`.
 
-The map-wide options and their defaults are `ConvertOptions` (`Rules/ConvertOptions.cs`). A map's own choices are what the GUI saves for it, `settings/maps/<map UID>.json`; a map without one converts with the defaults. Block and item swaps live in `data/swaps.jsonc`, material mappings in `data/ice-materials.jsonc`.
+The map-wide options and their defaults are `ConvertOptions` (`Rules/ConvertOptions.cs`). A map's own choices are what the GUI saves for it, `settings/maps/<map UID>.json` in the user folder; a map without one converts with the defaults. Block and item swaps live in `data/swaps.jsonc`, material mappings in `data/ice-materials.jsonc`.
 
 ## The code
 

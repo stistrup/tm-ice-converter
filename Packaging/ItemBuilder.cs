@@ -273,7 +273,10 @@ public sealed class ItemBuilder(string dataDir)
         return false;
     }
 
-    private string Tools() => tools ??= Hash(File.ReadAllBytes(typeof(ItemBuilder).Assembly.Location)
+    // the code: our dll, or in a single-file release the executable (the dll has no file of its own there)
+    private static string CodeFile => typeof(ItemBuilder).Assembly.Location is { Length: > 0 } dll ? dll : System.Environment.ProcessPath!;
+
+    private string Tools() => tools ??= Hash(File.ReadAllBytes(CodeFile)
         .Concat(File.ReadAllBytes(BuildScript)).Concat(File.ReadAllBytes(Path.Combine(dataDir, "ice-materials.jsonc"))).ToArray());
 
     private string InputHash(string piecesJson) => Hash(Encoding.UTF8.GetBytes(PipelineVersion + "\n" + File.ReadAllText(BuildScript) + "\n" + piecesJson));

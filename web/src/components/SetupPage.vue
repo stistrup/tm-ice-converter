@@ -9,7 +9,6 @@ const steps = computed(() => setup.status?.steps ?? [])
 const editable = new Set(['game', 'trackmania', 'openplanet', 'blender'])
 const marks = { ok: '✓', todo: '•', wait: '–', running: '…' }
 
-
 function others(step: SetupStep) {
   return (step.found ?? []).filter((f) => f !== step.path)
 }
@@ -19,13 +18,8 @@ function save(step: SetupStep, event: Event) {
   if (value && value !== step.path) void setup.setPath(step.id, value)
 }
 
-// the plugin runs in the game
-function needsGame(step: SetupStep) {
-  return step.id === 'extract' && step.state !== 'running' && !setup.status?.gameRunning
-}
-
 function act(step: SetupStep) {
-  void setup.act(step.id === 'extract' && step.state === 'running' ? 'extract-stop' : step.id)
+  void setup.act(step.id === 'extract' && step.state === 'running' ? 'extract-stop' : (step.actionId ?? step.id))
 }
 </script>
 
@@ -41,6 +35,7 @@ function act(step: SetupStep) {
           <div :class="$style.main">
             <div :class="$style.title">{{ step.title }}</div>
             <div :class="$style.text">{{ step.text }}</div>
+            <div v-if="step.note" :class="$style.note">{{ step.note }}</div>
             <input
               v-if="editable.has(step.id) && step.state !== 'wait'"
               :class="$style.path"
@@ -63,10 +58,10 @@ function act(step: SetupStep) {
               v-if="step.action"
               :class="[$style.button, { [$style.primary]: step.state === 'todo' }]"
               type="button"
-              :disabled="needsGame(step)"
+              :disabled="!step.actionEnabled"
               @click="act(step)"
             >
-              {{ needsGame(step) ? 'Game not running' : step.action }}
+              {{ step.action }}
             </button>
           </div>
         </li>
@@ -161,6 +156,10 @@ function act(step: SetupStep) {
 
 .text {
   color: var(--muted);
+}
+
+.note {
+  color: var(--warn);
 }
 
 .path {

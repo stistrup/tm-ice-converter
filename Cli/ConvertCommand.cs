@@ -32,7 +32,7 @@ internal sealed class ConvertCommand(string dataDir)
               --folder <dir>        where they go: a folder under Maps, or an absolute path (default: ICE in progress)
               --name <map name>     the converted map's name (one map only); the file is named after it
               --fake-author-time    validated with a 1:00:00.000 author time, so it can go to a club without driving it
-              --me-as-author        your account (testrunAuthor in data/local.jsonc) as the map's author
+              --me-as-author        your account (testrunAuthor in local.jsonc) as the map's author
               --rebuild-blocks      write the custom blocks again even when their items didn't change
               --overwrite           replace a map of the same file name; it keeps that map's UID
               --settings <from>     a settings file, a run id or file, "saved" or "defaults" (data/options.jsonc);

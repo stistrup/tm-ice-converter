@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { fetchVersion, type VersionInfo } from '../api'
 import { useMapStore } from '../stores/map'
 import { useSetupStore } from '../stores/setup'
 
@@ -7,6 +8,10 @@ const store = useMapStore()
 const setup = useSetupStore()
 const manifest = computed(() => store.scene?.manifest)
 const noMesh = computed(() => Object.values(manifest.value?.skipped ?? {}).reduce((sum, count) => sum + count, 0))
+const version = ref<VersionInfo | null>(null)
+onMounted(async () => {
+  version.value = await fetchVersion().catch(() => null)
+})
 const noMeshList = computed(() =>
   Object.entries(manifest.value?.skipped ?? {})
     .sort((a, b) => b[1] - a[1])
@@ -31,6 +36,10 @@ const noMeshList = computed(() =>
     <span :class="$style.help">
       Drag move &nbsp; Right-drag pivot &nbsp; Scroll zoom &nbsp; WASD QE move &nbsp; Shift fast
     </span>
+    <a v-if="version?.newer && version.url" :class="[$style.link, $style.warn]" :href="version.url" target="_blank" rel="noopener">
+      {{ version.latest }} available
+    </a>
+    <span v-if="version">v{{ version.current }}</span>
     <button :class="[$style.setup, { [$style.warn]: setup.status && !setup.status.ready }]" type="button" @click="setup.open()">Setup</button>
   </footer>
 </template>
@@ -65,5 +74,13 @@ const noMeshList = computed(() =>
 
 .setup:hover {
   color: var(--strong);
+}
+
+.link {
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
 }
 </style>

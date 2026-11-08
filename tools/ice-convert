@@ -1,4 +1,3 @@
 #!/usr/bin/env bash
-# no arguments: convert the drop folder
-[ $# -eq 0 ] && set -- convert
+# runs the converter from the repo; no arguments: the GUI
 exec dotnet run --project "$(dirname "$(readlink -f "$0")")/.." -- "$@"

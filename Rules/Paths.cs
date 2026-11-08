@@ -1,6 +1,6 @@
 namespace TmIceConverter;
 
-// from data/local.jsonc
+// from local.jsonc in the user folder
 public static class Paths
 {
     public static string TrackmaniaUser => Local.Folder("trackmania");
@@ -28,11 +28,17 @@ public static class Paths
         => Path.GetRelativePath(Maps, Path.GetFullPath(path)) is var relative && !relative.StartsWith("..") && !Path.IsPathRooted(relative)
             ? relative.Replace('\\', '/') : Path.GetFullPath(path);
 
-    public static string LocalSettings { get; set; } = "local.jsonc";
+    // everything of the user's (config, saved settings, cache): out of the app folder, so an update replaces the app and keeps these
+    public static string UserData => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TmIceConverter");
 
-    // conversion runs, drafts and map links (RunLog); "settings" in local.jsonc, else settings/ next to data/
+    public static string LocalSettings { get; set; } = Path.Combine(UserData, "local.jsonc");
+
+    // what a new local.jsonc starts from (in the app's data/)
+    public static string LocalExample { get; set; } = "local.example.jsonc";
+
+    // conversion runs and each map's settings (RunLog); "settings" in local.jsonc, else in the user folder
     public static string SettingsStore => Local.Paths?.GetValueOrDefault("settings") is { Length: > 0 }
-        ? Local.Folder("settings") : Path.GetFullPath(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(LocalSettings))!, "..", "settings"));
+        ? Local.Folder("settings") : Path.Combine(UserData, "settings");
 
     public static (string Login, string Nickname, string Zone) TestrunAuthor => TestrunAuthorIfSet
         ?? throw new InvalidOperationException($"no \"testrunAuthor\" in {LocalSettings}");
@@ -74,7 +80,7 @@ public static class Paths
     public static void SavePath(string name, string value)
     {
         var text = File.Exists(LocalSettings) ? File.ReadAllText(LocalSettings)
-            : File.ReadAllText(Path.Combine(Path.GetDirectoryName(LocalSettings)!, "local.example.jsonc"));
+            : File.ReadAllText(LocalExample);
         var json = System.Text.Json.JsonSerializer.Serialize(value);
         var existing = System.Text.RegularExpressions.Regex.Match(text, $"\"{System.Text.RegularExpressions.Regex.Escape(name)}\"\\s*:\\s*\"(?:[^\"\\\\]|\\\\.)*\"");
         if (existing.Success) text = text[..existing.Index] + $"\"{name}\": {json}" + text[(existing.Index + existing.Length)..];
@@ -84,6 +90,7 @@ public static class Paths
             if (!paths.Success) throw new InvalidOperationException($"no \"paths\" in {LocalSettings}");
             text = text[..(paths.Index + paths.Length)] + $"\n    \"{name}\": {json}," + text[(paths.Index + paths.Length)..];
         }
+        Directory.CreateDirectory(Path.GetDirectoryName(LocalSettings)!);
         File.WriteAllText(LocalSettings, text);
         local = null;
     }
@@ -103,7 +110,7 @@ public static class Paths
     // our own files, outside the game's folders
     public static string Cache => Local.Paths?.GetValueOrDefault("cache") is { Length: > 0 }
         ? Local.Folder("cache")
-        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TmIceConverter");
+        : UserData;
     public static string Pieces => Path.Combine(Cache, "Mesh");
     public static string Blocks => Path.Combine(Cache, "Blocks");
     public static string Views => Path.Combine(Cache, "Views");

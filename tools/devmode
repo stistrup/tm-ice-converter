@@ -4,7 +4,7 @@ set -euo pipefail
 case "${1:-}" in on) want=true ;; off) want=false ;; *) echo "usage: devmode on|off" >&2; exit 2 ;; esac
 
 root="$(dirname "$(readlink -f "$0")")/.."
-openplanet=$(grep -o '"openplanet"[[:space:]]*:[[:space:]]*"[^"]*"' "$root/data/local.jsonc" | sed 's/.*"\([^"]*\)"$/\1/')
+openplanet=$(grep -o '"openplanet"[[:space:]]*:[[:space:]]*"[^"]*"' "${XDG_DATA_HOME:-$HOME/.local/share}/TmIceConverter/local.jsonc" | sed 's/.*"\([^"]*\)"$/\1/')
 ini="${openplanet/#\~/$HOME}/Settings.ini"
 [ -f "$ini" ] || { echo "no $ini" >&2; exit 1; }
 
