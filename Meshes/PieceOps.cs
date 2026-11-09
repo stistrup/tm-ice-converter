@@ -23,25 +23,36 @@ internal static class PieceOps
 
     // shore in snow: visible ground above the height becomes snow, cut along it; below keeps its own material
     public static List<MeshPiece> SnowAbove(List<MeshPiece> pieces, float height, string snow)
+        => SnowWhere(pieces, snow, (p, i) => height - p.Positions[3 * i + 1]);
+
+    // cliff in snow at its foot: snow rests up to the height above flat ground where it's flat, less the steeper it gets, none up a wall
+    public static List<MeshPiece> SnowFoot(List<MeshPiece> pieces, float height, string snow)
+        => SnowWhere(pieces, snow, (p, i) => p.Positions[3 * i + 1] - FlatGround - height * Math.Max(0, p.Normals?[3 * i + 1] ?? 1));
+
+    // a flat terrain block's top in its own frame, every vista
+    private const float FlatGround = 2;
+
+    // visible ground where the field is below zero becomes snow, cut along its zero line
+    private static List<MeshPiece> SnowWhere(List<MeshPiece> pieces, string snow, Func<MeshPiece, int, float> field)
     {
         var result = new List<MeshPiece>();
         foreach (var p in pieces)
         {
             if (!p.Visible || p.Material == "Water" || p.Material == snow) { result.Add(p); continue; }
-            var (above, below) = SplitAt(p, height);
-            if (above is not null) result.Add(above with { Material = snow, Name = p.Name + "_snow" });
-            if (below is not null) result.Add(below);
+            var (white, rest) = Split(p, Enumerable.Range(0, p.Positions.Length / 3).Select(i => field(p, i)).ToArray());
+            if (white is not null) result.Add(white with { Material = snow, Name = p.Name + "_snow" });
+            if (rest is not null) result.Add(rest);
         }
         return result;
     }
 
-    // triangles clipped against the plane y = height, attributes interpolated; null for an empty side
-    public static (MeshPiece? Above, MeshPiece? Below) SplitAt(MeshPiece p, float height)
+    // triangles clipped along the zero line of a value per vertex, attributes interpolated; null for an empty side
+    public static (MeshPiece? Below, MeshPiece? Above) Split(MeshPiece p, float[] value)
     {
         var count = p.Positions.Length / 3;
-        var streams = new[] { p.Positions, p.Normals, p.Uv0, p.Uv1, p.Colors };
+        var streams = new[] { p.Positions, p.Normals, p.Uv0, p.Uv1, p.Colors, value };
         var strides = streams.Select(s => s is null ? 0 : s.Length / count).ToArray();
-        var sides = new[] { (Streams: streams.Select(_ => new List<float>()).ToArray(), Up: true), (Streams: streams.Select(_ => new List<float>()).ToArray(), Up: false) };
+        var sides = new[] { (Streams: streams.Select(_ => new List<float>()).ToArray(), Below: true), (Streams: streams.Select(_ => new List<float>()).ToArray(), Below: false) };
         float[] Vertex(int i) => streams.SelectMany((s, k) => s is null ? [] : s.AsSpan(i * strides[k], strides[k]).ToArray()).ToArray();
         void Emit(List<float>[] into, float[] v)
         {
@@ -51,18 +62,18 @@ internal static class PieceOps
         for (int t = 0; t < p.Indices.Length; t += 3)
         {
             var tri = p.Indices[t..(t + 3)].Select(Vertex).ToArray();
-            foreach (var (into, up) in sides)
+            foreach (var (into, below) in sides)
             {
-                // Sutherland-Hodgman against one half-space, then a fan
+                // Sutherland-Hodgman against one side, then a fan; the value is the vertex's last float
                 var poly = new List<float[]>();
                 for (int i = 0; i < 3; i++)
                 {
                     var (a, b) = (tri[i], tri[(i + 1) % 3]);
-                    bool In(float[] v) => up ? v[1] >= height : v[1] < height;
+                    bool In(float[] v) => below ? v[^1] < 0 : v[^1] >= 0;
                     if (In(a)) poly.Add(a);
                     if (In(a) != In(b))
                     {
-                        var f = (height - a[1]) / (b[1] - a[1]);
+                        var f = a[^1] / (a[^1] - b[^1]);
                         poly.Add(a.Zip(b, (x, y) => x + (y - x) * f).ToArray());
                     }
                 }

@@ -36,7 +36,7 @@ public sealed class Translations
     // per piece: "Name x,y,z" (grid cell) or "Name x, y, z" (free block, item) -> keep | custom | item | skin | snow | tops | plain | remove | frozen
     public Dictionary<string, string> Pieces { get; } = [];
 
-    public static readonly string[] PieceChoices = ["keep", "custom", "item", "skin", "snow", "tops", "plain", "remove", "frozen"];
+    public static readonly string[] PieceChoices = ["keep", "custom", "item", "skin", "snow", "snowbottom", "tops", "plain", "remove", "frozen"];
 
     // off: only the pieces picked by hand convert; options, areas and map-wide passes stay out
     public bool Presets { get; private set; } = true;
@@ -62,6 +62,9 @@ public sealed class Translations
 
     // terrain cell areas (x0, z0, x1, z1) that become snow
     public List<(int X0, int Z0, int X1, int Z1)> SnowTerrain { get; } = [];
+
+    // snow only at the foot, below where the terrain gets steep
+    public HashSet<(int X, int Z)> SnowBottom { get; } = [];
 
     public bool SnowsTerrainAt(int x, int z) => SnowTerrain.Any(a => x >= a.X0 && x <= a.X1 && z >= a.Z0 && z <= a.Z1);
 
@@ -110,8 +113,12 @@ public sealed class Translations
         foreach (var (k, v) in own.Pieces) result.Pieces[NormalizeKeep(k)] = v;
         // snow picked on a grid piece: its column is a snowTerrain area
         foreach (var (k, v) in result.Pieces)
-            if (v == "snow" && Regex.Match(k, @"^\S+ (-?\d+),-?\d+,(-?\d+)$") is { Success: true } m)
-                result.SnowTerrain.Add((int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value), int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value)));
+            if (v is "snow" or "snowbottom" && Regex.Match(k, @"^\S+ (-?\d+),-?\d+,(-?\d+)$") is { Success: true } m)
+            {
+                var (x, z) = (int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value));
+                result.SnowTerrain.Add((x, z, x, z));
+                if (v == "snowbottom") result.SnowBottom.Add((x, z));
+            }
         foreach (var (k, v) in UnavailableIn) result.UnavailableIn[k] = v;
         foreach (var (k, v) in Items) result.Items[k] = v;
         foreach (var (k, v) in ItemsOnSnow) result.ItemsOnSnow[k] = v;

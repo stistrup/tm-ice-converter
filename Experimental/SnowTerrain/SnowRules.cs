@@ -37,7 +37,7 @@ internal static class SnowRules
         var (name, coord) = (block.Name, block.Coord);
         if (!run.Shapes.IsTerrain(name) || !run.Rules.SnowsTerrainAt(coord.X, coord.Z) || IsWater(name)
             || run.Snow.BuiltOn.Any(c => c.X == coord.X && c.Z == coord.Z && c.Y <= coord.Y + 1)
-            || run.Items.SnowTerrainFor(name, VariantOf(block), MobilOf(block), run.Map.Collection!.Value, run.Snow.UnderDeco.Contains((coord.X, coord.Z))) is not { } snowBlock) return false;
+            || run.Items.SnowTerrainFor(name, VariantOf(block), MobilOf(block), run.Map.Collection!.Value, run.Snow.UnderDeco.Contains((coord.X, coord.Z)), run.Rules.SnowBottom.Contains((coord.X, coord.Z))) is not { } snowBlock) return false;
         run.Customs[block] = snowBlock;
         block.Flags &= ~0xFFF & ~(0x3F << 21);
         Bump(run.Report.SnowTerrain, name);

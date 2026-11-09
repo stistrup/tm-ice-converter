@@ -28,7 +28,7 @@ internal sealed partial class ConversionPreview(string dataDir)
         ["roads"] = [new("", "As the rules say"), new("keep", "Keep original"), new("custom", "Custom ice block"), new("item", "Ice item"), new("skin", "Ice skin")],
         ["waypoints"] = [new("", "As the rules say"), new("keep", "Keep original"), new("custom", "Custom ice block"), new("skin", "Ice skin")],
         ["deco"] = [new("", "As the rules say"), new("keep", "Keep original"), new("snow", "Snow"), new("tops", "Ice on tops")],
-        ["terrain"] = [new("", "As the rules say"), new("keep", "Keep original"), new("snow", "Snow")],
+        ["terrain"] = [new("", "As the rules say"), new("keep", "Keep original"), new("snow", "Snow"), new("snowbottom", "Snow, bottom only")],
         ["special"] = [new("", "As the rules say"), new("keep", "Keep original"), new("plain", "Plain ice")],
         ["items"] = [new("", "As the rules say"), new("keep", "Keep original"), new("remove", "Remove"), new("frozen", "Frozen (trees)")],
     };

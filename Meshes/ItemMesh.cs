@@ -14,6 +14,8 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
     private const float TopOfIceMinArea = 256;
     // m; was 0.3 with the whole bank in snow
     private const float SnowUnderWater = 0.1f;
+    // m above flat ground where a cliff cell's bottom snow stops
+    private const float SnowBottomHeight = 1.5f;
 
     public ItemMeshResult Make(ItemRequest r)
     {
@@ -40,6 +42,11 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
         // shore: snow down to just under the water
         if (recipe.Body && catalog.IsTerrain(r.Block) && pieces.FirstOrDefault(p => p.Visible && p.Material == "Water") is { } water)
             pieces = PieceOps.SnowAbove(pieces, water.Positions[1] - SnowUnderWater, "PlatformIce_DecoHill");
+        if (r.Kind == ItemKind.SnowBottom)
+        {
+            pieces = TerrainFaces.AsTerrainBelow(pieces, catalog.Environment);
+            pieces = PieceOps.SnowFoot(pieces, SnowBottomHeight, "PlatformIce_DecoHill");
+        }
         var gameplay = BlockNames.IsGameplayBlock(r.Block);
         if (recipe.Skin && gameplay) pieces = Pads.AroundPad(pieces, new BlockCatalog(Paths.ExtractedStadium).Plain.Export(parts), Pads.PadGameplayOf(r.Block), r.Style.SkinLift);
         else if (gameplay) pieces = Pads.IcyPads(pieces, Pads.PadGameplayOf(r.Block));
@@ -75,7 +82,7 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
             if (key.Split('|') is [var pattern, var material] && Regex.IsMatch(block, "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$"))
                 map[material] = to;
         if (recipe.Body) foreach (var key in map.Keys.Where(m => m.StartsWith("Deco") && !MaterialLib.SkinCovers(block, m, recipe.ZoneSides)).ToList()) map.Remove(key);
-        if (recipe.OnTerrainBody) foreach (var key in map.Keys.Where(m => m.StartsWith(TerrainFaces.TerrainShader) || TerrainFaces.ShaderOf(m, environment) is not null).ToList()) map.Remove(key);
+        if (recipe.OnTerrainBody || r.Kind == ItemKind.SnowBottom) foreach (var key in map.Keys.Where(m => m.StartsWith(TerrainFaces.TerrainShader) || TerrainFaces.ShaderOf(m, environment) is not null).ToList()) map.Remove(key);
         // "native" in ice-materials.jsonc: the game's own material, linked after import
         var native = map.Where(kv => kv.Value == "native").Select(kv => kv.Key).ToHashSet();
         foreach (var key in native) map.Remove(key);

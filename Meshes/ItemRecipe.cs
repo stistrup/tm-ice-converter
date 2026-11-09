@@ -23,6 +23,8 @@ public enum ItemKind
     TopOfIceBody,
     // skin over a native air block (skinsOnly)
     Skin,
+    // terrain block in snow only at its foot, the rest its own look
+    SnowBottom,
     // the visible terrain of a hill/cliff block, beside its custom block (terrain light in the block's own lightmap darkened the road)
     TerrainFaces,
 }
@@ -48,7 +50,7 @@ internal sealed record ItemRecipe(ItemKind Kind, bool Top, bool TopsBody, bool B
     {
         var kind = r.Kind;
         var topsBody = kind is ItemKind.TopsBody or ItemKind.TopOfIceBody;
-        var body = kind is ItemKind.GroundBody or ItemKind.StackedBody or ItemKind.TerrainFaces || topsBody && r.Ground;
+        var body = kind is ItemKind.GroundBody or ItemKind.StackedBody or ItemKind.TerrainFaces or ItemKind.SnowBottom || topsBody && r.Ground;
         var onTerrainBody = body && BlockNames.OnTerrainShape(r.Block);
         var whole = (kind == ItemKind.InTerrain || kind == ItemKind.None && r.Ground) && BlockNames.IsWholeOnGround(r.Block, catalog.Environment);
         var skin = !whole && !body && !topsBody && kind != ItemKind.Gated && (kind != ItemKind.None || IsSkin(catalog, r.Block, r.Ground));
@@ -90,6 +92,7 @@ internal sealed record ItemRecipe(ItemKind Kind, bool Top, bool TopsBody, bool B
             ItemKind.Gated => "_gated",
             ItemKind.GroundBody => zoneSides && !BlockNames.OnTerrainShape(block) ? "_gbodyzs" : "_gbody",
             ItemKind.StackedBody => "_gbodys",
+            ItemKind.SnowBottom => "_gbottom",
             ItemKind.TopsBody => "_topsbody",
             ItemKind.TopOfIceBody => "_topsbodyi",
             ItemKind.InTerrain when BlockNames.IsWholeOnGround(block, catalog.Environment) => "_interrain",
