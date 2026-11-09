@@ -66,6 +66,8 @@ internal static partial class BlockRules
             case "tops":
                 TopsOnly(block, run);
                 return true;
+            case "snow" when SnowRules.PickedSnow(block, run):
+                return true;
             case "plain" when Gates.PlainOf(block.Name, run) is { } plain:
                 block.Name = plain;
                 return false;

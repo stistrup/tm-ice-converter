@@ -25,10 +25,11 @@ internal static class SnowBlocks
     }
 
     // deco in a snow terrain area: its own archetype keeps the ground away, its deco surface in the same snow
-    public static IceBlock? SnowDecoFor(this ItemBuilder items, string block, int variant, int mobil, Id collection)
+    // also for a snow pick on a deco block; on the ground it's the ground body
+    public static IceBlock? SnowDecoFor(this ItemBuilder items, string block, int variant, int mobil, Id collection, bool ground = false)
     {
-        if (CustomBlockWriter.VariantId(false, variant, mobil) is not { } variantId
-            || items.For(block, false, variant, mobil, new HashSet<int>(), ItemKind.None) is not { } item || item == IceItem.Nothing) return null;
+        if (CustomBlockWriter.VariantId(ground, variant, mobil) is not { } variantId
+            || items.For(block, ground, variant, mobil, new HashSet<int>(), ground ? ItemKind.GroundBody : ItemKind.None) is not { } item || item == IceItem.Nothing) return null;
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + "_decosnow2";
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Blocks, name + ".Block.Gbx");

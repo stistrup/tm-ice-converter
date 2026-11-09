@@ -21,6 +21,63 @@ internal static class PieceOps
         return p with { Positions = Map(p.Positions, v => Vector3.Transform(v, m)), Normals = p.Normals is { } n ? Map(n, v => Vector3.TransformNormal(v, m)) : null };
     }
 
+    // shore in snow: visible ground above the height becomes snow, cut along it; below keeps its own material
+    public static List<MeshPiece> SnowAbove(List<MeshPiece> pieces, float height, string snow)
+    {
+        var result = new List<MeshPiece>();
+        foreach (var p in pieces)
+        {
+            if (!p.Visible || p.Material == "Water" || p.Material == snow) { result.Add(p); continue; }
+            var (above, below) = SplitAt(p, height);
+            if (above is not null) result.Add(above with { Material = snow, Name = p.Name + "_snow" });
+            if (below is not null) result.Add(below);
+        }
+        return result;
+    }
+
+    // triangles clipped against the plane y = height, attributes interpolated; null for an empty side
+    public static (MeshPiece? Above, MeshPiece? Below) SplitAt(MeshPiece p, float height)
+    {
+        var count = p.Positions.Length / 3;
+        var streams = new[] { p.Positions, p.Normals, p.Uv0, p.Uv1, p.Colors };
+        var strides = streams.Select(s => s is null ? 0 : s.Length / count).ToArray();
+        var sides = new[] { (Streams: streams.Select(_ => new List<float>()).ToArray(), Up: true), (Streams: streams.Select(_ => new List<float>()).ToArray(), Up: false) };
+        float[] Vertex(int i) => streams.SelectMany((s, k) => s is null ? [] : s.AsSpan(i * strides[k], strides[k]).ToArray()).ToArray();
+        void Emit(List<float>[] into, float[] v)
+        {
+            var at = 0;
+            for (int k = 0; k < streams.Length; k++) { into[k].AddRange(v.AsSpan(at, strides[k]).ToArray()); at += strides[k]; }
+        }
+        for (int t = 0; t < p.Indices.Length; t += 3)
+        {
+            var tri = p.Indices[t..(t + 3)].Select(Vertex).ToArray();
+            foreach (var (into, up) in sides)
+            {
+                // Sutherland-Hodgman against one half-space, then a fan
+                var poly = new List<float[]>();
+                for (int i = 0; i < 3; i++)
+                {
+                    var (a, b) = (tri[i], tri[(i + 1) % 3]);
+                    bool In(float[] v) => up ? v[1] >= height : v[1] < height;
+                    if (In(a)) poly.Add(a);
+                    if (In(a) != In(b))
+                    {
+                        var f = (height - a[1]) / (b[1] - a[1]);
+                        poly.Add(a.Zip(b, (x, y) => x + (y - x) * f).ToArray());
+                    }
+                }
+                for (int i = 1; i + 1 < poly.Count; i++) { Emit(into, poly[0]); Emit(into, poly[i]); Emit(into, poly[i + 1]); }
+            }
+        }
+        MeshPiece? Side(List<float>[] s)
+        {
+            if (s[0].Count == 0) return null;
+            float[]? Of(int k) => streams[k] is null ? null : s[k].ToArray();
+            return p with { Positions = s[0].ToArray(), Normals = Of(1), Uv0 = Of(2), Uv1 = Of(3), Colors = Of(4), Indices = Enumerable.Range(0, s[0].Count / 3).ToArray() };
+        }
+        return (Side(sides[0].Streams), Side(sides[1].Streams));
+    }
+
     // drop the foot at terrain level (flickers)
     public static List<MeshPiece> WithoutFoot(List<MeshPiece> skin)
     {

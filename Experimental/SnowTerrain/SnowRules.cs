@@ -28,7 +28,8 @@ internal sealed class SnowArea
 
 internal static class SnowRules
 {
-    private static bool IsWater(string terrain) => System.Text.RegularExpressions.Regex.IsMatch(terrain, "Lake|Sea|Water|River");
+    // open water; shores (WaterHill, LakeShore) are ground at the water's edge
+    private static bool IsWater(string terrain) => System.Text.RegularExpressions.Regex.IsMatch(terrain, "Lake|Sea|Water|River") && !System.Text.RegularExpressions.Regex.IsMatch(terrain, "Hill|Shore");
 
     // the native block goes, the game still draws the ground; placed as variant 0 of the archetype
     public static bool TerrainCell(CGameCtnBlock block, ConversionRun run)
@@ -51,6 +52,16 @@ internal static class SnowRules
             && run.Grid.Any(t => t.Coord.X == coord.X && t.Coord.Z == coord.Z && run.Shapes.IsTerrain(t.Name) && !IsWater(t.Name)))
             block.Flags &= ~BlockFlags.Ground;
         return false;
+    }
+
+    // snow picked on a non-terrain block: its deco surface in the snow ground
+    public static bool PickedSnow(CGameCtnBlock block, ConversionRun run)
+    {
+        if (run.Shapes.IsTerrain(block.Name) || block.IsPillar || run.Shapes.IsPillarBlock(block.Name) || block.IsFree
+            || run.Items.SnowDecoFor(block.Name, VariantOf(block), MobilOf(block), run.Map.Collection!.Value, block.IsGround) is not { } snowDeco) return false;
+        run.Customs[block] = snowDeco;
+        Bump(run.Report.SnowTerrain, block.Name);
+        return true;
     }
 
     public static bool DecoInTerrain(CGameCtnBlock block, ConversionRun run)

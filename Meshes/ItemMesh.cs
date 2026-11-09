@@ -12,6 +12,8 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
 
     private const float TopMinY = 0.02f;
     private const float TopOfIceMinArea = 256;
+    // m; was 0.3 with the whole bank in snow
+    private const float SnowUnderWater = 0.1f;
 
     public ItemMeshResult Make(ItemRequest r)
     {
@@ -25,7 +27,8 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
         var parts = catalog.FindPlacedBlockParts(r.Block, r.Ground, r.Variant, r.Mobil, r.Clips)
             ?? throw new InvalidDataException($"{r.Block} has nothing to draw");
         var waypoint = recipe.Skin ? null : catalog.Waypoint(r.Block);
-        var pieces = export.Export(parts);
+        // water only drawn: its physics is the native block's water
+        var pieces = export.Export(parts).Where(p => p.Visible || p.Material != "Water").ToList();
         if (recipe.TopsBody)
         {
             if (WithIcedTops(pieces, parts, recipe, materialMap, export, tilt) is not { } withTops) return Stop(NothingToCover);
@@ -34,6 +37,9 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
         if (!r.Style.TerrainSnow && ItemRecipe.OnTerrain(r.Block, r.Ground, r.Kind)) pieces = PieceOps.WithoutFoot(pieces);
         // terrain layer masks: another environment's terrain material reads them as its own layers
         if (recipe.Body && catalog.IsTerrain(r.Block)) pieces = pieces.Select(p => p with { Colors = null }).ToList();
+        // shore: snow down to just under the water
+        if (recipe.Body && catalog.IsTerrain(r.Block) && pieces.FirstOrDefault(p => p.Visible && p.Material == "Water") is { } water)
+            pieces = PieceOps.SnowAbove(pieces, water.Positions[1] - SnowUnderWater, "PlatformIce_DecoHill");
         var gameplay = BlockNames.IsGameplayBlock(r.Block);
         if (recipe.Skin && gameplay) pieces = Pads.AroundPad(pieces, new BlockCatalog(Paths.ExtractedStadium).Plain.Export(parts), Pads.PadGameplayOf(r.Block), r.Style.SkinLift);
         else if (gameplay) pieces = Pads.IcyPads(pieces, Pads.PadGameplayOf(r.Block));
