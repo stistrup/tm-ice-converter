@@ -77,7 +77,7 @@ internal static class ReportWriter
         if (report.SnowTerrain.Count > 0)
         {
             sb.AppendLine($"\n## Terrain in snow ({report.SnowTerrain.Values.Sum()})\n");
-            sb.AppendLine("From the map's snowTerrain areas; cells with a block on them stay, water stays.\n");
+            sb.AppendLine("From the map's snowTerrain areas; cells under a ground block stay, water stays.\n");
             foreach (var (name, n) in report.SnowTerrain.OrderByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n}");
         }
         if (report.KeptUnder.Count > 0)

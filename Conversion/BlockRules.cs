@@ -17,6 +17,7 @@ internal static partial class BlockRules
         Gates.EngineOff,
         AlreadyIce,
         OnKeepList,
+        SnowRules.PillarOnSnow,
         Pillar,
         SnowRules.TerrainCell,
         TerrainStays,
@@ -71,6 +72,7 @@ internal static partial class BlockRules
             // presets off: only a picked snow column changes an unpicked block
             case null when !run.Rules.Presets:
                 if (SnowRules.TerrainCell(block, run) || SnowRules.DecoInTerrain(block, run)) return true;
+                SnowRules.PillarOnSnow(block, run);
                 Bump(run.Report.KeptByList, block.Name);
                 return true;
             default:

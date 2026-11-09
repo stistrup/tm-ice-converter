@@ -209,6 +209,7 @@ internal sealed partial class ConversionPreview(string dataDir)
             var blocks = map.GetBlocks().ToList();
             var blockKeys = blocks.Select(b => KeyOf(b.Name, b)).ToList();
             var names = blocks.Select(b => b.Name).ToList();
+            var flags = blocks.Select(b => b.Flags).ToList();
             var items = (map.AnchoredObjects ?? []).Select(o => (Item: o, o.ItemModel.Id, o.AbsolutePositionInMap)).ToList();
             var run = converter.Run(map, own);
 
@@ -231,7 +232,8 @@ internal sealed partial class ConversionPreview(string dataDir)
             var blockOrigin = blocks.Index().ToDictionary(b => b.Item, b => b.Index, ReferenceEqualityComparer.Instance);
             var itemOrigin = items.Index().ToDictionary(o => (object)o.Item.Item, o => o.Index, ReferenceEqualityComparer.Instance);
             var converted = map.GetBlocks().ToList();
-            var changedBlocks = converted.Where(b => !blockOrigin.ContainsKey(b) || run.Customs.ContainsKey(b) || run.Renamed.Contains(b)).ToHashSet();
+            // flags too: a pillar set from ground to air draws other clips
+            var changedBlocks = converted.Where(b => !blockOrigin.TryGetValue(b, out var o) || run.Customs.ContainsKey(b) || run.Renamed.Contains(b) || b.Flags != flags[o]).ToHashSet();
             // the terrain a native ground block hid shows again under its custom block
             var underCustoms = run.Customs.Keys.Where(b => b.IsGround && run.Cells.ContainsKey(b) && !BlockNames.OnTerrainShape(names[blockOrigin[b]]))
                 .SelectMany(b => run.Cells[b]).ToHashSet();

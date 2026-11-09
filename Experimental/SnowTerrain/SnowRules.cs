@@ -8,7 +8,7 @@ namespace TmIceConverter;
 // per-map snowTerrain areas
 internal sealed class SnowArea
 {
-    // cells where a placed block covers the terrain; pillars leave it showing
+    // cells where a ground block hides the terrain; air blocks and pillars leave it showing
     public HashSet<Int3> BuiltOn { get; }
     public HashSet<(int X, int Z)> UnderDeco { get; }
 
@@ -22,7 +22,7 @@ internal sealed class SnowArea
             // one cell can't reach over another
             return sx * sz == 1 ? [] : Enumerable.Range(0, sx).SelectMany(dx => Enumerable.Range(0, sz).Select(dz => (b.Coord.X + dx, b.Coord.Z + dz)));
         }).ToHashSet();
-        BuiltOn = run.Grid.Where(b => !shapes.IsTerrain(b.Name) && !shapes.IsPillarBlock(b.Name)).SelectMany(b => run.Cells[b]).ToHashSet();
+        BuiltOn = run.Grid.Where(b => b.IsGround && !b.IsPillar && !shapes.IsTerrain(b.Name) && !shapes.IsPillarBlock(b.Name)).SelectMany(b => run.Cells[b]).ToHashSet();
     }
 }
 
@@ -41,6 +41,16 @@ internal static class SnowRules
         block.Flags &= ~0xFFF & ~(0x3F << 21);
         Bump(run.Report.SnowTerrain, name);
         return true;
+    }
+
+    // a ground pillar's bottom clip lays a full-cell Deco patch (with its vegetation) level with the snow; the air pillar has none
+    public static bool PillarOnSnow(CGameCtnBlock block, ConversionRun run)
+    {
+        var coord = block.Coord;
+        if (block.IsGround && (block.IsPillar || run.Shapes.IsPillarBlock(block.Name)) && run.Rules.SnowsTerrainAt(coord.X, coord.Z)
+            && run.Grid.Any(t => t.Coord.X == coord.X && t.Coord.Z == coord.Z && run.Shapes.IsTerrain(t.Name) && !IsWater(t.Name)))
+            block.Flags &= ~BlockFlags.Ground;
+        return false;
     }
 
     public static bool DecoInTerrain(CGameCtnBlock block, ConversionRun run)
