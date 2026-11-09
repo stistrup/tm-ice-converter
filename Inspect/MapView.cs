@@ -337,7 +337,12 @@ public sealed class MapView(BlockCatalog shapes)
         string? path = null;
         // linked to the game's own material after import
         if (name.StartsWith(MaterialLib.NativePrefix) && MaterialLib.NativeLink(name[MaterialLib.NativePrefix.Length..], shapes.Environment) is { } link
-            && Path.Combine(Path.GetDirectoryName(Paths.ExtractedStadium)!, link.Replace('\\', '/') + ".Material.Gbx") is var native && File.Exists(native)) path = native;
+            && Path.Combine(Path.GetDirectoryName(Paths.ExtractedStadium)!, link.Replace('\\', '/') + ".Material.Gbx") is var native && File.Exists(native))
+        {
+            // terrain materials (Cliff, Dirt…) drawn as the terrain shader, like native terrain pieces
+            if (ShaderOf(native) is { } terrain && terrain.Contains("_Ids")) return MaterialKey(terrain, modifier, ours);
+            path = native;
+        }
         else if (modifier is not null && modifier.Swaps.TryGetValue(name, out var swap) && FindFile(modifier.Folder, swap + ".Material.Gbx") is { } m) path = m;
         else if (name.IndexOf('_') is > 0 and var u
             && FindFile(Path.Combine(Paths.ExtractedStadium, "Media", "Modifier", name[..u]), name[(u + 1)..] + ".Material.Gbx") is { } i) path = i;
@@ -365,6 +370,9 @@ public sealed class MapView(BlockCatalog shapes)
         materials[name] = new SceneMaterial(material.Name, material.Kind == VegetKind.Leaf ? "VegetLeaf" : "VegetBark", textures);
         return name;
     }
+
+    private static string? ShaderOf(string materialPath)
+        => (Gbx.ParseHeader(materialPath).RefTable?.Files ?? []).Select(f => f.FilePath).FirstOrDefault(f => f.EndsWith(".Material.gbx", StringComparison.OrdinalIgnoreCase)) is { } sh ? Stem(sh) : null;
 
     private SceneMaterial Material(string name, string path)
     {

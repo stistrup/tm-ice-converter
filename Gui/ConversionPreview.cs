@@ -29,6 +29,8 @@ internal sealed partial class ConversionPreview(string dataDir)
         ["waypoints"] = [new("", "As the rules say"), new("keep", "Keep original"), new("custom", "Custom ice block"), new("skin", "Ice skin")],
         ["deco"] = [new("", "As the rules say"), new("keep", "Keep original"), new("snow", "Snow"), new("tops", "Ice on tops")],
         ["terrain"] = [new("", "As the rules say"), new("keep", "Keep original"), new("snow", "Snow"), new("snowbottom", "Snow, bottom only")],
+        // no bottom-only snow: the snow already stops at the water
+        ["shore"] = [new("", "As the rules say"), new("keep", "Keep original"), new("snow", "Snow")],
         ["special"] = [new("", "As the rules say"), new("keep", "Keep original"), new("plain", "Plain ice")],
         ["items"] = [new("", "As the rules say"), new("keep", "Keep original"), new("remove", "Remove"), new("frozen", "Frozen (trees)")],
     };
@@ -36,13 +38,13 @@ internal sealed partial class ConversionPreview(string dataDir)
     public static readonly Dictionary<string, string> KindLabels = new()
     {
         ["roads"] = "Roads, platforms", ["waypoints"] = "Start, checkpoint, finish", ["deco"] = "Deco, pillars, walls",
-        ["terrain"] = "Terrain", ["special"] = "Special", ["items"] = "Items",
+        ["terrain"] = "Terrain", ["shore"] = "Shore, water", ["special"] = "Special", ["items"] = "Items",
     };
 
     private static readonly HashSet<string> SceneryRules = ["Pillar", "Concrete", "WallsOnly", "NoIceWanted", "DecoSceneryOff", "DecoInTerrain", "SnowOverIceTwin"];
 
     private static string KindOf(ConversionRun run, string name, string? rule)
-        => run.Shapes.IsTerrain(name) ? "terrain"
+        => run.Shapes.IsTerrain(name) ? System.Text.RegularExpressions.Regex.IsMatch(name, "Lake|Sea|Water|River") ? "shore" : "terrain"
             : run.Shapes.Waypoint(name) is not null ? "waypoints"
             : BlockNames.IsGameplayBlock(name) ? "special"
             : name.StartsWith("Deco") || rule is not null && SceneryRules.Contains(rule) ? "deco"
