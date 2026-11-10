@@ -68,8 +68,7 @@ public sealed class MapView(BlockCatalog shapes)
             {
                 var (p, r) = (block.AbsolutePositionInMap ?? default, block.YawPitchRoll ?? default);
                 var free = Matrix4x4.CreateFromYawPitchRoll(r.X, r.Y, r.Z) * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
-                var all = shapes.ClipSides(name, block.IsGround, BlockFlags.VariantOf(block))
-                    .SelectMany(s => s.Clips.Where(c => !c.Vertical).Select(c => ClipKey.Of(s.Bit, c.Index))).ToHashSet();
+                var all = BlockKinds.DrawnFreeClips(shapes, block);
                 if (onlyBlocks?.Contains(block) != false)
                     Add(block, name, block.IsGround, BlockFlags.VariantOf(block), BlockFlags.MobilOf(block), free, all, Info(block, p));
                 continue;

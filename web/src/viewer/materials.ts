@@ -103,6 +103,8 @@ const fragmentShader = /* glsl */ `
     if (hasMap.x > 0.5) albedo = texture2D(mapUv, vUv);
     if (hasMap.z > 0.5) {
       vec2 sideUv = abs(n.x) > abs(n.z) ? vWorld.zy : vWorld.xy;
+      // no top texture: flat faces take the side one from above
+      if (hasMap.y < 0.5 && abs(n.y) > max(abs(n.x), abs(n.z))) sideUv = vec2(vWorld.x, -vWorld.z);
       albedo = texture2D(mapSide, sideUv * TILE);
     }
     if (hasMap.y > 0.5) {
