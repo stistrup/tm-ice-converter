@@ -14,8 +14,9 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
     private const float TopOfIceMinArea = 256;
     // m; was 0.3 with the whole bank in snow
     private const float SnowUnderWater = 0.1f;
-    // m above flat ground where a cliff cell's bottom snow stops
-    private const float SnowBottomHeight = 0.5f;
+    // m above flat ground where the snow stops up a slope
+    private const float SnowLip = 0.3f;
+    private const string Snow = "PlatformIce_DecoHill";
 
     public ItemMeshResult Make(ItemRequest r)
     {
@@ -39,20 +40,7 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
         if (!r.Style.TerrainSnow && ItemRecipe.OnTerrain(r.Block, r.Ground, r.Kind)) pieces = PieceOps.WithoutFoot(pieces);
         // terrain layer masks: another environment's terrain material reads them as its own layers
         if (recipe.Body && catalog.IsTerrain(r.Block)) pieces = pieces.Select(p => p with { Colors = null }).ToList();
-        // shore: snow down to just under the water
-        var shore = recipe.Body && catalog.IsTerrain(r.Block) ? pieces.FirstOrDefault(p => p.Visible && p.Material == "Water") : null;
-        if (shore is not null)
-            pieces = PieceOps.SnowAbove(pieces, shore.Positions[1] - SnowUnderWater, "PlatformIce_DecoHill");
-        if (r.Kind == ItemKind.SnowBottom)
-        {
-            pieces = TerrainFaces.AsTerrainBelow(pieces, catalog.Environment);
-            pieces = PieceOps.SnowFoot(pieces, SnowBottomHeight, "PlatformIce_DecoHill");
-        }
-        // terrain in snow drives as snow where it looks like snow
-        if (recipe.Body && catalog.IsTerrain(r.Block))
-            pieces = shore is not null ? PieceOps.SnowAboveCollision(pieces, shore.Positions[1] - SnowUnderWater, "PlatformIce_DecoHill")
-                : r.Kind == ItemKind.SnowBottom ? PieceOps.SnowFoot(pieces, SnowBottomHeight, "PlatformIce_DecoHill", collision: true)
-                : pieces.Select(p => p.Visible ? p : p with { Material = "PlatformIce_DecoHill" }).ToList();
+        if (r.Kind == ItemKind.SnowTerrain) pieces = SnowTerrain(pieces, catalog.Environment, r.SnowKeep);
         var gameplay = BlockNames.IsGameplayBlock(r.Block);
         if (recipe.Skin && gameplay) pieces = Pads.AroundPad(pieces, new BlockCatalog(Paths.ExtractedStadium).Plain.Export(parts), Pads.PadGameplayOf(r.Block), r.Style.SkinLift);
         else if (gameplay) pieces = Pads.IcyPads(pieces, Pads.PadGameplayOf(r.Block));
@@ -78,6 +66,19 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
         return new ItemMeshResult(pieces, waypoint, catalog);
     }
 
+    // terrain in snow: shores down to the water, the rest its ground (flat ground, a hill's or cliff's foot); drives as it looks
+    private static List<MeshPiece> SnowTerrain(List<MeshPiece> pieces, string? environment, IReadOnlyList<Vector2>? keep)
+    {
+        pieces = TerrainFaces.AsTerrainBelow(pieces, environment);
+        if (pieces.FirstOrDefault(p => p.Visible && p.Material == "Water") is { } water)
+        {
+            var line = water.Positions[1] - SnowUnderWater;
+            return PieceOps.SnowAboveCollision(PieceOps.SnowAbove(pieces, line, Snow, keep), line, Snow, keep);
+        }
+        // the ground in snow, up to the lip where it climbs; none on top yet
+        return PieceOps.SnowFoot(PieceOps.SnowFoot(pieces, SnowLip, Snow, false, keep), SnowLip, Snow, true, keep);
+    }
+
     private static bool IsTerrainFace(MeshPiece p, string? environment)
         => p.Material.StartsWith(TerrainFaces.TerrainShader) || TerrainFaces.ShaderOf(p.Material, environment) is not null;
 
@@ -90,7 +91,8 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
             if (key.Split('|') is [var pattern, var material] && Regex.IsMatch(block, "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$"))
                 map[material] = to;
         if (recipe.Body && r.Kind != ItemKind.SnowGround) foreach (var key in map.Keys.Where(m => m.StartsWith("Deco") && !MaterialLib.SkinCovers(block, m, recipe.ZoneSides)).ToList()) map.Remove(key);
-        if (recipe.OnTerrainBody || r.Kind == ItemKind.SnowBottom) foreach (var key in map.Keys.Where(m => m.StartsWith(TerrainFaces.TerrainShader) || TerrainFaces.ShaderOf(m, environment) is not null).ToList()) map.Remove(key);
+        // terrain snow: the cut decides, not the map
+        if (recipe.OnTerrainBody || r.Kind == ItemKind.SnowTerrain) foreach (var key in map.Keys.Where(m => m.StartsWith(TerrainFaces.TerrainShader) || TerrainFaces.ShaderOf(m, environment) is not null).ToList()) map.Remove(key);
         // "native" in ice-materials.jsonc: the game's own material, linked after import
         var native = map.Where(kv => kv.Value == "native").Select(kv => kv.Key).ToHashSet();
         foreach (var key in native) map.Remove(key);

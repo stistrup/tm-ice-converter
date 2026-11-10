@@ -56,7 +56,12 @@ export const usePreviewStore = defineStore('preview', () => {
   const picks = computed<Record<string, string>>(() => {
     const pieces = working.value.pieces
     if (!pieces || typeof pieces !== 'object') return {}
-    return Object.fromEntries(Object.entries(pieces).filter((e): e is [string, string] => typeof e[1] === 'string'))
+    // snowbottom: older saves, now plain snow
+    return Object.fromEntries(
+      Object.entries(pieces)
+        .filter((e): e is [string, string] => typeof e[1] === 'string')
+        .map(([key, value]) => [key, value === 'snowbottom' ? 'snow' : value]),
+    )
   })
 
   // the working settings as they are, or (after builds) what the shown result came from

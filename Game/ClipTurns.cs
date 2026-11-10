@@ -9,7 +9,7 @@ namespace TmIceConverter;
 // learned from the clips the game baked into maps
 public static class ClipTurns
 {
-    public static string FilePath => Path.Combine(Path.GetDirectoryName(Path.GetFullPath(Paths.LocalSettings))!, "clip-turns.jsonc");
+    public static string FilePath => Path.Combine(Paths.Data, "clip-turns.jsonc");
 
     private static readonly Lazy<Dictionary<string, int>> table = new(() => File.Exists(FilePath)
         ? Jsonc.Load<Dictionary<string, int>>(FilePath) : []);

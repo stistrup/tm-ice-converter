@@ -27,7 +27,7 @@ internal sealed partial record CustomBlockMesh(string Item, string Source, int V
     }
 
     // see ItemBuilder.BlockFor and SnowBlocks
-    [GeneratedRegex(@"(_on_[^_]+)?(_lift1)?(_r\d+(l\d+)?)?(_snowland|_snowhollow|_decosnow2)?$")]
+    [GeneratedRegex(@"(_on_[^_]+)?(_lift1)?(_r\d+(l\d+)?)?(_snowland|_snowhollow|_decosnow2|_snowground)?$")]
     private static partial Regex BlockExtras();
 
     [GeneratedRegex(@"_on_([^_.]+)")]

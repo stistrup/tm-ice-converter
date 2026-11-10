@@ -23,21 +23,24 @@ watch(
 const groups = computed(() => {
   const result = preview.result
   if (!result) return []
-  const byKind = new Map<string, string[]>()
+  const byKind = new Map<string, { keys: string[]; indices: number[] }>()
   for (const index of store.selection) {
     const decision = preview.decisions?.[index]
     if (!decision?.kind) continue
-    byKind.set(decision.kind, [...(byKind.get(decision.kind) ?? []), decision.key])
+    const group = byKind.get(decision.kind) ?? { keys: [], indices: [] }
+    group.keys.push(decision.key)
+    group.indices.push(index)
+    byKind.set(decision.kind, group)
   }
-  return [...byKind].map(([kind, keys]) => {
+  return [...byKind].map(([kind, { keys, indices }]) => {
     const values = new Set(keys.map((key) => preview.picks[key] ?? ''))
     return {
       kind,
       label: result.kindLabels[kind] ?? kind,
       keys,
+      indices,
       choices: result.choices[kind] ?? [],
       value: values.size === 1 ? [...values][0] : MIXED,
-      manual: keys.filter((key) => preview.picks[key]).length,
     }
   })
 })
@@ -45,26 +48,32 @@ const groups = computed(() => {
 function choose(keys: string[], choice: string) {
   history.change(() => preview.pick(keys, choice))
 }
+
+function deselect(indices: number[]) {
+  const out = new Set(indices)
+  history.change(() => (store.selection = store.selection.filter((i) => !out.has(i))))
+}
 </script>
 
 <template>
   <section :class="$style.menu">
     <div :class="$style.body">
       <p v-if="!preview.result" :class="$style.muted">Working out what these are…</p>
-      <label v-for="group in groups" :key="group.kind" :class="$style.group">
+      <div v-for="group in groups" :key="group.kind" :class="$style.group">
         <span :class="$style.name">
           {{ group.label }} <span :class="$style.muted">({{ group.keys.length }})</span>
-          <span v-if="group.manual" :class="$style.manual">manual</span>
+          <button type="button" :class="$style.deselect" @click="deselect(group.indices)">Deselect</button>
         </span>
         <select
           :class="$style.select"
           :value="group.value"
+          :aria-label="group.label"
           @change="choose(group.keys, ($event.target as HTMLSelectElement).value)"
         >
           <option v-if="group.value === MIXED" :value="MIXED" disabled>— mixed —</option>
           <option v-for="choice in group.choices" :key="choice.value" :value="choice.value">{{ choice.label }}</option>
         </select>
-      </label>
+      </div>
     </div>
   </section>
 </template>
@@ -101,12 +110,20 @@ function choose(keys: string[], choice: string) {
   align-items: center;
 }
 
-.manual {
-  padding: 0 4px;
-  font-size: 10px;
-  color: #1a1a1a;
-  background: var(--accent);
+.deselect {
+  height: 16px;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--muted);
+  cursor: default;
+  background: transparent;
+  border: 1px solid var(--line);
   border-radius: 2px;
+}
+
+.deselect:hover {
+  color: var(--text);
+  background: #3a3a3a;
 }
 
 .select {

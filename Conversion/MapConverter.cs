@@ -24,6 +24,7 @@ public sealed class MapConverter(HashSet<string> knownBlocks, Translations trans
 
         foreach (var block in map.GetBlocks()) BlockRules.Decide(block, run);
         Neighbours.Keep(run);
+        SnowReach.Run(run);
         if (rules.Presets && rules.Options.RampToSkins) RampPass.Run(run);
 
         // these read the native names

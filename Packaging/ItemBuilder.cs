@@ -65,9 +65,9 @@ public sealed class ItemBuilder(string dataDir)
     // incomplete items never turn current: build once per run
     private readonly HashSet<string> built = [];
 
-    public IceItem? For(string block, bool ground, int variant, int mobil, IReadOnlySet<int> clips, ItemKind kind = ItemKind.None, Vector2 tilt = default)
+    public IceItem? For(string block, bool ground, int variant, int mobil, IReadOnlySet<int> clips, ItemKind kind = ItemKind.None, Vector2 tilt = default, IReadOnlyList<Vector2>? snowKeep = null)
     {
-        var request = new ItemRequest(block, ground, variant, mobil, clips, kind, tilt, Environment, Style);
+        var request = new ItemRequest(block, ground, variant, mobil, clips, kind, tilt, Environment, Style, snowKeep);
         var name = ItemRecipe.ItemName(request, shapes);
         lock (failures) if (failedItems.Contains(name)) return null;
         lock (emptyItems) if (emptyItems.Contains(name) || IsKnownEmpty(name) && emptyItems.Add(name)) return IceItem.Nothing;
@@ -133,6 +133,15 @@ public sealed class ItemBuilder(string dataDir)
         var header = Gbx.ParseHeaderNode<CGameItemModel>(path).Ident;
         return new IceItem(new Ident($"IceConverter\\{name}.Item.gbx", header.Collection, header.Author), path, shapes.BlockSize(block, ground, variant));
     }
+
+    // an item's pieces as it would be built, to look at (nothing written); kept by item name
+    public List<MeshPiece>? Pieces(string block, bool ground, int variant, int mobil, ItemKind kind)
+    {
+        var request = new ItemRequest(block, ground, variant, mobil, new HashSet<int>(), kind, default, Environment, Style);
+        return looked.GetOrAdd(ItemRecipe.ItemName(request, shapes), _ => new ItemMesh(iceMaterials, Missing).Make(request) is { Error: null } made ? made.Pieces : null);
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, List<MeshPiece>?> looked = new();
 
     // the item's main body plus the baked clips in a custom block of the archetype; the game adds the other clips
     // ramp: local footprint sides (bits -X, +X, -Z, +Z) whose ice rises by the skin lift to meet a skinned neighbour

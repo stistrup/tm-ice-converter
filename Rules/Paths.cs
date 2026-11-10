@@ -35,6 +35,8 @@ public static class Paths
 
     // what a new local.jsonc starts from (in the app's data/)
     public static string LocalExample { get; set; } = "local.example.jsonc";
+    // the shipped data folder (set at start)
+    public static string Data { get; set; } = "data";
 
     // conversion runs and each map's settings (RunLog); "settings" in local.jsonc, else in the user folder
     public static string SettingsStore => Local.Paths?.GetValueOrDefault("settings") is { Length: > 0 }

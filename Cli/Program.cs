@@ -8,6 +8,7 @@ Gbx.ZLib = new ZLib();
 
 var dataDir = FindDataDir();
 Paths.LocalExample = Path.Combine(dataDir, "local.example.jsonc");
+Paths.Data = dataDir;
 var inspect = new InspectCommands(dataDir);
 
 switch (args)

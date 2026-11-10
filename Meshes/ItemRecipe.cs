@@ -24,7 +24,7 @@ public enum ItemKind
     // skin over a native air block (skinsOnly)
     Skin,
     // terrain block in snow only at its foot, the rest its own look
-    SnowBottom,
+    SnowTerrain,
     // the visible terrain of a hill/cliff block, beside its custom block (terrain light in the block's own lightmap darkened the road)
     TerrainFaces,
     // ground body for a snow pick: its Deco ground in snow too
@@ -40,7 +40,7 @@ public sealed record ItemStyle(bool ZoneSides = false, bool TerrainSnow = true, 
     public const float DefaultSkinEdge = 90;
 }
 
-public sealed record ItemRequest(string Block, bool Ground, int Variant, int Mobil, IReadOnlySet<int> Clips, ItemKind Kind, Vector2 Tilt, string? Environment, ItemStyle Style);
+public sealed record ItemRequest(string Block, bool Ground, int Variant, int Mobil, IReadOnlySet<int> Clips, ItemKind Kind, Vector2 Tilt, string? Environment, ItemStyle Style, IReadOnlyList<Vector2>? SnowKeep = null);
 
 // what a kind of item takes from its block
 internal sealed record ItemRecipe(ItemKind Kind, bool Top, bool TopsBody, bool Body, bool Skin, bool OnTerrainBody, bool ZoneSides)
@@ -52,7 +52,7 @@ internal sealed record ItemRecipe(ItemKind Kind, bool Top, bool TopsBody, bool B
     {
         var kind = r.Kind;
         var topsBody = kind is ItemKind.TopsBody or ItemKind.TopOfIceBody;
-        var body = kind is ItemKind.GroundBody or ItemKind.SnowGround or ItemKind.StackedBody or ItemKind.TerrainFaces or ItemKind.SnowBottom || topsBody && r.Ground;
+        var body = kind is ItemKind.GroundBody or ItemKind.SnowGround or ItemKind.StackedBody or ItemKind.TerrainFaces or ItemKind.SnowTerrain || topsBody && r.Ground;
         var onTerrainBody = body && BlockNames.OnTerrainShape(r.Block);
         var whole = (kind == ItemKind.InTerrain || kind == ItemKind.None && r.Ground) && BlockNames.IsWholeOnGround(r.Block, catalog.Environment);
         var skin = !whole && !body && !topsBody && kind != ItemKind.Gated && (kind != ItemKind.None || IsSkin(catalog, r.Block, r.Ground));
@@ -72,13 +72,18 @@ internal sealed record ItemRecipe(ItemKind Kind, bool Top, bool TopsBody, bool B
         return block.StartsWith(Prefix) ? block[Prefix.Length..] : block;
     }
 
+    // the keep points to the decimetre, short
+    private static string KeepKey(IReadOnlyList<Vector2> keep)
+        => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            string.Join(";", keep.Select(k => $"{MathF.Round(k.X * 10)},{MathF.Round(k.Y * 10)}").Order()))))[..8];
+
     // no dots: the importer cuts the name there
     // skins at another lift (mm) or edge angle (degrees) than the default carry it in the name
     public static string ItemName(ItemRequest r, BlockCatalog catalog)
     {
         var name = Prefix + r.Block + "_Ice" + (catalog.DefinedIn(r.Block) is { } env ? "_" + env : "") + KindSuffix(r, catalog)
             + (!r.Style.TerrainSnow && OnTerrain(r.Block, r.Ground, r.Kind) ? "_bare" : "") + TiltKey(r.Tilt)
-            + (r.Variant == 0 && r.Mobil == 0 ? "" : $"_v{r.Variant}m{r.Mobil}") + "_" + ClipKey.OfSet(r.Clips);
+            + (r.Variant == 0 && r.Mobil == 0 ? "" : $"_v{r.Variant}m{r.Mobil}") + (r.SnowKeep is null ? "" : "_n" + KeepKey(r.SnowKeep)) + "_" + ClipKey.OfSet(r.Clips);
         if (!Regex.IsMatch(name, "_a?skin")) return name;
         var (lift, edge) = (r.Style.SkinLift, r.Style.SkinEdge);
         return name + (lift != ItemStyle.DefaultSkinLift ? $"_l{MathF.Round(lift * 1000)}" : "") + (edge != ItemStyle.DefaultSkinEdge ? $"_e{MathF.Round(edge)}" : "");
@@ -94,7 +99,7 @@ internal sealed record ItemRecipe(ItemKind Kind, bool Top, bool TopsBody, bool B
             ItemKind.Gated => "_gated",
             ItemKind.GroundBody => zoneSides && !BlockNames.OnTerrainShape(block) ? "_gbodyzs" : "_gbody",
             ItemKind.StackedBody => "_gbodys",
-            ItemKind.SnowBottom => "_gbottom",
+            ItemKind.SnowTerrain => "_gland",
             ItemKind.SnowGround => "_gsnow",
             ItemKind.TopsBody => "_topsbody",
             ItemKind.TopOfIceBody => "_topsbodyi",

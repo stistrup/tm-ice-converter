@@ -12,9 +12,9 @@ internal static class SnowBlocks
     // WhiteShore's snow ground, with its frosted grass decals; loads in other environments too
     private const string SnowTerrainMaterial = @"WhiteShore\Media\Material\Land";
 
-    public static IceBlock? SnowTerrainFor(this ItemBuilder items, string block, int variant, int mobil, Id collection, bool underDeco = false, bool bottomOnly = false)
+    public static IceBlock? SnowTerrainFor(this ItemBuilder items, string block, int variant, int mobil, Id collection, bool underDeco = false, IReadOnlyList<System.Numerics.Vector2>? snowKeep = null)
     {
-        if (items.For(block, true, variant, mobil, new HashSet<int>(), bottomOnly ? ItemKind.SnowBottom : ItemKind.GroundBody) is not { } item || item == IceItem.Nothing) return null;
+        if (items.For(block, true, variant, mobil, new HashSet<int>(), ItemKind.SnowTerrain, snowKeep: snowKeep) is not { } item || item == IceItem.Nothing) return null;
         var itemName = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath));
         var name = itemName + (underDeco ? "_snowhollow" : "_snowland");
         var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);

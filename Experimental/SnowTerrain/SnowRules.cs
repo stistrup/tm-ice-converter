@@ -31,13 +31,21 @@ internal static class SnowRules
     // open water; shores (WaterHill, LakeShore) are ground at the water's edge
     private static bool IsWater(string terrain) => System.Text.RegularExpressions.Regex.IsMatch(terrain, "Lake|Sea|Water|River") && !System.Text.RegularExpressions.Regex.IsMatch(terrain, "Hill|Shore");
 
+    public static bool IsShore(string terrain) => System.Text.RegularExpressions.Regex.IsMatch(terrain, "Lake|Sea|Water|River") && System.Text.RegularExpressions.Regex.IsMatch(terrain, "Hill|Shore");
+
+    // snow terrain there: in a snow area, land, not built on
+    public static bool SnowsCell(ConversionRun run, int x, int z)
+        => run.Rules.SnowsTerrainAt(x, z) && run.Grid.Any(t => t.Coord.X == x && t.Coord.Z == z && run.Shapes.IsTerrain(t.Name) && !IsWater(t.Name)
+            && !run.Snow.BuiltOn.Any(b => b.X == x && b.Z == z && b.Y <= t.Coord.Y + 1));
+
     // the native block goes, the game still draws the ground; placed as variant 0 of the archetype
     public static bool TerrainCell(CGameCtnBlock block, ConversionRun run)
     {
         var (name, coord) = (block.Name, block.Coord);
         if (!run.Shapes.IsTerrain(name) || !run.Rules.SnowsTerrainAt(coord.X, coord.Z) || IsWater(name)
             || run.Snow.BuiltOn.Any(c => c.X == coord.X && c.Z == coord.Z && c.Y <= coord.Y + 1)
-            || run.Items.SnowTerrainFor(name, VariantOf(block), MobilOf(block), run.Map.Collection!.Value, run.Snow.UnderDeco.Contains((coord.X, coord.Z)), run.Rules.SnowBottom.Contains((coord.X, coord.Z))) is not { } snowBlock) return false;
+            || run.Items.SnowTerrainFor(name, VariantOf(block), MobilOf(block), run.Map.Collection!.Value, run.Snow.UnderDeco.Contains((coord.X, coord.Z))) is not { } snowBlock) return false;
+        run.Snowed.Add((block, VariantOf(block), MobilOf(block)));
         run.Customs[block] = snowBlock;
         block.Flags &= ~0xFFF & ~(0x3F << 21);
         Bump(run.Report.SnowTerrain, name);

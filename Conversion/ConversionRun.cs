@@ -42,6 +42,8 @@ internal sealed class ConversionRun
     public Dictionary<CGameCtnBlock, (string Archetype, IReadOnlySet<int> Baked, bool Lift)> BuiltAs { get; } = new(ReferenceEqualityComparer.Instance);
     public HashSet<CGameCtnBlock> Stacked { get; } = new(ReferenceEqualityComparer.Instance);
     public Dictionary<(int X, int Z), CGameCtnBlock>? SnowedGameplay { get; set; }
+    // snow terrain cells, with the shape their flags held
+    public List<(CGameCtnBlock Block, int Variant, int Mobil)> Snowed { get; } = [];
     public List<CGameCtnBlock> EngineOffGates { get; } = [];
     // convertScenery off: left alone by the neighbour and top passes too
     public HashSet<CGameCtnBlock> SceneryKept { get; } = new(ReferenceEqualityComparer.Instance);
