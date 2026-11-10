@@ -13,6 +13,7 @@ internal static partial class BlockRules
 {
     private static readonly BlockRule[] Rules =
     [
+        SnowRules.UnderSnowedGameplay,
         Picked,
         Gates.EngineOff,
         AlreadyIce,

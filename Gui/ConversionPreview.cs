@@ -32,21 +32,22 @@ internal sealed partial class ConversionPreview(string dataDir)
         // no bottom-only snow: the snow already stops at the water
         ["shore"] = [new("", "As the rules say"), new("keep", "Keep original"), new("snow", "Snow")],
         ["special"] = [new("", "As the rules say"), new("keep", "Keep original"), new("plain", "Plain ice")],
+        ["specialground"] = [new("", "As the rules say"), new("keep", "Keep original"), new("plain", "Plain ice"), new("snow", "Snow ground")],
         ["items"] = [new("", "As the rules say"), new("keep", "Keep original"), new("remove", "Remove"), new("frozen", "Frozen (trees)")],
     };
 
     public static readonly Dictionary<string, string> KindLabels = new()
     {
         ["roads"] = "Roads, platforms", ["waypoints"] = "Start, checkpoint, finish", ["deco"] = "Deco, pillars, walls",
-        ["terrain"] = "Terrain", ["shore"] = "Shore, water", ["special"] = "Special", ["items"] = "Items",
+        ["terrain"] = "Terrain", ["shore"] = "Shore, water", ["special"] = "Special", ["specialground"] = "Special, on the ground", ["items"] = "Items",
     };
 
     private static readonly HashSet<string> SceneryRules = ["Pillar", "Concrete", "WallsOnly", "NoIceWanted", "DecoSceneryOff", "DecoInTerrain", "SnowOverIceTwin"];
 
-    private static string KindOf(ConversionRun run, string name, string? rule)
+    private static string KindOf(ConversionRun run, string name, bool ground, string? rule)
         => run.Shapes.IsTerrain(name) ? System.Text.RegularExpressions.Regex.IsMatch(name, "Lake|Sea|Water|River") ? "shore" : "terrain"
             : run.Shapes.Waypoint(name) is not null ? "waypoints"
-            : BlockNames.IsGameplayBlock(name) ? "special"
+            : BlockNames.IsGameplayBlock(name) ? ground ? "specialground" : "special"
             : name.StartsWith("Deco") || rule is not null && SceneryRules.Contains(rule) ? "deco"
             : "roads";
 
@@ -216,7 +217,7 @@ internal sealed partial class ConversionPreview(string dataDir)
             var run = converter.Run(map, own);
 
             var blockDecisions = blocks.Index().ToDictionary(b => b.Index, b => Of(run, b.Item) is var d
-                ? d with { Kind = KindOf(run, names[b.Index], d.Rule), Key = blockKeys[b.Index], Picked = rulesNow.Pieces.GetValueOrDefault(Normal(blockKeys[b.Index])) } : null!);
+                ? d with { Kind = KindOf(run, names[b.Index], (flags[b.Index] & BlockFlags.Ground) != 0, d.Rule), Key = blockKeys[b.Index], Picked = rulesNow.Pieces.GetValueOrDefault(Normal(blockKeys[b.Index])) } : null!);
             var now = (map.AnchoredObjects ?? []).ToHashSet(ReferenceEqualityComparer.Instance);
             var itemDecisions = new Dictionary<int, Decision>();
             foreach (var (i, (item, id, position)) in items.Index())

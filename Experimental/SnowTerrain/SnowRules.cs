@@ -57,12 +57,38 @@ internal static class SnowRules
     // snow picked on a non-terrain block: its deco surface in the snow ground
     public static bool PickedSnow(CGameCtnBlock block, ConversionRun run)
     {
+        // a custom block loses the native trigger: the block goes to the air, its ground onto the terrain cell
+        if (block.IsGround && !block.IsFree && BlockNames.IsGameplayBlock(block.Name))
+        {
+            if (!SnowedGameplay(run).ContainsValue(block)) return false;
+            block.Flags &= ~BlockFlags.Ground;
+            Bump(run.Report.SnowTerrain, block.Name);
+            return true;
+        }
         if (run.Shapes.IsTerrain(block.Name) || block.IsPillar || run.Shapes.IsPillarBlock(block.Name) || block.IsFree
             || run.Items.SnowDecoFor(block.Name, VariantOf(block), MobilOf(block), run.Map.Collection!.Value, block.IsGround) is not { } snowDeco) return false;
         run.Customs[block] = snowDeco;
         Bump(run.Report.SnowTerrain, block.Name);
         return true;
     }
+
+    // the terrain cell under a gameplay block picked to snow carries that block's ground
+    public static bool UnderSnowedGameplay(CGameCtnBlock block, ConversionRun run)
+    {
+        var coord = block.Coord;
+        if (!run.Shapes.IsTerrain(block.Name) || IsWater(block.Name) || !SnowedGameplay(run).TryGetValue((coord.X, coord.Z), out var above)
+            || run.Items.GameplayGroundFor(above.Name, VariantOf(above), MobilOf(above), run.Map.Collection!.Value) is not { } ground) return false;
+        run.Customs[block] = ground;
+        (block.Coord, block.Direction) = (above.Coord, above.Direction);
+        block.Flags &= ~0xFFF & ~(0x3F << 21);
+        return true;
+    }
+
+    // ground gameplay blocks picked to snow, by cell, with terrain under them; read before any of them goes to the air
+    private static Dictionary<(int X, int Z), CGameCtnBlock> SnowedGameplay(ConversionRun run)
+        => run.SnowedGameplay ??= run.Grid.Where(b => b.IsGround && !b.IsFree && BlockNames.IsGameplayBlock(b.Name) && run.Rules.PieceChoice(b) == "snow"
+                && run.Grid.Any(t => t.Coord.X == b.Coord.X && t.Coord.Z == b.Coord.Z && run.Shapes.IsTerrain(t.Name) && !IsWater(t.Name)))
+            .GroupBy(b => (b.Coord.X, b.Coord.Z)).ToDictionary(g => g.Key, g => g.First());
 
     public static bool DecoInTerrain(CGameCtnBlock block, ConversionRun run)
     {

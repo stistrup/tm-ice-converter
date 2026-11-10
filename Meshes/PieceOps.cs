@@ -25,20 +25,24 @@ internal static class PieceOps
     public static List<MeshPiece> SnowAbove(List<MeshPiece> pieces, float height, string snow)
         => SnowWhere(pieces, snow, (p, i) => height - p.Positions[3 * i + 1]);
 
+    // collision cut along the same line: it drives as it looks
+    public static List<MeshPiece> SnowAboveCollision(List<MeshPiece> pieces, float height, string snow)
+        => SnowWhere(pieces, snow, (p, i) => height - p.Positions[3 * i + 1], collision: true);
+
     // cliff in snow at its foot: snow rests up to the height above flat ground where it's flat, less the steeper it gets, none up a wall
-    public static List<MeshPiece> SnowFoot(List<MeshPiece> pieces, float height, string snow)
-        => SnowWhere(pieces, snow, (p, i) => p.Positions[3 * i + 1] - FlatGround - height * Math.Max(0, p.Normals?[3 * i + 1] ?? 1));
+    public static List<MeshPiece> SnowFoot(List<MeshPiece> pieces, float height, string snow, bool collision = false)
+        => SnowWhere(pieces, snow, (p, i) => p.Positions[3 * i + 1] - FlatGround - height * Math.Max(0, p.Normals?[3 * i + 1] ?? 1), collision);
 
     // a flat terrain block's top in its own frame, every vista
     private const float FlatGround = 2;
 
     // visible ground where the field is below zero becomes snow, cut along its zero line
-    private static List<MeshPiece> SnowWhere(List<MeshPiece> pieces, string snow, Func<MeshPiece, int, float> field)
+    private static List<MeshPiece> SnowWhere(List<MeshPiece> pieces, string snow, Func<MeshPiece, int, float> field, bool collision = false)
     {
         var result = new List<MeshPiece>();
         foreach (var p in pieces)
         {
-            if (!p.Visible || p.Material == "Water" || p.Material == snow) { result.Add(p); continue; }
+            if (p.Visible == collision || p.Material == "Water" || p.Material == snow) { result.Add(p); continue; }
             var (white, rest) = Split(p, Enumerable.Range(0, p.Positions.Length / 3).Select(i => field(p, i)).ToArray());
             if (white is not null) result.Add(white with { Material = snow, Name = p.Name + "_snow" });
             if (rest is not null) result.Add(rest);

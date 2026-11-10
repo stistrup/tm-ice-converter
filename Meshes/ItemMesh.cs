@@ -15,7 +15,7 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
     // m; was 0.3 with the whole bank in snow
     private const float SnowUnderWater = 0.1f;
     // m above flat ground where a cliff cell's bottom snow stops
-    private const float SnowBottomHeight = 1.5f;
+    private const float SnowBottomHeight = 0.5f;
 
     public ItemMeshResult Make(ItemRequest r)
     {
@@ -40,13 +40,19 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
         // terrain layer masks: another environment's terrain material reads them as its own layers
         if (recipe.Body && catalog.IsTerrain(r.Block)) pieces = pieces.Select(p => p with { Colors = null }).ToList();
         // shore: snow down to just under the water
-        if (recipe.Body && catalog.IsTerrain(r.Block) && pieces.FirstOrDefault(p => p.Visible && p.Material == "Water") is { } water)
-            pieces = PieceOps.SnowAbove(pieces, water.Positions[1] - SnowUnderWater, "PlatformIce_DecoHill");
+        var shore = recipe.Body && catalog.IsTerrain(r.Block) ? pieces.FirstOrDefault(p => p.Visible && p.Material == "Water") : null;
+        if (shore is not null)
+            pieces = PieceOps.SnowAbove(pieces, shore.Positions[1] - SnowUnderWater, "PlatformIce_DecoHill");
         if (r.Kind == ItemKind.SnowBottom)
         {
             pieces = TerrainFaces.AsTerrainBelow(pieces, catalog.Environment);
             pieces = PieceOps.SnowFoot(pieces, SnowBottomHeight, "PlatformIce_DecoHill");
         }
+        // terrain in snow drives as snow where it looks like snow
+        if (recipe.Body && catalog.IsTerrain(r.Block))
+            pieces = shore is not null ? PieceOps.SnowAboveCollision(pieces, shore.Positions[1] - SnowUnderWater, "PlatformIce_DecoHill")
+                : r.Kind == ItemKind.SnowBottom ? PieceOps.SnowFoot(pieces, SnowBottomHeight, "PlatformIce_DecoHill", collision: true)
+                : pieces.Select(p => p.Visible ? p : p with { Material = "PlatformIce_DecoHill" }).ToList();
         var gameplay = BlockNames.IsGameplayBlock(r.Block);
         if (recipe.Skin && gameplay) pieces = Pads.AroundPad(pieces, new BlockCatalog(Paths.ExtractedStadium).Plain.Export(parts), Pads.PadGameplayOf(r.Block), r.Style.SkinLift);
         else if (gameplay) pieces = Pads.IcyPads(pieces, Pads.PadGameplayOf(r.Block));
@@ -59,6 +65,8 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
             if (recipe.TerrainFaces) pieces = pieces.Where(p => p.Visible).ToList();
             if (recipe.TerrainFaces && pieces.Count == 0) return Stop(NothingToCover);
         }
+        // the kept native gate draws its curtain
+        if (r.Kind == ItemKind.SnowGround) pieces = pieces.Where(p => !p.Material.Contains("TriggerFX")).ToList();
         pieces = pieces.Select(p => (native.Contains(p.Material) || recipe.Body && !materialMap.ContainsKey(p.Material) && !(MaterialLib.Surface(p.Material) is { } own && !MaterialLib.NotIce.Contains(own)))
             && MaterialLib.NativeLink(p.Material, catalog.Environment) is not null ? p with { Material = MaterialLib.NativePrefix + p.Material } : p).ToList();
         lock (missing) missing.UnionWith(catalog.Missing);
@@ -81,7 +89,7 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
         foreach (var (key, to) in map.Where(kv => kv.Key.Contains('|')).ToList())
             if (key.Split('|') is [var pattern, var material] && Regex.IsMatch(block, "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$"))
                 map[material] = to;
-        if (recipe.Body) foreach (var key in map.Keys.Where(m => m.StartsWith("Deco") && !MaterialLib.SkinCovers(block, m, recipe.ZoneSides)).ToList()) map.Remove(key);
+        if (recipe.Body && r.Kind != ItemKind.SnowGround) foreach (var key in map.Keys.Where(m => m.StartsWith("Deco") && !MaterialLib.SkinCovers(block, m, recipe.ZoneSides)).ToList()) map.Remove(key);
         if (recipe.OnTerrainBody || r.Kind == ItemKind.SnowBottom) foreach (var key in map.Keys.Where(m => m.StartsWith(TerrainFaces.TerrainShader) || TerrainFaces.ShaderOf(m, environment) is not null).ToList()) map.Remove(key);
         // "native" in ice-materials.jsonc: the game's own material, linked after import
         var native = map.Where(kv => kv.Value == "native").Select(kv => kv.Key).ToHashSet();
