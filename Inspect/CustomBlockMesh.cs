@@ -8,6 +8,8 @@ internal sealed partial record CustomBlockMesh(string Item, string Source, int V
     public string Archetype { get; init; } = Source;
     // ice raised over the same native block, which stays placed under it
     public bool Stacked { get; init; }
+    // SnowBlocks' terrain and gameplay ground: on DecoPlatformBase, whose clips the game doesn't show there (none in game shots); the source's clips aren't drawn either
+    public bool Snow { get; init; }
 
     private const string Prefix = "IceConverter\\";
     private const string Suffix = ".Block.Gbx_CustomBlock";
@@ -23,12 +25,15 @@ internal sealed partial record CustomBlockMesh(string Item, string Source, int V
         var mesh = variant.Success
             ? new CustomBlockMesh(item, source, int.Parse(variant.Groups[1].Value), int.Parse(variant.Groups[2].Value))
             : new CustomBlockMesh(item, source, 0);
-        return mesh with { Archetype = on.Success ? on.Groups[1].Value : mesh.Source, Stacked = blockName.Contains("_lift1") };
+        return mesh with { Archetype = on.Success ? on.Groups[1].Value : mesh.Source, Stacked = blockName.Contains("_lift1"), Snow = SnowBlock().IsMatch(blockName) };
     }
 
     // see ItemBuilder.BlockFor and SnowBlocks
     [GeneratedRegex(@"(_on_[^_]+)?(_lift1)?(_r\d+(l\d+)?)?(_snowland|_snowhollow|_decosnow2|_snowground)?$")]
     private static partial Regex BlockExtras();
+
+    [GeneratedRegex(@"_(snowland|snowhollow|snowground)\.Block\.Gbx_CustomBlock$")]
+    private static partial Regex SnowBlock();
 
     [GeneratedRegex(@"_on_([^_.]+)")]
     private static partial Regex OnArchetype();

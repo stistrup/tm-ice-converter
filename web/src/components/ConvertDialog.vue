@@ -262,11 +262,9 @@ function onClosed() {
             <span v-else :class="$style.error">✗ {{ result.map }}: {{ result.error }}</span>
           </li>
           <li v-if="job.state === 'cancelled'" :class="$style.muted">Cancelled: {{ job.results.filter((r) => r.output).length }} of {{ job.count }} maps saved.</li>
-          <li v-if="job.state === 'done'" :class="$style.muted">Shadows aren't computed. Compute them in the editor, or for a whole folder in Openplanet: Plugins › Compute shadows for every map in… and pick the folder.</li>
         </ul>
         <div v-if="job.outcome" :class="$style.result" role="status">
           <p :class="$style.ok">Saved: {{ job.outcome.output.startsWith('/') ? '' : 'Maps/' }}{{ job.outcome.output }}</p>
-          <p :class="$style.muted">{{ job.outcome.summary }}</p>
           <p v-for="problem in job.outcome.problems" :key="problem" :class="$style.warn">Left out: {{ problem }}</p>
           <p v-if="job.outcome.failures.length" :class="$style.warn" :title="job.outcome.failures.join('\n')">
             {{ job.outcome.failures.length }} piece(s) failed to build, see the report next to the map
@@ -274,7 +272,6 @@ function onClosed() {
           <p v-if="job.outcome.missingFiles" :class="$style.warn">
             {{ job.outcome.missingFiles }} game files aren't extracted: in Openplanet: Plugins › Extract game files, then convert again
           </p>
-          <p :class="$style.muted">Shadows aren't computed. Compute them in the editor, or for a whole folder in Openplanet: Plugins › Compute shadows for every map in… and pick the folder.</p>
         </div>
         <p v-if="job.error" :class="$style.error" role="alert">{{ job.error }}</p>
       </div>

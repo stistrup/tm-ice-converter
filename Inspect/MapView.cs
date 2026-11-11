@@ -163,7 +163,7 @@ public sealed class MapView(BlockCatalog shapes)
     {
         if (AddCustomBlock(block.Name, place, info))
         {
-            AddClipsOf(meshName, ground, variant, mobil, place, clips, info);
+            if (CustomBlockMesh.Parse(block.Name) is not { Snow: true }) AddClipsOf(meshName, ground, variant, mobil, place, clips, info);
             return;
         }
         if (shapes.IsTerrain(meshName)) info["tags"] = info.TryGetValue("tags", out var t) ? $"{t}, terrain" : "terrain";
