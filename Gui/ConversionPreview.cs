@@ -34,13 +34,15 @@ internal sealed partial class ConversionPreview(string dataDir)
         ["shore"] = [new("", "Rule"), new("keep", "Original"), new("snow", "Snow")],
         ["special"] = [new("", "Rule"), new("keep", "Original"), new("plain", "Plain ice")],
         ["specialground"] = [new("", "Rule"), new("keep", "Original"), new("plain", "Plain ice"), new("snow", "Snow")],
+        ["reactor"] = [new("", "Rule"), new("keep", "Original"), new("plain", "Plain ice"), new("flip", "Flip")],
+        ["reactorground"] = [new("", "Rule"), new("keep", "Original"), new("plain", "Plain ice"), new("snow", "Snow"), new("flip", "Flip"), new("snowflip", "Snow flipped")],
         ["items"] = [new("", "Rule"), new("keep", "Original"), new("remove", "Remove"), new("frozen", "Snow trees")],
     };
 
     public static readonly Dictionary<string, string> KindLabels = new()
     {
         ["roads"] = "Roads, platforms", ["waypoints"] = "Start, checkpoint, finish", ["deco"] = "Deco, walls", ["decononsnow"] = "Pillars, free-placed deco",
-        ["terrain"] = "Terrain", ["shore"] = "Shore, water", ["special"] = "Special", ["specialground"] = "Special, on the ground", ["items"] = "Items",
+        ["terrain"] = "Terrain", ["shore"] = "Shore, water", ["special"] = "Special", ["specialground"] = "Special, on the ground", ["reactor"] = "Reactor", ["reactorground"] = "Reactor, on the ground", ["items"] = "Items",
     };
 
     private static readonly HashSet<string> SceneryRules = ["Pillar", "Concrete", "WallsOnly", "NoIceWanted", "DecoSceneryOff", "DecoInTerrain", "SnowOverIceTwin"];
@@ -48,7 +50,7 @@ internal sealed partial class ConversionPreview(string dataDir)
     private static string KindOf(ConversionRun run, string name, bool ground, bool pillarOrFree, string? rule)
         => run.Shapes.IsTerrain(name) ? System.Text.RegularExpressions.Regex.IsMatch(name, "Lake|Sea|Water|River") ? "shore" : "terrain"
             : run.Shapes.Waypoint(name) is not null ? "waypoints"
-            : BlockNames.IsGameplayBlock(name) ? ground ? "specialground" : "special"
+            : BlockNames.IsGameplayBlock(name) ? (BlockNames.IsReactor(name) ? "reactor" : "special") + (ground ? "ground" : "")
             : name.StartsWith("Deco") || rule is not null && SceneryRules.Contains(rule) ? pillarOrFree || run.Shapes.IsPillarBlock(name) ? "decononsnow" : "deco"
             : "roads";
 
@@ -215,6 +217,7 @@ internal sealed partial class ConversionPreview(string dataDir)
             var names = blocks.Select(b => b.Name).ToList();
             var flags = blocks.Select(b => b.Flags).ToList();
             var pillarOrFree = blocks.Select(b => b.IsPillar || b.IsFree).ToList();
+            var placements = blocks.Select(b => (b.Direction, b.AbsolutePositionInMap, b.YawPitchRoll)).ToList();
             var items = (map.AnchoredObjects ?? []).Select(o => (Item: o, o.ItemModel.Id, o.AbsolutePositionInMap)).ToList();
             var run = converter.Run(map, own);
 
@@ -238,7 +241,8 @@ internal sealed partial class ConversionPreview(string dataDir)
             var itemOrigin = items.Index().ToDictionary(o => (object)o.Item.Item, o => o.Index, ReferenceEqualityComparer.Instance);
             var converted = map.GetBlocks().ToList();
             // flags too: a pillar set from ground to air draws other clips
-            var changedBlocks = converted.Where(b => !blockOrigin.TryGetValue(b, out var o) || run.Customs.ContainsKey(b) || run.Renamed.Contains(b) || b.Flags != flags[o]).ToHashSet();
+            var changedBlocks = converted.Where(b => !blockOrigin.TryGetValue(b, out var o) || run.Customs.ContainsKey(b) || run.Renamed.Contains(b) || b.Flags != flags[o]
+                || (b.Direction, b.AbsolutePositionInMap, b.YawPitchRoll) != placements[o]).ToHashSet();
             // the terrain a native ground block hid shows again under its custom block
             var underCustoms = run.Customs.Keys.Where(b => b.IsGround && run.Cells.ContainsKey(b) && !(blockOrigin.TryGetValue(b, out var o) && BlockNames.OnTerrainShape(names[o])))
                 .SelectMany(b => run.Cells[b]).ToHashSet();

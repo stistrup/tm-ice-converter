@@ -355,7 +355,7 @@ function removeRule(key: string) {
   width: 100%;
   height: 20px;
   padding: 0;
-  color: var(--muted);
+  color: var(--text);
   text-align: left;
   cursor: default;
   background: none;

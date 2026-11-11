@@ -69,7 +69,8 @@ internal static class SnowRules
         if (block.IsGround && !block.IsFree && BlockNames.IsGameplayBlock(block.Name))
         {
             if (!SnowedGameplay(run).ContainsValue(block)) return false;
-            block.Flags &= ~BlockFlags.Ground;
+            // its terrain-bringing ground variant would still lay its dirt: the plain air variant
+            block.Flags &= ~BlockFlags.Ground & ~BlockFlags.Replacement & ~(0x3F << 21);
             Bump(run.Report.SnowTerrain, block.Name);
             return true;
         }

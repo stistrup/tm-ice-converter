@@ -54,7 +54,7 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
             if (recipe.TerrainFaces && pieces.Count == 0) return Stop(NothingToCover);
         }
         // the kept native gate draws its curtain
-        if (r.Kind == ItemKind.SnowGround) pieces = pieces.Where(p => !p.Material.Contains("TriggerFX")).ToList();
+        if (r.Kind == ItemKind.SnowGround) pieces = SnowGround(pieces.Where(p => !p.Material.Contains("TriggerFX")).ToList(), catalog.Environment);
         pieces = pieces.Select(p => (native.Contains(p.Material) || recipe.Body && !materialMap.ContainsKey(p.Material) && !(MaterialLib.Surface(p.Material) is { } own && !MaterialLib.NotIce.Contains(own)))
             && MaterialLib.NativeLink(p.Material, catalog.Environment) is not null ? p with { Material = MaterialLib.NativePrefix + p.Material } : p).ToList();
         lock (missing) missing.UnionWith(catalog.Missing);
@@ -79,6 +79,15 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
         return PieceOps.SnowFoot(PieceOps.SnowFoot(pieces, SnowLip, Snow, false, keep), SnowLip, Snow, true, keep);
     }
 
+    // a ground body holding water (a lake): its terrain above the water in snow, like a shore; rocks and the rest stay
+    private static List<MeshPiece> SnowGround(List<MeshPiece> pieces, string? environment)
+    {
+        if (pieces.FirstOrDefault(p => p.Visible && p.Material == "Water") is not { } water) return pieces;
+        var line = water.Positions[1] - SnowUnderWater;
+        var terrain = pieces.Where(p => IsTerrainFace(p, environment)).ToList();
+        return [.. PieceOps.SnowAboveCollision(PieceOps.SnowAbove(terrain, line, Snow), line, Snow), .. pieces.Where(p => !IsTerrainFace(p, environment))];
+    }
+
     private static bool IsTerrainFace(MeshPiece p, string? environment)
         => p.Material.StartsWith(TerrainFaces.TerrainShader) || TerrainFaces.ShaderOf(p.Material, environment) is not null;
 
@@ -93,6 +102,8 @@ internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missin
         if (recipe.Body && r.Kind != ItemKind.SnowGround) foreach (var key in map.Keys.Where(m => m.StartsWith("Deco") && !MaterialLib.SkinCovers(block, m, recipe.ZoneSides)).ToList()) map.Remove(key);
         // terrain snow: the cut decides, not the map
         if (recipe.OnTerrainBody || r.Kind == ItemKind.SnowTerrain) foreach (var key in map.Keys.Where(m => m.StartsWith(TerrainFaces.TerrainShader) || TerrainFaces.ShaderOf(m, environment) is not null).ToList()) map.Remove(key);
+        // snow bodies keep their water surface (shores, lakes); elsewhere water under ice is left out
+        if (r.Kind is ItemKind.SnowTerrain or ItemKind.SnowGround) map["Water"] = "native";
         // "native" in ice-materials.jsonc: the game's own material, linked after import
         var native = map.Where(kv => kv.Value == "native").Select(kv => kv.Key).ToHashSet();
         foreach (var key in native) map.Remove(key);

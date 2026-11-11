@@ -22,8 +22,6 @@
   "*ToRoadBump*|DecalMarks": "",
   "GrassFence": "",
   "Water": "",
-  // shore in snow: the water surface is part of the shore block
-  "WaterHill|Water": "native",
   "SeaFloor": "",
   "WaterBottom": "",
   "LightShape": "",

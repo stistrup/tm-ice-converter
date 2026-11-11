@@ -37,7 +37,7 @@ public sealed class Translations
     public Dictionary<string, string> Pieces { get; } = [];
 
     // snowbottom: older saves, read as snow
-    public static readonly string[] PieceChoices = ["keep", "custom", "item", "skin", "snow", "snowbottom", "tops", "plain", "remove", "frozen"];
+    public static readonly string[] PieceChoices = ["keep", "custom", "item", "skin", "snow", "snowbottom", "tops", "plain", "remove", "frozen", "flip", "snowflip"];
 
     // off: only the pieces picked by hand convert; options, areas and map-wide passes stay out
     public bool Presets { get; private set; } = true;
@@ -113,7 +113,7 @@ public sealed class Translations
         foreach (var (k, v) in own.Pieces) result.Pieces[NormalizeKeep(k)] = v;
         // snow picked on a grid piece: its column is a snowTerrain area
         foreach (var (k, v) in result.Pieces)
-            if (v is "snow" && Regex.Match(k, @"^\S+ (-?\d+),-?\d+,(-?\d+)$") is { Success: true } m)
+            if (v is "snow" or "snowflip" && Regex.Match(k, @"^\S+ (-?\d+),-?\d+,(-?\d+)$") is { Success: true } m)
             {
                 var (x, z) = (int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value));
                 result.SnowTerrain.Add((x, z, x, z));

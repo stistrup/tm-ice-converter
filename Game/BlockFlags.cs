@@ -7,6 +7,8 @@ internal static class BlockFlags
 {
     public const int Ghost = 0x10000000;
     public const int Ground = 0x1000;
+    // the ground version that brings its own terrain
+    public const int Replacement = 0x10000;
 
     public static int VariantOf(CGameCtnBlock block) => (block.Flags >> 21) & 0x3F;
 

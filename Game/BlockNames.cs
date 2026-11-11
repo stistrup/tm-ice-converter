@@ -10,6 +10,9 @@ internal static partial class BlockNames
 
     public static bool IsGameplayBlock(string name) => NoItem().IsMatch(name);
 
+    // direction picks the effect: entered from the other side it's the other reactor
+    public static bool IsReactor(string name) => Regex.IsMatch(name, "Boost|Reactor");
+
     public static string? Effect(string name) => NoItem().Match(name) is { Success: true } m && m.Value != "Reactor" ? m.Value : null;
 
     // grass would poke through a skin
