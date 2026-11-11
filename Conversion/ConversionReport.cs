@@ -31,8 +31,10 @@ public sealed class ConversionReport
     public Dictionary<(string From, string To), int> SwappedItems { get; } = [];
     public Dictionary<(string Model, string Item), int> Trees { get; } = [];
     public Dictionary<string, int> TreesMissing { get; } = [];
+    public Dictionary<string, int> TreesInWater { get; } = [];
     public Dictionary<string, int> KeptUnder { get; } = [];
     public Dictionary<string, int> SnowTerrain { get; } = [];
+    public int FilledCells { get; set; }
     public Dictionary<string, int> SceneryKept { get; } = [];
     public Dictionary<string, int> TerrainItems { get; } = [];
     public Dictionary<string, int> Ramped { get; } = [];

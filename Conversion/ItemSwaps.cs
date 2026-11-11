@@ -57,6 +57,11 @@ internal static class ItemSwaps
         foreach (var item in removed) run.Map.AnchoredObjects!.Remove(item);
     }
 
+    // a tree on snow: what it freezes to, "<Env>:<Item>" first
+    public static string? SnowSwap(ConversionRun run, string id)
+        => new[] { run.Translations.Items, run.Translations.ItemsOnSnow }.SelectMany(t => new[] { t.GetValueOrDefault($"{run.Map.Collection}:{id}"), t.GetValueOrDefault(id) })
+            .FirstOrDefault(t => t is not null);
+
     // placed item's variant index in its variant list
     private const int VariantBits = 0x1F00;
 

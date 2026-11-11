@@ -4,7 +4,7 @@ import { useMapStore } from '../stores/map'
 import { usePreviewStore } from '../stores/preview'
 import { useHistoryStore } from '../stores/history'
 import { optionLabel } from '../viewer/outcomes'
-import { grouped, optionGroups, type OptionGroup } from '../viewer/optionGroups'
+import { grouped, optionGroups, terrainOptions, type OptionGroup } from '../viewer/optionGroups'
 
 const preview = usePreviewStore()
 const store = useMapStore()
@@ -26,6 +26,8 @@ function choose(group: OptionGroup, index: number) {
 }
 
 const rulesOpen = ref(false)
+const terrainOpen = ref(false)
+const terrain = computed(() => preview.options.filter((o) => terrainOptions.includes(o.name)))
 const normal = (key: string) => key.trim().replace(/\s*,\s*/g, ',')
 
 // each manual rule with the piece it's on (null: not on this map) and what it picks
@@ -107,6 +109,27 @@ function removeRule(key: string) {
           <span>{{ optionLabel(option.name) }}</span>
           <span v-if="option.description" :class="$style.info" :title="option.description" aria-label="What it does">i</span>
         </label>
+        <button
+          v-if="terrain.length"
+          type="button"
+          :class="$style.rulesHeader"
+          :aria-expanded="terrainOpen"
+          @click="terrainOpen = !terrainOpen"
+        >
+          <span>Terrain</span>
+          <span :class="[$style.chevron, { [$style.up]: terrainOpen }]" />
+        </button>
+        <div v-if="terrainOpen" :class="$style.nested">
+          <label v-for="option in terrain" :key="option.name" :class="$style.option">
+            <input
+              type="checkbox"
+              :checked="preview.valueOf(option.name)"
+              @change="history.change(() => preview.set(option.name, ($event.target as HTMLInputElement).checked))"
+            />
+            <span>{{ optionLabel(option.name) }}</span>
+            <span v-if="option.description" :class="$style.info" :title="option.description" aria-label="What it does">i</span>
+          </label>
+        </div>
       </fieldset>
       <div :class="$style.rules">
         <button
@@ -341,6 +364,12 @@ function removeRule(key: string) {
 
 .rulesHeader:hover:not(:disabled) {
   color: var(--strong);
+}
+
+.nested {
+  display: grid;
+  gap: 2px;
+  padding-left: 14px;
 }
 
 .ruleList {

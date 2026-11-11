@@ -64,7 +64,9 @@ public sealed class Translations
     // terrain cell areas (x0, z0, x1, z1) that become snow
     public List<(int X0, int Z0, int X1, int Z1)> SnowTerrain { get; } = [];
 
-    public bool SnowsTerrainAt(int x, int z) => SnowTerrain.Any(a => x >= a.X0 && x <= a.X1 && z >= a.Z0 && z <= a.Z1);
+    // columns snowed by the terrain options (SnowFill)
+    public HashSet<(int X, int Z)> SnowCells { get; } = [];
+    public bool SnowsTerrainAt(int x, int z) => SnowCells.Contains((x, z)) || SnowTerrain.Any(a => x >= a.X0 && x <= a.X1 && z >= a.Z0 && z <= a.Z1);
 
     // skin height over the native surface, metres; null = the code default
     public float? SkinLift { get; private set; }

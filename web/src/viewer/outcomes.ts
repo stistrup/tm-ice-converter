@@ -20,6 +20,9 @@ export function outcomeLabel(outcome: string) {
 // where the name says less than the option does
 const optionLabels: Record<string, string> = {
   convertTrees: 'Convert trees on converted blocks',
+  fillEmptyWithSnow: 'Fill empty cells',
+  snowOnWaterHills: 'Snow on water hills',
+  snowOnCliffs: 'Snow on dirt cliffs',
 }
 
 // convertScenery -> Convert scenery

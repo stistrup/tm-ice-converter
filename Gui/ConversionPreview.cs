@@ -240,7 +240,7 @@ internal sealed partial class ConversionPreview(string dataDir)
             // flags too: a pillar set from ground to air draws other clips
             var changedBlocks = converted.Where(b => !blockOrigin.TryGetValue(b, out var o) || run.Customs.ContainsKey(b) || run.Renamed.Contains(b) || b.Flags != flags[o]).ToHashSet();
             // the terrain a native ground block hid shows again under its custom block
-            var underCustoms = run.Customs.Keys.Where(b => b.IsGround && run.Cells.ContainsKey(b) && !BlockNames.OnTerrainShape(names[blockOrigin[b]]))
+            var underCustoms = run.Customs.Keys.Where(b => b.IsGround && run.Cells.ContainsKey(b) && !(blockOrigin.TryGetValue(b, out var o) && BlockNames.OnTerrainShape(names[o])))
                 .SelectMany(b => run.Cells[b]).ToHashSet();
             changedBlocks.UnionWith(converted.Where(b => run.Shapes.IsTerrain(b.Name) && run.Cells.TryGetValue(b, out var cells) && cells.Any(underCustoms.Contains)));
             var convertedItems = (map.AnchoredObjects ?? []).ToList();

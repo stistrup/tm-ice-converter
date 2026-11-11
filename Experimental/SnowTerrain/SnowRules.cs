@@ -46,7 +46,7 @@ internal static class SnowRules
             || run.Snow.BuiltOn.Any(c => c.X == coord.X && c.Z == coord.Z && c.Y <= coord.Y + 1)
             || run.Items.SnowTerrainFor(name, VariantOf(block), MobilOf(block), run.Map.Collection!.Value, run.Snow.UnderDeco.Contains((coord.X, coord.Z))) is not { } snowBlock) return false;
         run.Snowed.Add((block, VariantOf(block), MobilOf(block)));
-        run.Customs[block] = snowBlock;
+        Snow(run, block, snowBlock);
         block.Flags &= ~0xFFF & ~(0x3F << 21);
         Bump(run.Report.SnowTerrain, name);
         return true;
@@ -75,7 +75,7 @@ internal static class SnowRules
         }
         if (run.Shapes.IsTerrain(block.Name) || block.IsPillar || run.Shapes.IsPillarBlock(block.Name) || block.IsFree
             || run.Items.SnowDecoFor(block.Name, VariantOf(block), MobilOf(block), run.Map.Collection!.Value, block.IsGround) is not { } snowDeco) return false;
-        run.Customs[block] = snowDeco;
+        Snow(run, block, snowDeco);
         Bump(run.Report.SnowTerrain, block.Name);
         return true;
     }
@@ -86,10 +86,16 @@ internal static class SnowRules
         var coord = block.Coord;
         if (!run.Shapes.IsTerrain(block.Name) || IsWater(block.Name) || !SnowedGameplay(run).TryGetValue((coord.X, coord.Z), out var above)
             || run.Items.GameplayGroundFor(above.Name, VariantOf(above), MobilOf(above), run.Map.Collection!.Value) is not { } ground) return false;
-        run.Customs[block] = ground;
+        Snow(run, block, ground);
         (block.Coord, block.Direction) = (above.Coord, above.Direction);
         block.Flags &= ~0xFFF & ~(0x3F << 21);
         return true;
+    }
+
+    private static void Snow(ConversionRun run, CGameCtnBlock block, IceBlock body)
+    {
+        run.Customs[block] = body;
+        run.SnowBodies.Add(block);
     }
 
     // ground gameplay blocks picked to snow, by cell, with terrain under them; read before any of them goes to the air
@@ -102,7 +108,7 @@ internal static class SnowRules
     {
         if (!run.InTerrain(block) || !run.Rules.SnowsTerrainAt(block.Coord.X, block.Coord.Z)
             || run.Items.SnowDecoFor(block.Name, VariantOf(block), MobilOf(block), run.Map.Collection!.Value) is not { } snowDeco) return false;
-        run.Customs[block] = snowDeco;
+        Snow(run, block, snowDeco);
         Bump(run.Report.SnowTerrain, block.Name);
         return true;
     }

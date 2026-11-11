@@ -50,4 +50,7 @@ export const optionGroups: OptionGroup[] = [
   },
 ]
 
-export const grouped = new Set(optionGroups.flatMap((group) => group.options))
+// checkboxes under the Terrain chevron
+export const terrainOptions = ['fillEmptyWithSnow', 'snowOnWaterHills', 'snowOnCliffs']
+
+export const grouped = new Set([...optionGroups.flatMap((group) => group.options), ...terrainOptions])

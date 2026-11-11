@@ -26,6 +26,12 @@ public sealed record ConvertOptions(
     bool ConvertTrees = false,
     [property: Description("Deco blocks, pillars, concrete and walls get snow")]
     bool ConvertScenery = false,
+    [property: Description("Empty cells, the game's flat ground, become snow too")]
+    bool FillEmptyWithSnow = false,
+    [property: Description("Shores (water hills) get snow above the water line")]
+    bool SnowOnWaterHills = false,
+    [property: Description("Cliffs get snow at their foot")]
+    bool SnowOnCliffs = false,
     [property: Description("Native blocks keep their place under an ice skin instead of becoming custom blocks: smaller maps, one ice look")]
     bool SkinsOnly = false,
     [property: Description("Starts, checkpoints and finishes stay native under an ice skin; they are the largest custom blocks")]
@@ -45,6 +51,9 @@ public sealed record ConvertOptions(
         "customWaypoints" => this with { CustomWaypoints = value },
         "convertTrees" => this with { ConvertTrees = value },
         "convertScenery" => this with { ConvertScenery = value },
+        "fillEmptyWithSnow" => this with { FillEmptyWithSnow = value },
+        "snowOnWaterHills" => this with { SnowOnWaterHills = value },
+        "snowOnCliffs" => this with { SnowOnCliffs = value },
         "skinsOnly" => this with { SkinsOnly = value },
         "skinWaypoints" => this with { SkinWaypoints = value },
         "rampToSkins" => this with { RampToSkins = value },

@@ -78,6 +78,7 @@ internal static class ReportWriter
         {
             sb.AppendLine($"\n## Terrain in snow ({report.SnowTerrain.Values.Sum()})\n");
             sb.AppendLine("From the map's snowTerrain areas; cells under a ground block stay, water stays.\n");
+            if (report.FilledCells > 0) sb.AppendLine($"fillEmptyWithSnow: {report.FilledCells} empty cells got the flat terrain block, counted below.\n");
             foreach (var (name, n) in report.SnowTerrain.OrderByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n}");
         }
         if (report.KeptUnder.Count > 0)
@@ -86,12 +87,13 @@ internal static class ReportWriter
             sb.AppendLine("The custom block is a ghost over the native one; its ice is drawn up to 1 cm higher (collision unchanged).\n");
             foreach (var (name, n) in report.KeptUnder.OrderByDescending(kv => kv.Value)) sb.AppendLine($"- {name} x{n}");
         }
-        if (report.Trees.Count + report.TreesMissing.Count > 0)
+        if (report.Trees.Count + report.TreesMissing.Count + report.TreesInWater.Count > 0)
         {
             sb.AppendLine($"\n## Trees of custom blocks, as vegetation items ({report.Trees.Values.Sum()})\n");
             sb.AppendLine("| Count | Tree model | Item |\n|---:|---|---|");
             foreach (var ((model, item), n) in report.Trees.OrderByDescending(kv => kv.Value)) sb.AppendLine($"| {n} | {model} | {item} |");
             foreach (var (model, n) in report.TreesMissing.OrderByDescending(kv => kv.Value)) sb.AppendLine($"| {n} | {model} | (no item) |");
+            foreach (var (model, n) in report.TreesInWater.OrderByDescending(kv => kv.Value)) sb.AppendLine($"| {n} | {model} | (over water, left out) |");
         }
 
         if (report.EngineOff.Count > 0)

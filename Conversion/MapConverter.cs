@@ -20,8 +20,11 @@ public sealed class MapConverter(HashSet<string> knownBlocks, Translations trans
         var rules = translations.For(map.MapName, own);
         shapes.Environment = items.Environment = collection;
         items.Style = new ItemStyle(rules.Options.SnowOnZoneSides, rules.Options.SnowOnGroundDeco, rules.SkinLift ?? ItemStyle.DefaultSkinLift, rules.SkinEdge ?? ItemStyle.DefaultSkinEdge);
+        SnowFill.ByKind(map, shapes, rules);
+        var filled = rules.Options.FillEmptyWithSnow ? SnowFill.Run(map, collection, shapes, rules) : 0;
         var run = new ConversionRun(map, collection, rules, translations, knownBlocks, shapes, items, surfaceParents, flatTops);
 
+        run.Report.FilledCells = filled;
         foreach (var block in map.GetBlocks()) BlockRules.Decide(block, run);
         Neighbours.Keep(run);
         SnowReach.Run(run);

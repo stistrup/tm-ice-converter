@@ -23,6 +23,10 @@ public sealed class Vegetation(string gameData)
         return pool.Count == 0 ? null : pool[(int)(hash / 4 % (uint)pool.Count)];
     }
 
+    // the tree model a variant of an item shows
+    public string? ModelOf(string environment, (string Item, int Variant) stand)
+        => Catalog(environment).Item1.FirstOrDefault(kv => kv.Value == stand).Key;
+
     private (Dictionary<string, (string, int)>, List<(string, int)>, List<(string, int)>) Catalog(string environment)
     {
         lock (catalogs)

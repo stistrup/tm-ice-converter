@@ -179,6 +179,8 @@ export class MapScene {
   private selection: number[] = []
   private layerMaterials: SceneMaterials | null = null
   private extent: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null
+  private ground: Mesh | null = null
+  private environment: string | null = null
   private cutTarget: WebGLRenderTarget | null = null
   private cutTimer = 0
   private previewCall = 0
@@ -339,6 +341,7 @@ export class MapScene {
     this.setLook(draw?.looks ?? [])
     this.setTints(draw?.tints ?? [])
     this.layerMaterials = layer?.materials ?? null
+    this.addGround(this.environment, layer?.covered ?? [])
     this.setSelection(this.selection)
     this.scheduleCut()
   }
@@ -356,8 +359,14 @@ export class MapScene {
     )
     const byMesh = new Map<string, typeof manifest.instances>()
     const byOrigin = new Map<string, LayerPiece>()
+    // ground blocks the conversion added (fillEmptyWithSnow): the base ground goes there
+    const covered = new Set<string>()
     for (const instance of manifest.instances) {
       const origin = originOf(instance.info, 'originBlock', 'originItem')
+      if (!origin && instance.info.kind.includes('block') && /\bground\b/.test(instance.info.tags ?? '')) {
+        const cells = MapScene.cellsOf(pieces[instance.mesh].map((p) => p.geometry), new Matrix4().fromArray(instance.m))
+        if (cells) for (let x = cells.x0; x <= cells.x1; x++) for (let z = cells.z0; z <= cells.z1; z++) covered.add(`${x},${z}`)
+      }
       if (origin && !byOrigin.has(origin))
         byOrigin.set(origin, {
           key: `layer:${instance.mesh}`,
@@ -387,6 +396,7 @@ export class MapScene {
       meshes,
       materials,
       pieces: byOrigin,
+      covered,
       dispose: () => {
         for (const mesh of meshes) {
           this.scene.remove(mesh)
@@ -697,24 +707,38 @@ export class MapScene {
     }
   }
 
-  // cells without a ground or terrain block show the environment's base ground
-  private addGround(environment: string | null) {
-    const cell = CELL.x
-    const owned = new Set<string>()
-    let [minX, maxX, minZ, maxZ] = [0, 48, 0, 48]
-    // the cut pass covers what the base ground covers
+  // the cells a piece covers, a hair inside so it doesn't claim the cells it only touches
+  private static cellsOf(geometries: BufferGeometry[], matrix: Matrix4) {
     const box = new Box3()
     const part = new Box3()
+    for (const geometry of geometries) {
+      if (!geometry.boundingBox) geometry.computeBoundingBox()
+      box.union(part.copy(geometry.boundingBox!).applyMatrix4(matrix))
+    }
+    if (box.isEmpty()) return null
+    const cell = CELL.x
+    return {
+      x0: Math.floor((box.min.x + 0.5) / cell), x1: Math.floor((box.max.x - 0.5) / cell),
+      z0: Math.floor((box.min.z + 0.5) / cell), z1: Math.floor((box.max.z - 0.5) / cell),
+    }
+  }
+
+  // cells without a ground or terrain block show the environment's base ground; covered: cells the preview fills
+  private addGround(environment: string | null, covered: Iterable<string> = []) {
+    this.environment = environment
+    if (this.ground) {
+      this.scene.remove(this.ground)
+      this.ground.geometry.dispose()
+      this.ground = null
+    }
+    const cell = CELL.x
+    const owned = new Set<string>(covered)
+    let [minX, maxX, minZ, maxZ] = [0, 48, 0, 48]
+    // the cut pass covers what the base ground covers
     for (const placed of this.placed) {
-      box.makeEmpty()
-      for (const geometry of placed.geometries) {
-        if (!geometry.boundingBox) geometry.computeBoundingBox()
-        box.union(part.copy(geometry.boundingBox!).applyMatrix4(placed.matrix))
-      }
-      if (box.isEmpty()) continue
-      // a hair inside, so a block doesn't claim the cells it only touches
-      const [x0, x1] = [Math.floor((box.min.x + 0.5) / cell), Math.floor((box.max.x - 0.5) / cell)]
-      const [z0, z1] = [Math.floor((box.min.z + 0.5) / cell), Math.floor((box.max.z - 0.5) / cell)]
+      const cells = MapScene.cellsOf(placed.geometries, placed.matrix)
+      if (!cells) continue
+      const { x0, x1, z0, z1 } = cells
       ;[minX, maxX, minZ, maxZ] = [Math.min(minX, x0), Math.max(maxX, x1 + 1), Math.min(minZ, z0), Math.max(maxZ, z1 + 1)]
       if (!placed.ownsGround) continue
       for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) owned.add(`${x},${z}`)
@@ -735,8 +759,9 @@ export class MapScene {
     geometry.setAttribute('position', new BufferAttribute(new Float32Array(positions), 3))
     geometry.setAttribute('normal', new BufferAttribute(new Float32Array(positions.length).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3))
     geometry.setAttribute('uv', new BufferAttribute(new Float32Array((positions.length / 3) * 2), 2))
-    const ground = new Mesh(geometry, this.materials!.ground())
-    this.scene.add(ground)
+    this.ground = new Mesh(geometry, this.materials!.ground())
+    this.scene.add(this.ground)
+    this.invalidate()
   }
 
   private pieceGeometry(buffer: ArrayBuffer, offset: number, vertices: number, indices: number, colors: boolean) {

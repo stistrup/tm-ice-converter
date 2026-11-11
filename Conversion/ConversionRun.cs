@@ -44,6 +44,8 @@ internal sealed class ConversionRun
     public Dictionary<(int X, int Z), CGameCtnBlock>? SnowedGameplay { get; set; }
     // snow terrain cells, with the shape their flags held
     public List<(CGameCtnBlock Block, int Variant, int Mobil)> Snowed { get; } = [];
+    // custom bodies in snow; their trees freeze
+    public HashSet<CGameCtnBlock> SnowBodies { get; } = new(ReferenceEqualityComparer.Instance);
     public List<CGameCtnBlock> EngineOffGates { get; } = [];
     // convertScenery off: left alone by the neighbour and top passes too
     public HashSet<CGameCtnBlock> SceneryKept { get; } = new(ReferenceEqualityComparer.Instance);
