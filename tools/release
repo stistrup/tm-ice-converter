@@ -21,6 +21,7 @@ for rid in win-x64 linux-x64; do
     # what the app reads next to itself: data (never someone's local.jsonc), the page, the plugin, the Blender scripts
     mkdir -p "$out/data" "$out/web" "$out/openplanet" "$out/tools"
     find data -maxdepth 1 -type f ! -name 'local.jsonc' -exec cp {} "$out/data/" \;
+    cp -r data/themes "$out/data/"
     cp -r web/dist "$out/web/"
     cp -r openplanet/IceConverterExtract "$out/openplanet/"
     cp tools/*.py "$out/tools/"

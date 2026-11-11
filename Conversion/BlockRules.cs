@@ -13,31 +13,35 @@ internal static partial class BlockRules
 {
     private static readonly BlockRule[] Rules =
     [
-        SnowRules.UnderSnowedGameplay,
+        CoverRules.UnderSnowedGameplay,
         Picked,
         Gates.EngineOff,
-        AlreadyIce,
+        AlreadyThemed,
         OnKeepList,
-        SnowRules.PillarOnSnow,
+        CoverRules.PillarOnSnow,
         Pillar,
-        SnowRules.TerrainCell,
+        CoverRules.TerrainCell,
         TerrainStays,
         DecoSceneryOff,
         SwapTable,
         IgnoredPrefix,
-        NativeIceTwin,
+        NativeTwin,
         Water,
         Concrete,
-        NoIceWanted,
+        NoItemWanted,
         Gates.EffectOnGate,
         WallsOnly,
-        SnowRules.DecoInTerrain,
-        SnowOverIceTwin,
+        CoverRules.DecoInTerrain,
+        CoverOverTwin,
         SkinRules.AskedFor,
         CustomBlock,
         SkinRules.OnGround,
         AsItem,
     ];
+
+    // rules that leave a block as scenery (the preview groups those with deco)
+    public static readonly HashSet<string> SceneryRules =
+        [nameof(Pillar), nameof(Concrete), nameof(WallsOnly), nameof(NoItemWanted), nameof(DecoSceneryOff), nameof(CoverRules.DecoInTerrain), nameof(CoverOverTwin)];
 
     public static void Decide(CGameCtnBlock block, ConversionRun run)
     {
@@ -67,15 +71,15 @@ internal static partial class BlockRules
             case "tops":
                 TopsOnly(block, run);
                 return true;
-            case "snow" when SnowRules.PickedSnow(block, run):
+            case "snow" when CoverRules.PickedSnow(block, run):
                 return true;
             case "plain" when Gates.PlainOf(block.Name, run) is { } plain:
                 block.Name = plain;
                 return false;
             // presets off: only a picked snow column changes an unpicked block
             case null when !run.Rules.Presets:
-                if (SnowRules.TerrainCell(block, run) || SnowRules.DecoInTerrain(block, run)) return true;
-                SnowRules.PillarOnSnow(block, run);
+                if (CoverRules.TerrainCell(block, run) || CoverRules.DecoInTerrain(block, run)) return true;
+                CoverRules.PillarOnSnow(block, run);
                 Bump(run.Report.KeptByList, block.Name);
                 return true;
             default:
@@ -83,11 +87,12 @@ internal static partial class BlockRules
         }
     }
 
-    private static bool AlreadyIce(CGameCtnBlock block, ConversionRun run)
+    private static bool AlreadyThemed(CGameCtnBlock block, ConversionRun run)
     {
-        if (!block.Name.Contains("Ice") && !block.Name.Contains('\\')) return false;
+        var word = run.Items.Theme.BlockWord;
+        if (!(word is not null && block.Name.Contains(word)) && !block.Name.Contains('\\')) return false;
         // flipped ice shows concrete: ice top
-        if (!block.Name.Contains('\\')) IceTops.Add(run, block, run.Variant(block), run.Clips(block), ItemKind.TopOfIce, inBlock: true);
+        if (!block.Name.Contains('\\')) SurfaceTops.Add(run, block, run.Variant(block), run.Clips(block), ItemKind.TopOfTwin, inBlock: true);
         return true;
     }
 
@@ -108,7 +113,7 @@ internal static partial class BlockRules
     }
 
     private static void TopsOnly(CGameCtnBlock block, ConversionRun run)
-        => IceTops.Add(run, block, run.Variant(block), run.Clips(block), inBlock: true);
+        => SurfaceTops.Add(run, block, run.Variant(block), run.Clips(block), inBlock: true);
 
     private static bool Pillar(CGameCtnBlock block, ConversionRun run)
     {
@@ -137,16 +142,16 @@ internal static partial class BlockRules
     private static bool Available(string name, ConversionRun run)
         => run.KnownBlocks.Contains(name) && run.Translations.IsAvailable(name, run.Collection) && run.Shapes.EnvironmentHas(name) != false;
 
-    private static bool NativeIceTwin(CGameCtnBlock block, ConversionRun run)
+    private static bool NativeTwin(CGameCtnBlock block, ConversionRun run)
     {
         var name = block.Name;
         // air open roads off Stadium become items
         if (!block.IsGround && name.StartsWith("Open") && !run.Collection.StartsWith("Stadium")) return false;
-        if (Candidates(name).FirstOrDefault(c => Available(c, run)) is not { } twin) return false;
+        if (run.Items.Theme.BlockWord is not { } word || Candidates(name, word).FirstOrDefault(c => Available(c, run)) is not { } twin) return false;
         block.Name = twin;
         run.Renamed.Add(block);
         Bump(run.Report.Swapped, (name, twin, Source.Rule));
-        IceTops.Add(run, block, run.Variant(block), run.Clips(block), ItemKind.TopOfIce);
+        SurfaceTops.Add(run, block, run.Variant(block), run.Clips(block), ItemKind.TopOfTwin);
         return true;
     }
 
@@ -168,7 +173,7 @@ internal static partial class BlockRules
         return true;
     }
 
-    private static bool NoIceWanted(CGameCtnBlock block, ConversionRun run)
+    private static bool NoItemWanted(CGameCtnBlock block, ConversionRun run)
     {
         if (WantsItem(block.Name)) return false;
         if (!KeepScenery(block, run)) TopsOnly(block, run);
@@ -185,11 +190,12 @@ internal static partial class BlockRules
     }
 
     // only a block keeps the ground away; grass grows through a skin on deco, not on ice
-    private static bool SnowOverIceTwin(CGameCtnBlock block, ConversionRun run)
+    private static bool CoverOverTwin(CGameCtnBlock block, ConversionRun run)
     {
         var name = block.Name;
         if (!(block.IsGround || run.InTerrain(block)) || !BlockNames.IsWholeOnGround(name, run.Collection) || !run.Rules.Options.SnowOnGroundDeco) return false;
-        var twin = "PlatformIce" + name["DecoPlatform".Length..];
+        if (run.Items.Theme.BlockWord is not { } word) return false;
+        var twin = "Platform" + word + name["DecoPlatform".Length..];
         if (!Available(twin, run) || !ItemPlacer.Place(run, block, run.Variant(block), run.Clips(block), ItemKind.OverTwin)) return false;
         block.Name = twin;
         run.Renamed.Add(block);
@@ -215,13 +221,13 @@ internal static partial class BlockRules
             ? (own, name, noClips)
             : run.SurfaceParents.Of(name, variant, run.Clips(block)) is { } parent
                 && items.BlockFor(name, parent.Name, block.IsGround, variant, mobil, collection, parent.Baked, lift: stack) is { } onParent
-                ? (onParent, parent.Name, parent.Baked) : default((IceBlock, string, IReadOnlySet<int>)?);
+                ? (onParent, parent.Name, parent.Baked) : default((BuiltBlock, string, IReadOnlySet<int>)?);
         if (built is not var (iceBlock, archetype, baked)) return false;
         run.Customs[block] = iceBlock;
         run.BuiltAs[block] = (archetype, baked, stack);
         if (stack) run.Stacked.Add(block);
         // only the body's own terrain: the game still draws the clips, terrain ones included
-        else if (block.IsGround && BlockNames.OnTerrainShape(name) && items.For(name, true, variant, mobil, baked, ItemKind.TerrainFaces) is { } terrain && terrain != IceItem.Nothing
+        else if (block.IsGround && BlockNames.OnTerrainShape(name) && items.For(name, true, variant, mobil, baked, ItemKind.TerrainFaces) is { } terrain && terrain != BuiltItem.Nothing
             && ItemPlacer.Place(run, block, variant, baked, ItemKind.TerrainFaces))
             Bump(run.Report.TerrainItems, name);
         Bump(run.Report.ReplacedByBlock, name);
@@ -234,9 +240,14 @@ internal static partial class BlockRules
     private static bool NeedsNativeUnder(CGameCtnBlock block, ConversionRun run)
     {
         var (name, variant, mobil) = (block.Name, VariantOf(block), MobilOf(block));
-        return !block.IsFree && run.Shapes.Waypoint(name) is null
-            && (block.IsGround && BlockNames.OnTerrainShape(name) && run.Items.For(name, true, variant, mobil, ConversionRun.NoClips, ItemKind.TerrainFaces) is { } ownFaces && ownFaces != IceItem.Nothing
-                || run.Shapes.Trees(name, block.IsGround, variant, mobil, run.Clips(block)).Count > 0);
+        if (block.IsFree || run.Shapes.Waypoint(name) is not null) return false;
+        return HasTerrainFaces(block, run) || run.Shapes.Trees(name, block.IsGround, variant, mobil, run.Clips(block)).Count > 0;
+    }
+
+    private static bool HasTerrainFaces(CGameCtnBlock block, ConversionRun run)
+    {
+        if (!block.IsGround || !BlockNames.OnTerrainShape(block.Name)) return false;
+        return run.Items.For(block.Name, true, VariantOf(block), MobilOf(block), ConversionRun.NoClips, ItemKind.TerrainFaces) is { } faces && faces != BuiltItem.Nothing;
     }
 
     private static bool AsItem(CGameCtnBlock block, ConversionRun run)
@@ -265,23 +276,22 @@ internal static partial class BlockRules
     [GeneratedRegex("Tech(?!nics)|Dirt|Grass|Plastic|Bump")]
     private static partial Regex Surface();
 
-    private static readonly string[] IcePrefixes = ["DecoPlatform", "DecoHill", "DecoCliff10", "DecoCliff8", "DecoCliff"];
+    private static readonly string[] TwinPrefixes = ["DecoPlatform", "DecoHill", "DecoCliff10", "DecoCliff8", "DecoCliff"];
 
     private static bool WantsItem(string name)
-        => Surface().IsMatch(name) || IcePrefixes.Any(name.StartsWith) || name.StartsWith("SnowRoad") || name.StartsWith("DecoWall");
+        => Surface().IsMatch(name) || TwinPrefixes.Any(name.StartsWith) || name.StartsWith("SnowRoad") || name.StartsWith("DecoWall");
 
-    // ice name guesses, most specific first
-    private static IEnumerable<string> Candidates(string name)
-        => name.Contains("Penalty") ? [] : RawCandidates(name).Where(c => !c.Contains("RoadIce"));
+    // twin name guesses, most specific first; never a Road<word> block
+    private static IEnumerable<string> Candidates(string name, string word)
+        => name.Contains("Penalty") ? [] : RawCandidates(name, word).Where(c => !c.Contains("Road" + word));
 
-    // never RoadIce
-    private static IEnumerable<string> RawCandidates(string name)
+    private static IEnumerable<string> RawCandidates(string name, string word)
     {
         foreach (Match m in Surface().Matches(name))
-            yield return name[..m.Index] + "Ice" + name[(m.Index + m.Length)..];
-        foreach (var p in IcePrefixes)
-            if (name.StartsWith(p)) yield return p + "Ice" + name[p.Length..];
-        if (name.StartsWith("DecoWall") && !Surface().IsMatch(name)) yield return name + "Ice";
+            yield return name[..m.Index] + word + name[(m.Index + m.Length)..];
+        foreach (var p in TwinPrefixes)
+            if (name.StartsWith(p)) yield return p + word + name[p.Length..];
+        if (name.StartsWith("DecoWall") && !Surface().IsMatch(name)) yield return name + word;
     }
 
     private static void Apply(CGameCtnBlock block, Translation t, ConversionReport report)

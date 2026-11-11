@@ -7,15 +7,15 @@ internal static class Importer
 {
     private sealed record FbxObject(string Name, string Material, int Triangles);
 
-    public static string? Import(string name, List<MeshPiece> pieces, string? waypoint, string? environment, string meshDir, string json, string buildScript, out Dictionary<GBX.NET.Engines.Plug.CPlugSurface.MaterialId, int> surfaces)
+    public static string? Import(Theme theme, string name, List<MeshPiece> pieces, string? waypoint, string? environment, string meshDir, string json, string buildScript, out Dictionary<GBX.NET.Engines.Plug.CPlugSurface.MaterialId, int> surfaces)
     {
         surfaces = [];
         var materials = pieces.Select(p => p.Material).Distinct().Order().ToList();
         // the importer ignores PhysicsId unless set explicitly
         var physics = MaterialLib.Surfaces(materials.Where(m => !m.StartsWith(MaterialLib.NativePrefix)));
         foreach (var m in materials.Where(m => m.StartsWith(MaterialLib.NativePrefix))) physics[m] = MaterialLib.NativeSurface(m, environment);
-        if (materials.FirstOrDefault(m => !m.StartsWith(MaterialLib.NativePrefix) && MaterialLib.NotIce.Contains(physics[m])) is { } dry)
-            return $"material {dry} drives as {physics[dry]}; map it to an ice material in data/ice-materials.jsonc";
+        if (materials.FirstOrDefault(m => !m.StartsWith(MaterialLib.NativePrefix) && theme.Replaces.Contains(physics[m])) is { } dry)
+            return $"material {dry} drives as {physics[dry]}; map it in {theme.MaterialsFile}";
         var standIn = MaterialLib.NativeStandIns(materials, physics);
         var lightmapOnly = string.Join(",", materials.Where(MaterialLib.LightmapOnly));
         if (!RunQuiet(Paths.Blender, ["--background", "--factory-startup", "--python", buildScript, "--", json, Path.Combine(meshDir, name + ".fbx"), lightmapOnly], out var blenderLog))
@@ -37,18 +37,18 @@ internal static class Importer
             </Item>
             """);
 
-        if (RunImporter($"Items\\IceConverter\\{name}.Item.xml") is { } importError) return importError;
+        if (RunImporter($"Items\\{Paths.ItemFolder}\\{name}.Item.xml") is { } importError) return importError;
 
         var itemPath = Path.Combine(Paths.Items, name + ".Item.gbx");
         var collision = Jsonc.Load<List<FbxObject>>(Path.Combine(meshDir, name + ".objects.json"))
             .Where(o => !o.Name.StartsWith("_notcollidable_") && !o.Name.StartsWith("_trigger_"))
-            .Select(o => (o.Name, o.Name.StartsWith("_notvisible_pad") ? $"RoadIce:{Pads.PadGameplay(o.Name)}" : physics[o.Material], o.Triangles)).ToList();
+            .Select(o => (o.Name, o.Name.StartsWith("_notvisible_pad") ? $"{theme.PadSurface}:{Pads.PadGameplay(o.Name)}" : physics[o.Material], o.Triangles)).ToList();
         File.Delete(Path.Combine(meshDir, name + ".fbx"));
         File.Delete(Path.Combine(meshDir, name + ".objects.json"));
         surfaces = ItemPhysics.Fix(itemPath, collision);
         if (materials.Any(m => m.StartsWith(MaterialLib.NativePrefix))) ItemPatches.PointNative(itemPath, environment);
         if (waypoint is not null) ItemPatches.SetWaypoint(itemPath, waypoint);
-        ItemPatches.AddVertexColours(itemPath);
+        ItemPatches.AddVertexColours(itemPath, theme);
         return null;
     }
 

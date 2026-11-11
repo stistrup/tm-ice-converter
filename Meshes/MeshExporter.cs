@@ -28,6 +28,9 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
     public bool VegetTrees { get; init; }
     public bool PlatformLayout { get; init; }
 
+    // gets plain-snow UVs
+    public string Cover { get; init; } = Theme.Default.Cover;
+
     // material for visual faces that touch a border (the road lip under it): null = as usual, "" = left out
     public Func<string, string?>? LipAs { get; init; }
 
@@ -152,30 +155,34 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
                     AddPrefab(nested, nestedPath, world, pieces, depth + 1, trees);
                     break;
                 case null when ent.ModelFile is { } file:
-                    var target = GameFiles.ResolveRef(path, ancestor, file.FilePath);
-                    if (target.EndsWith(".Prefab.Gbx", StringComparison.OrdinalIgnoreCase))
-                        AddPrefab(target, world, pieces, depth + 1, trees);
-                    else if (target.EndsWith(".StaticObject.Gbx", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (pieces is not null && files.LoadStaticObject(target) is { } fileSom) AddStaticObject(fileSom, world, $"{label}_{i}", pieces, target);
-                    }
-                    else if (target.EndsWith(".DynaObject.Gbx", StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (pieces is not null && DynaObjects && files.LoadDynaObject(target) is { } fileDyna) AddDynaObject(fileDyna, world, $"{label}_{i}", pieces, target);
-                    }
-                    else if (target.EndsWith(".VegetTreeModel.Gbx", StringComparison.OrdinalIgnoreCase))
-                    {
-                        trees?.Add((Path.GetFileName(target)[..^".VegetTreeModel.Gbx".Length], world));
-                        if (pieces is not null && VegetTrees) AddTree(target, world, pieces);
-                    }
-                    else if (pieces is not null)
-                        files.Warnings.Add($"skipped {file.FilePath} (not a prefab)");
+                    AddEntityFile(GameFiles.ResolveRef(path, ancestor, file.FilePath), file.FilePath, world, $"{label}_{i}", pieces, depth, trees);
                     break;
                 case { } other:
                     if (pieces is not null) files.Warnings.Add($"skipped {label} entity {i}: {other.GetType().Name}");
                     break;
             }
         }
+    }
+
+    // an entity whose model is its own file
+    private void AddEntityFile(string target, string refPath, Matrix4x4 world, string label, List<MeshPiece>? pieces, int depth, List<(string, Matrix4x4)>? trees)
+    {
+        bool Is(string kind) => target.EndsWith(kind, StringComparison.OrdinalIgnoreCase);
+        if (Is(".Prefab.Gbx")) AddPrefab(target, world, pieces, depth + 1, trees);
+        else if (Is(".StaticObject.Gbx"))
+        {
+            if (pieces is not null && files.LoadStaticObject(target) is { } som) AddStaticObject(som, world, label, pieces, target);
+        }
+        else if (Is(".DynaObject.Gbx"))
+        {
+            if (pieces is not null && DynaObjects && files.LoadDynaObject(target) is { } dyna) AddDynaObject(dyna, world, label, pieces, target);
+        }
+        else if (Is(".VegetTreeModel.Gbx"))
+        {
+            trees?.Add((Path.GetFileName(target)[..^".VegetTreeModel.Gbx".Length], world));
+            if (pieces is not null && VegetTrees) AddTree(target, world, pieces);
+        }
+        else if (pieces is not null) files.Warnings.Add($"skipped {refPath} (not a prefab)");
     }
 
     // the game's far LOD (from 100 m): a forest map has thousands, the full one is ~15x the triangles; false: cut extract
@@ -188,15 +195,12 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
         var label = Path.GetFileName(path).Split('.')[0];
         foreach (var (part, i) in lod.Select((p, i) => (p, i)))
         {
-            if (part.Visual.IndexBuffer?.Indices is not { } idx || VertsOf(part.Visual, idx) is not { } vertices) continue;
+            if (part.Visual.IndexBuffer?.Indices is not { } idx || MeshData.VertsOf(part.Visual, idx) is not { } vertices) continue;
             pieces.Add(new MeshPiece($"_notcollidable_{label}_v{i}", VegetMaterialName(path, part.Material), Visible: true, Collidable: false,
-                Transform(vertices.Positions, world), vertices.Normals is { } n ? TransformNormals(n, world) : null, FlipV(vertices.Uv0), null, idx));
+                MeshData.Transform(vertices.Positions, world), vertices.Normals is { } n ? MeshData.TransformNormals(n, world) : null, MeshData.FlipV(vertices.Uv0), null, idx));
         }
         return true;
     }
-
-    // tree V runs the other way (checked: leaf cards land on the alpha only flipped)
-    private static float[]? FlipV(float[]? uv) => uv?.Select((x, i) => i % 2 == 1 ? 1 - x : x).ToArray();
 
     public const string VegetPrefix = "veget:";
 
@@ -219,67 +223,84 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
             lips!.Collect(som, world);
             return;
         }
-        if ((som.Mesh ?? ExternalMesh(som.MeshFile, sourceFile)) is { } mesh)
-        {
-            // best LOD only
-            var geoms = mesh.ShadedGeoms ?? [];
-            var hasLods = geoms.Any(g => g.LodMask != 0);
-            var bestLod = geoms.Select(g => g.LodMask).Where(m => m != 0).Select(m => m & -m).DefaultIfEmpty(1).Min();
-            foreach (var (geom, gi) in geoms.Select((g, gi) => (g, gi)).Where(x => x.g.LodMask == 0 ? !hasLods : (x.g.LodMask & bestLod) != 0))
-            {
-                if (mesh.Visuals?[geom.VisualIndex] is not CPlugVisualIndexedTriangles vis) continue;
-                if (vis.IndexBuffer?.Indices is not { } idx || VertsOf(vis, idx) is not { } vertices) continue;
+        if ((som.Mesh ?? ExternalMesh(som.MeshFile, sourceFile)) is { } mesh) AddVisuals(mesh, world, label, pieces);
+        if (som.Shape is CPlugSurface { Surf: CPlugSurface.Mesh surf } shape) AddCollision(shape, surf, world, label, pieces);
+    }
 
-                var source = MaterialName(mesh, geom.MaterialIndex);
-                if (MapMaterial(source) is "") continue;
-                if (KeepMaterial is { } keep && !keep(source)) continue;
-                var worldPos = Transform(vertices.Positions, world);
-                idx = KeptFaces(worldPos, idx);
-                var lipAs = LipAs?.Invoke(source);
-                int[] lip = [];
-                if (lipAs is not null) (idx, lip) = lips!.Split(worldPos, idx);
-                if (lip.Length > 0 && lipAs is not "")
-                {
-                    // the game gives the hidden lip no lightmap space
-                    pieces.Add(Lightmaps.Projected(new MeshPiece($"_notcollidable_{label}_v{gi}_lip", lipAs!, Visible: true, Collidable: false,
-                        SkinLift.Lifted(worldPos, lip, Lift, Up), vertices.Normals is { } ln ? TransformNormals(ln, world) : null, vertices.Uv0, null, lip)));
-                }
-                if (idx.Length == 0) continue;
-                var positions = SkinLift.Lifted(worldPos, idx, Lift, Up);
-                var piece = new MeshPiece(
-                    $"_notcollidable_{label}_v{gi}", MapMaterial(source), Visible: true, Collidable: false,
-                    positions, vertices.Normals is { } n ? TransformNormals(n, world) : null,
-                    SnowLaidOut(source) ? RoadLayout.PlainSnowUv(positions) : PlatformLayout || RoadLaidOut(source) ? RoadLayout.PlatformUv(positions) : vertices.Uv0,
-                    vertices.Uv1, idx, vertices.Colors);
-                if (Lift != 0) piece = SkinLift.WithSkirt(piece, worldPos, Lift / MathF.Tan(SkirtAngle * MathF.PI / 180));
-                if (piece.Uv1 is null && !source.StartsWith("Decal")) piece = Lightmaps.Projected(piece);
-                if (RoadLaidOut(source)) roadLaid.Add(piece);
-                pieces.Add(piece);
-            }
+    private void AddVisuals(CPlugSolid2Model mesh, Matrix4x4 world, string label, List<MeshPiece> pieces)
+    {
+        var geoms = mesh.ShadedGeoms ?? [];
+        // best LOD only
+        var hasLods = geoms.Any(g => g.LodMask != 0);
+        var bestLod = geoms.Select(g => g.LodMask).Where(m => m != 0).Select(m => m & -m).DefaultIfEmpty(1).Min();
+        foreach (var (geom, gi) in geoms.Select((g, gi) => (g, gi)).Where(x => x.g.LodMask == 0 ? !hasLods : (x.g.LodMask & bestLod) != 0))
+        {
+            if (mesh.Visuals?[geom.VisualIndex] is not CPlugVisualIndexedTriangles vis) continue;
+            if (vis.IndexBuffer?.Indices is not { } idx || MeshData.VertsOf(vis, idx) is not { } vertices) continue;
+            var source = MeshData.MaterialName(mesh, geom.MaterialIndex);
+            if (MapMaterial(source) is "") continue;
+            if (KeepMaterial is { } keep && !keep(source)) continue;
+            AddVisual(source, vertices, idx, world, $"{label}_v{gi}", pieces);
         }
+    }
 
-        if (som.Shape is CPlugSurface { Surf: CPlugSurface.Mesh surf } shape && surf.Vertices is { } verts && surf.Triangles is { } tris)
+    private void AddVisual(string source, MeshData.Verts vertices, int[] idx, Matrix4x4 world, string name, List<MeshPiece> pieces)
+    {
+        float[]? Normals() => vertices.Normals is { } n ? MeshData.TransformNormals(n, world) : null;
+        var worldPos = MeshData.Transform(vertices.Positions, world);
+        idx = SplitOffLip(source, worldPos, KeptFaces(worldPos, idx), Normals, vertices.Uv0, name, pieces);
+        if (idx.Length == 0) return;
+        var positions = SkinLift.Lifted(worldPos, idx, Lift, Up);
+        var piece = new MeshPiece($"_notcollidable_{name}", MapMaterial(source), Visible: true, Collidable: false,
+            positions, Normals(), UvFor(source, positions, vertices.Uv0), vertices.Uv1, idx, vertices.Colors);
+        if (Lift != 0) piece = SkinLift.WithSkirt(piece, worldPos, Lift / MathF.Tan(SkirtAngle * MathF.PI / 180));
+        if (piece.Uv1 is null && !source.StartsWith("Decal")) piece = Lightmaps.Projected(piece);
+        if (RoadLaidOut(source)) roadLaid.Add(piece);
+        pieces.Add(piece);
+    }
+
+    // faces on a border (the road lip) as their own piece, or left out (""); the rest returned
+    private int[] SplitOffLip(string source, float[] worldPos, int[] idx, Func<float[]?> normals, float[]? uv0, string name, List<MeshPiece> pieces)
+    {
+        if (LipAs?.Invoke(source) is not { } lipAs) return idx;
+        var (rest, lip) = lips!.Split(worldPos, idx);
+        // the game gives the hidden lip no lightmap space
+        if (lip.Length > 0 && lipAs is not "")
+            pieces.Add(Lightmaps.Projected(new MeshPiece($"_notcollidable_{name}_lip", lipAs, Visible: true, Collidable: false,
+                SkinLift.Lifted(worldPos, lip, Lift, Up), normals(), uv0, null, lip)));
+        return rest;
+    }
+
+    private float[]? UvFor(string source, float[] positions, float[]? own)
+    {
+        if (CoverLaidOut(source)) return RoadLayout.PlainCoverUv(positions);
+        if (PlatformLayout || RoadLaidOut(source)) return RoadLayout.PlatformUv(positions);
+        return own;
+    }
+
+    // collision faces grouped by surface material
+    private void AddCollision(CPlugSurface shape, CPlugSurface.Mesh surf, Matrix4x4 world, string label, List<MeshPiece> pieces)
+    {
+        if (surf.Vertices is not { } verts || surf.Triangles is not { } tris) return;
+        var worldVerts = MeshData.Transform(verts, world);
+        var positions = SkinLift.Lifted(worldVerts, KeptFaces(worldVerts, tris.SelectMany(t => new[] { t.Indices.X, t.Indices.Y, t.Indices.Z }).ToArray()), Lift, Up);
+        foreach (var group in tris.GroupBy(t => t.SurfaceIndex))
         {
-            var worldVerts = Transform(verts, world);
-            var positions = SkinLift.Lifted(worldVerts, KeptFaces(worldVerts, tris.SelectMany(t => new[] { t.Indices.X, t.Indices.Y, t.Indices.Z }).ToArray()), Lift, Up);
-            foreach (var group in tris.GroupBy(t => t.SurfaceIndex))
-            {
-                var name = shape.Materials is { } mats && group.Key < mats.Length
-                    ? Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(mats[group.Key].MaterialFile?.FilePath ?? "Unknown"))
-                    : "Unknown";
-                if (MapMaterial(name) is "" || KeepMaterial is { } keep && !keep(name)) continue;
-                var kept = KeptFaces(worldVerts, group.SelectMany(t => new[] { t.Indices.X, t.Indices.Y, t.Indices.Z }).ToArray());
-                if (kept.Length == 0) continue;
-                var gameplay = group.GroupBy(t => t.U03).MaxBy(g => g.Count())!.Key;
-                pieces.Add(new MeshPiece(
-                    $"_notvisible_{label}_c{group.Key}" + (gameplay == 0 ? "" : $"_g{(CPlugSurface.GameplayId)gameplay}"), MapMaterial(name), Visible: false, Collidable: true,
-                    positions, null, null, null, kept));
-            }
+            var name = shape.Materials is { } mats && group.Key < mats.Length
+                ? Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(mats[group.Key].MaterialFile?.FilePath ?? "Unknown"))
+                : "Unknown";
+            if (MapMaterial(name) is "" || KeepMaterial is { } keep && !keep(name)) continue;
+            var kept = KeptFaces(worldVerts, group.SelectMany(t => new[] { t.Indices.X, t.Indices.Y, t.Indices.Z }).ToArray());
+            if (kept.Length == 0) continue;
+            var gameplay = group.GroupBy(t => t.U03).MaxBy(g => g.Count())!.Key;
+            pieces.Add(new MeshPiece(
+                $"_notvisible_{label}_c{group.Key}" + (gameplay == 0 ? "" : $"_g{(CPlugSurface.GameplayId)gameplay}"), MapMaterial(name), Visible: false, Collidable: true,
+                positions, null, null, null, kept));
         }
     }
 
     // platform UVs for roads, plain-snow UVs for snow
-    private bool SnowLaidOut(string source) => source != "DecoHill" && MapMaterial(source) == "PlatformIce_DecoHill";
+    private bool CoverLaidOut(string source) => source != "DecoHill" && MapMaterial(source) == Cover;
 
     private static readonly HashSet<string> PlatformLaidOut = ["RoadTech", "RoadBump", "RoadDirt", "ThemeSnowRoad"];
 
@@ -303,63 +324,4 @@ public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, st
         return name;
     }
 
-    public static string MaterialName(CPlugSolid2Model mesh, int index)
-    {
-        if (mesh.Materials is { } mats && index < mats.Length && mats[index] is { } ext && ext.File?.FilePath is { } fp)
-            return Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(fp));
-        if (mesh.Materials is { } embedded && index < embedded.Length && embedded[index]?.Node?.ShaderFile?.FilePath is { } shader)
-            return Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(shader));
-        if (mesh.MaterialIds is { } ids && index < ids.Length) return ids[index];
-        // importer-built: our items keep the importer's name, our custom blocks only the game link
-        if (mesh.CustomMaterials is { } custom && index < custom.Length && custom[index].MaterialUserInst is { } inst)
-        {
-            if (inst.MaterialName is { Length: > 0 } user) return user;
-            if (inst.Link is { Length: > 0 } link) return LinkName(link);
-        }
-        return "Unknown";
-    }
-
-    // Stadium\Media\Modifier\PlatformIce\PlatformTech -> PlatformIce_PlatformTech (as the importer names it); Media\Material\X -> X
-    private static string LinkName(string link)
-    {
-        var parts = link.Split('\\', '/');
-        var modifier = Array.FindIndex(parts, p => p.Equals("Modifier", StringComparison.OrdinalIgnoreCase));
-        return modifier >= 0 && modifier + 2 < parts.Length ? parts[modifier + 1] + "_" + parts[^1] : parts[^1];
-    }
-
-    private sealed record Verts(Vec3[] Positions, Vec3[]? Normals, float[]? Uv0, float[]? Uv1, float[]? Colors);
-
-    // older meshes keep vertices on the visual; frames past the indexed ones are vertex animation (flags)
-    private static Verts? VertsOf(CPlugVisualIndexedTriangles vis, int[] indices)
-    {
-        if (vis.VertexStreams?.FirstOrDefault() is { Positions: { } pos } stream)
-            return new Verts(pos, stream.Normals, Uv(stream, 0), Uv(stream, 1), Colors(stream));
-        if (vis.Vertices is not { Length: > 0 } all || indices.Length == 0) return null;
-        var count = indices.Max() + 1;
-        if (count > all.Length) return null;
-        var frame = all[..count];
-        var normals = frame.All(v => v.Normal is not null) ? frame.Select(v => v.Normal!.Value).ToArray() : null;
-        var colors = frame.All(v => v.Color is not null) ? frame.SelectMany(v => new[] { v.Color!.Value.X, v.Color.Value.Y, v.Color.Value.Z, v.Color.Value.W }).ToArray() : null;
-        return new Verts(frame.Select(v => v.Position).ToArray(), normals, LegacyUv(vis, 0, count), LegacyUv(vis, 1, count), colors);
-    }
-
-    // V counts up here, down in vertex streams (flag cloth vs its pole, both checked against the game)
-    private static float[]? LegacyUv(CPlugVisualIndexedTriangles vis, int set, int count)
-        => vis.TexCoords is { } sets && set < sets.Length && sets[set].TexCoords is { } uvs && uvs.Length >= count
-            ? uvs[..count].SelectMany(t => new[] { t.UV.X, 1 - t.UV.Y }).ToArray()
-            : null;
-
-    private static float[]? Colors(CPlugVertexStream stream)
-        => stream.Colors is { } sets && sets.TryGetValue(0, out var c)
-            ? c.SelectMany(argb => new[] { (argb >> 16) & 0xFF, (argb >> 8) & 0xFF, argb & 0xFF, (argb >> 24) & 0xFF }.Select(b => b / 255f)).ToArray()
-            : null;
-
-    private static float[]? Uv(CPlugVertexStream stream, int set)
-        => stream.UVs is { } uvs && uvs.TryGetValue(set, out var uv) ? uv.SelectMany(v => new[] { v.X, v.Y }).ToArray() : null;
-
-    public static float[] Transform(Vec3[] points, Matrix4x4 m)
-        => points.SelectMany(p => { var v = Vector3.Transform(new Vector3(p.X, p.Y, p.Z), m); return new[] { v.X, v.Y, v.Z }; }).ToArray();
-
-    private static float[] TransformNormals(Vec3[] normals, Matrix4x4 m)
-        => normals.SelectMany(p => { var v = Vector3.Normalize(Vector3.TransformNormal(new Vector3(p.X, p.Y, p.Z), m)); return new[] { v.X, v.Y, v.Z }; }).ToArray();
 }

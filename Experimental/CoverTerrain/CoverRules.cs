@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using GBX.NET;
 using GBX.NET.Engines.Game;
 using static TmIceConverter.BlockFlags;
@@ -26,12 +27,16 @@ internal sealed class SnowArea
     }
 }
 
-internal static class SnowRules
+internal static class CoverRules
 {
     // open water; shores (WaterHill, LakeShore) are ground at the water's edge
-    private static bool IsWater(string terrain) => System.Text.RegularExpressions.Regex.IsMatch(terrain, "Lake|Sea|Water|River") && !System.Text.RegularExpressions.Regex.IsMatch(terrain, "Hill|Shore");
+    private static bool IsWater(string terrain) => HasWater(terrain) && !IsBank(terrain);
 
-    public static bool IsShore(string terrain) => System.Text.RegularExpressions.Regex.IsMatch(terrain, "Lake|Sea|Water|River") && System.Text.RegularExpressions.Regex.IsMatch(terrain, "Hill|Shore");
+    public static bool IsShore(string terrain) => HasWater(terrain) && IsBank(terrain);
+
+    private static bool HasWater(string terrain) => Regex.IsMatch(terrain, "Lake|Sea|Water|River");
+
+    private static bool IsBank(string terrain) => Regex.IsMatch(terrain, "Hill|Shore");
 
     // snow terrain there: in a snow area, land, not built on
     public static bool SnowsCell(ConversionRun run, int x, int z)
@@ -93,7 +98,7 @@ internal static class SnowRules
         return true;
     }
 
-    private static void Snow(ConversionRun run, CGameCtnBlock block, IceBlock body)
+    private static void Snow(ConversionRun run, CGameCtnBlock block, BuiltBlock body)
     {
         run.Customs[block] = body;
         run.SnowBodies.Add(block);

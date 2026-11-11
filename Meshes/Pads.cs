@@ -23,7 +23,7 @@ internal static class Pads
             var zs = Enumerable.Range(0, 3).Select(k => p.Positions[3 * p.Indices[t + k] + 2]).ToArray();
             return xs.Max() > x0 + 0.01f && xs.Min() < x1 - 0.01f && zs.Max() > z0 + 0.01f && zs.Min() < z1 - 0.01f;
         }
-        var around = skin.Select(p => p with { Indices = Enumerable.Range(0, p.Indices.Length / 3).Select(i => 3 * i).Where(t => !UnderPad(p, t)).SelectMany(t => p.Indices[t..(t + 3)]).ToArray() })
+        var around = skin.Select(p => PieceOps.KeepTriangles(p, t => !UnderPad(p, t)))
             .Where(p => p.Indices.Length > 0 && (!p.Visible || HasFloor(p))).ToList();
         around.AddRange(pads.Select((p, i) => p with
         {

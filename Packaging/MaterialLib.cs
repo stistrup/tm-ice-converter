@@ -21,16 +21,6 @@ internal static class MaterialLib
 
     private static readonly Lazy<string> Lib = new(() => File.ReadAllText(Path.Combine(Paths.Game, "NadeoImporterMaterialLib.txt")));
 
-    public static readonly HashSet<string> NotIce = ["Asphalt", "Dirt", "Grass", "Green", "Plastic", "Sand"];
-
-    private static readonly HashSet<string> SkinSurfaces = [.. NotIce, "RoadSynthetic"];
-
-    // Deco only on deco blocks (or with snowOnZoneSides)
-    public static bool SkinCovers(string block, string material, bool zoneSides = false)
-        => material.StartsWith("Deco") && !(zoneSides && Surface(material) is { } deco && SkinSurfaces.Contains(deco))
-            ? block.StartsWith("Deco")
-            : Surface(material) is { } surface && SkinSurfaces.Contains(surface);
-
     // kept terrain the importer can't take: built on a library stand-in with the same surface, then linked to the game's own material
     public const string NativePrefix = "Native_";
 
@@ -73,7 +63,7 @@ internal static class MaterialLib
         {
             var m = Regex.Match(Text, $@"DMaterial\({Regex.Escape(n)}\)[^D]*(?:D(?!Material)[^D]*)*?DSurfaceId\s*\((\w+)\)");
             return m.Success ? m.Groups[1].Value
-                : throw new InvalidDataException($"material {n} isn't in NadeoImporterMaterialLib.txt; map it in data/ice-materials.jsonc");
+                : throw new InvalidDataException($"material {n} isn't in NadeoImporterMaterialLib.txt; map it in the theme's materials.jsonc");
         });
     }
 }

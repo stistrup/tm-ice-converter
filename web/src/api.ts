@@ -255,7 +255,7 @@ export interface PreviewResult {
   blocks: Record<string, PreviewDecision>
   items: Record<string, PreviewDecision>
   addedItems: number
-  // data/ice-materials.jsonc: native material (or "skin:"/"top:"/"item:" + name, or "<block pattern>|name") -> importer material, "" = left out, "native" = kept
+  // data/themes/ice/materials.jsonc: native material (or "skin:"/"top:"/"item:" + name, or "<block pattern>|name") -> importer material, "" = left out, "native" = kept
   swaps: Record<string, string>
   looks: Record<string, SceneMaterial>
   // id of the scene with the changed pieces drawn for real (fetchPreviewScene)

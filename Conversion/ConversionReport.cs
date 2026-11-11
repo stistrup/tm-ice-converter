@@ -16,9 +16,9 @@ public sealed class ConversionReport
     public Dictionary<string, int> Recoloured { get; } = [];
     public Dictionary<string, int> Sunk { get; } = [];
     public Dictionary<string, int> Gated { get; } = [];
-    public HashSet<IceItem> UsedItems { get; } = [];
+    public HashSet<BuiltItem> UsedItems { get; } = [];
     public Dictionary<string, int> ReplacedByBlock { get; } = [];
-    public HashSet<IceBlock> UsedBlocks { get; } = [];
+    public HashSet<BuiltBlock> UsedBlocks { get; } = [];
     public Dictionary<string, int> KeptByItem { get; } = [];
     public Dictionary<string, int> Water { get; } = [];
     public Dictionary<(string Block, string Reason), int> ItemReasons { get; } = [];
@@ -39,7 +39,7 @@ public sealed class ConversionReport
     public Dictionary<string, int> TerrainItems { get; } = [];
     public Dictionary<string, int> Ramped { get; } = [];
     public Dictionary<string, int> IcedItems { get; } = [];
-    public Dictionary<string, int> ItemsNotIced { get; } = [];
+    public Dictionary<string, int> ItemsNotConverted { get; } = [];
     public int FreeBlockOffsetsSkipped { get; set; }
 
     public int Left => Unmatched.Values.Sum();

@@ -5,12 +5,12 @@ using GBX.NET.Engines.Plug;
 namespace TmIceConverter;
 
 // ice raised to meet what's next to it or under it
-internal static class IceShaping
+internal static class SurfaceShaping
 {
     private const float IceLift = 0.01f;
 
     // coplanar with the native ice/dirt it covers: raise the ice and what lies on it, easing to zero where it meets the block edge so neighbours line up
-    public static void LiftIce(CPlugStaticObjectModel model, float sizeX, float sizeZ)
+    public static void LiftSurface(CPlugStaticObjectModel model, float sizeX, float sizeZ)
     {
         var mesh = model.Mesh!;
         var streams = IceStreams(mesh);
@@ -22,7 +22,7 @@ internal static class IceShaping
             (all.Min(p => p.X) < touch, p => p.X), (all.Max(p => p.X) > sizeX - touch, p => sizeX - p.X),
             (all.Min(p => p.Z) < touch, p => p.Z), (all.Max(p => p.Z) > sizeZ - touch, p => sizeZ - p.Z),
         };
-        var surface = IceSurface.Of(model);
+        var surface = ThemeSurface.Of(model);
         foreach (var positions in AllStreams(mesh))
             for (int i = 0; i < positions.Length; i++)
                 if (streams.Contains(positions) || surface?.Rests(positions[i]) == true)
@@ -43,7 +43,7 @@ internal static class IceShaping
     private const float RampLength = 16;
 
     // a skinned neighbour sits higher: ice, its collision and whatever lies on it (pads, decals) rise to meet it at those sides, easing to zero inward
-    public static void RampIce(CPlugStaticObjectModel model, int sides, float height, float sizeX, float sizeZ)
+    public static void RampSurface(CPlugStaticObjectModel model, int sides, float height, float sizeX, float sizeZ)
     {
         var dist = new Func<float, float, float>[] { (x, _) => x, (x, _) => sizeX - x, (_, z) => z, (_, z) => sizeZ - z };
         float Lift(float x, float z)
@@ -52,7 +52,7 @@ internal static class IceShaping
             return height * MathF.Cos(MathF.PI / 2 * Math.Clamp(d / RampLength, 0, 1));
         }
         var mesh = model.Mesh!;
-        var surface = IceSurface.Of(model);
+        var surface = ThemeSurface.Of(model);
         var ice = IceStreams(mesh);
         foreach (var positions in AllStreams(mesh))
             for (int i = 0; i < positions.Length; i++)
@@ -65,7 +65,7 @@ internal static class IceShaping
     private const float RestsWithin = 0.05f;
 
     // ice collision looked up from above, before the ramp
-    private sealed class IceSurface
+    private sealed class ThemeSurface
     {
         public readonly Vec3[] Verts;
         public readonly HashSet<int> Used;
@@ -74,10 +74,10 @@ internal static class IceShaping
         // points on a cell border find triangles from both sides
         private const float Margin = 0.01f;
 
-        public static IceSurface? Of(CPlugStaticObjectModel model) => model.Shape is CPlugSurface { Surf: CPlugSurface.Mesh { Vertices: { } verts, Triangles: { } tris } }
-            ? new IceSurface(verts, tris.Where(t => ((CPlugSurface.MaterialId)t.U02).ToString().Contains("Ice")).Select(t => t.Indices).ToList()) : null;
+        public static ThemeSurface? Of(CPlugStaticObjectModel model) => model.Shape is CPlugSurface { Surf: CPlugSurface.Mesh { Vertices: { } verts, Triangles: { } tris } }
+            ? new ThemeSurface(verts, tris.Where(t => ((CPlugSurface.MaterialId)t.U02).ToString().Contains("Ice")).Select(t => t.Indices).ToList()) : null;
 
-        public IceSurface(Vec3[] verts, List<Int3> tris)
+        public ThemeSurface(Vec3[] verts, List<Int3> tris)
         {
             Verts = verts;
             Used = tris.SelectMany(t => new[] { t.X, t.Y, t.Z }).ToHashSet();

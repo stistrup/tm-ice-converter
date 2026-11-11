@@ -2,7 +2,7 @@ using GBX.NET;
 
 namespace TmIceConverter;
 
-internal static class SnowBlocks
+internal static class CoverBlocks
 {
     // snow terrain: the terrain block's own shape on a ground block that clears the native grass (a terrain archetype crashes the game)
     private const string SnowTerrainArchetype = "DecoPlatformBase";
@@ -12,40 +12,40 @@ internal static class SnowBlocks
     // WhiteShore's snow ground, with its frosted grass decals; loads in other environments too
     private const string SnowTerrainMaterial = @"WhiteShore\Media\Material\Land";
 
-    public static IceBlock? SnowTerrainFor(this ItemBuilder items, string block, int variant, int mobil, Id collection, bool underDeco = false, IReadOnlyList<System.Numerics.Vector2>? snowKeep = null)
+    public static BuiltBlock? SnowTerrainFor(this ItemBuilder items, string block, int variant, int mobil, Id collection, bool underDeco = false, IReadOnlyList<System.Numerics.Vector2>? snowKeep = null)
     {
-        if (items.For(block, true, variant, mobil, new HashSet<int>(), ItemKind.SnowTerrain, snowKeep: snowKeep) is not { } item || item == IceItem.Nothing) return null;
+        if (items.For(block, true, variant, mobil, new HashSet<int>(), ItemKind.CoveredTerrain, snowKeep: snowKeep) is not { } item || item == BuiltItem.Nothing) return null;
         var itemName = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath));
         var name = itemName + (underDeco ? "_snowhollow" : "_snowland");
-        var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
+        var ident = new Ident($"{Paths.ItemFolder}\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Blocks, name + ".Block.Gbx");
         items.WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, block, SnowTerrainArchetype, 0,
             raise: underDeco ? SnowUnderDecoRaise : SnowTerrainRaise, snowAs: SnowTerrainMaterial, lightmapFromAbove: true, hollow: underDeco));
-        return new IceBlock(ident, path);
+        return new BuiltBlock(ident, path);
     }
 
     // deco in a snow terrain area: its own archetype keeps the ground away, its deco surface in the same snow
     // also for a snow pick on a block; on the ground it's the ground body, its Deco ground in snow
-    public static IceBlock? SnowDecoFor(this ItemBuilder items, string block, int variant, int mobil, Id collection, bool ground = false)
+    public static BuiltBlock? SnowDecoFor(this ItemBuilder items, string block, int variant, int mobil, Id collection, bool ground = false)
     {
         if (CustomBlockWriter.VariantId(ground, variant, mobil) is not { } variantId
-            || items.For(block, ground, variant, mobil, new HashSet<int>(), ground ? ItemKind.SnowGround : ItemKind.None) is not { } item || item == IceItem.Nothing) return null;
+            || items.For(block, ground, variant, mobil, new HashSet<int>(), ground ? ItemKind.CoveredGround : ItemKind.None) is not { } item || item == BuiltItem.Nothing) return null;
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + "_decosnow2";
-        var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
+        var ident = new Ident($"{Paths.ItemFolder}\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Blocks, name + ".Block.Gbx");
         items.WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, block, block, variantId, snowAs: SnowTerrainMaterial, lightmapFromAbove: true));
-        return new IceBlock(ident, path);
+        return new BuiltBlock(ident, path);
     }
 
     // a gameplay block's ground in snow, on its terrain cell; the block itself goes to the air and keeps its trigger
-    public static IceBlock? GameplayGroundFor(this ItemBuilder items, string block, int variant, int mobil, Id collection)
+    public static BuiltBlock? GameplayGroundFor(this ItemBuilder items, string block, int variant, int mobil, Id collection)
     {
-        if (items.For(block, true, variant, mobil, new HashSet<int>(), ItemKind.SnowGround) is not { } item || item == IceItem.Nothing) return null;
+        if (items.For(block, true, variant, mobil, new HashSet<int>(), ItemKind.CoveredGround) is not { } item || item == BuiltItem.Nothing) return null;
         var name = Path.GetFileNameWithoutExtension(Path.GetFileNameWithoutExtension(item.FilePath)) + "_snowground";
-        var ident = new Ident($"IceConverter\\{name}.Block.Gbx", collection, item.Ident.Author);
+        var ident = new Ident($"{Paths.ItemFolder}\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Blocks, name + ".Block.Gbx");
         items.WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, block, SnowTerrainArchetype, 0, snowAs: SnowTerrainMaterial, lightmapFromAbove: true));
-        return new IceBlock(ident, path);
+        return new BuiltBlock(ident, path);
     }
 
     // nothing to see or bake, the block still keeps the terrain away: a 3 cm speck at the cell's middle, its floor

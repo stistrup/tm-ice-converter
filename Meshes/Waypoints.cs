@@ -8,11 +8,9 @@ internal static class Waypoints
 
     // spawn socket + trigger box for waypoint items
     private const string HelperMaterial = "TrackBorders";
-    private const string SocketMaterial = "PlatformIce_PlatformTech";
-
-    public static IEnumerable<MeshPiece> Pieces(string waypoint, IReadOnlyList<MeshPiece> block)
+    public static IEnumerable<MeshPiece> Pieces(string waypoint, IReadOnlyList<MeshPiece> block, string socketMaterial)
     {
-        yield return new MeshPiece("_socket_start", SocketMaterial, Visible: false, Collidable: true,
+        yield return new MeshPiece("_socket_start", socketMaterial, Visible: false, Collidable: true,
             [SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z, SpawnPoint.X + 0.1f, SpawnPoint.Y, SpawnPoint.Z, SpawnPoint.X, SpawnPoint.Y, SpawnPoint.Z + 0.1f],
             null, null, null, [0, 1, 2]);
         if (waypoint != "Start")

@@ -8,7 +8,7 @@ using GBX.NET.Serialization.Chunking;
 
 namespace TmIceConverter;
 
-public sealed record IceBlock(Ident Ident, string FilePath);
+public sealed record BuiltBlock(Ident Ident, string FilePath);
 
 // custom block = a native block (archetype) with its variant's body replaced; the game keeps clips, pillars and joins
 public static class CustomBlockWriter
@@ -51,9 +51,9 @@ public static class CustomBlockWriter
             inst.MaterialName = "";
         }
         mesh.Mesh.MaterialsFolderName = null;
-        if (lift is { } size) IceShaping.LiftIce(mesh, size.X * 32, size.Z * 32);
-        if (ramp is { } r) IceShaping.RampIce(mesh, r.Sides, r.Lift, r.Size.X * 32, r.Size.Z * 32);
-        if (hollow) SnowBlocks.Hollow(mesh.Mesh);
+        if (lift is { } size) SurfaceShaping.LiftSurface(mesh, size.X * 32, size.Z * 32);
+        if (ramp is { } r) SurfaceShaping.RampSurface(mesh, r.Sides, r.Lift, r.Size.X * 32, r.Size.Z * 32);
+        if (hollow) CoverBlocks.Hollow(mesh.Mesh);
         if (lightmapFromAbove) Lightmaps.FromAbove(mesh.Mesh, snowAs);
         if (raise != 0)
             foreach (var positions in (mesh.Mesh.Visuals ?? []).OfType<CPlugVisualIndexedTriangles>().Select(v => v.VertexStreams?.FirstOrDefault()?.Positions).OfType<Vec3[]>().Distinct())

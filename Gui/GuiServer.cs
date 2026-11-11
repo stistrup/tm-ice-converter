@@ -1,18 +1,14 @@
-using System.Text.Json.Nodes;
-using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
-using GBX.NET;
-using GBX.NET.Engines.Game;
 
 namespace TmIceConverter;
 
-// localhost only; HttpListener rejects other Host headers
+// localhost only; HttpListener rejects other Host headers. Endpoints by topic in the other parts.
 internal sealed partial class GuiServer(string url, string webRoot, ConversionPreview preview, ConvertJobs jobs, string dataDir)
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+    private static readonly JsonSerializerOptions ReadOptions = new() { PropertyNameCaseInsensitive = true };
 
     private static readonly Dictionary<string, string> ContentTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -26,7 +22,60 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
     private readonly SemaphoreSlim building = new(1);
     private readonly LiveLink live = new();
     private readonly Setup setup = new(dataDir);
-    private readonly Dictionary<string, (DateTime Modified, string Name)> names = [];
+
+    private sealed record Call(HttpListenerRequest Request, HttpListenerResponse Response, byte[] Body)
+    {
+        public string? Query(string key) => Request.QueryString[key];
+    }
+
+    private delegate Task Handler(Call call);
+
+    // answered as plain text with this status
+    private sealed class Refused(int status, string message) : Exception(message)
+    {
+        public int Status => status;
+    }
+
+    private Dictionary<string, Handler>? gets, posts;
+
+    private Dictionary<string, Handler> Gets => gets ??= new()
+    {
+        ["/api/state"] = c => Bytes(c.Response, 200, "application/json", Encoding.UTF8.GetBytes(live.State)),
+        ["/api/events"] = c => live.Events(c.Response),
+        ["/api/shot"] = Shot,
+        ["/api/pick"] = Pick,
+        ["/api/setup"] = async c => await Json(c.Response, await Task.Run(setup.Check)),
+        ["/api/version"] = async c => await Json(c.Response, await AppVersion.Check()),
+        ["/api/maps"] = c => Json(c.Response, ListMaps()),
+        ["/api/folders"] = c => Json(c.Response, ListFolders()),
+        ["/api/author"] = c => Json(c.Response, AuthorNow()),
+        ["/api/convert"] = c => Json(c.Response, jobs.Current),
+        // a conversion's target: folder + name under Maps (case as the game's file system ignores it)
+        ["/api/output-name"] = c => Json(c.Response, OutputName(MapFileOf(c))),
+        ["/api/exists"] = c => Json(c.Response, TargetExists(c.Query("folder") ?? "", c.Query("name") ?? "")),
+        ["/api/scene"] = Scene,
+        ["/api/geometry"] = Geometry,
+        ["/api/texture"] = Texture,
+        ["/api/preview-build"] = c => Json(c.Response, preview.Building()),
+        ["/api/preview-scene"] = PreviewScene,
+        ["/api/settings"] = async c => await Json(c.Response, await Task.Run(() => preview.StateOf(MapFileOf(c))).ConfigureAwait(false)),
+    };
+
+    private Dictionary<string, Handler> Posts => posts ??= new()
+    {
+        ["/api/state"] = SetState,
+        ["/api/answer"] = Answer,
+        ["/api/shot"] = Answer,
+        ["/api/setup-path"] = SetupStep,
+        ["/api/setup-action"] = SetupStep,
+        ["/api/preview"] = Preview,
+        ["/api/save-settings"] = SaveSettings,
+        ["/api/convert"] = Convert,
+        ["/api/convert-cancel"] = c => Ok(c, () => jobs.Cancel(c.Query("id") ?? "")),
+        ["/api/convert-dismiss"] = c => Ok(c, () => jobs.Dismiss(c.Query("id") ?? "")),
+        ["/api/author"] = SetAuthor,
+        ["/api/command"] = Command,
+    };
 
     // listening: the browser can open now
     public event Action? Started;
@@ -51,42 +100,16 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
         try
         {
             var path = request.Url!.AbsolutePath;
-            if (request.HttpMethod == "POST") await Post(request, response, path);
-            else if (request.HttpMethod != "GET") await Text(response, 405, "GET or POST only");
-            else if (path == "/api/state") await Bytes(response, 200, "application/json", Encoding.UTF8.GetBytes(live.State));
-            else if (path == "/api/events") await live.Events(response);
-            else if (path == "/api/shot") await Shot(response);
-            else if (path == "/api/pick") await Pick(request, response);
-            else if (path == "/api/setup") await Json(response, await Task.Run(setup.Check));
-            else if (path == "/api/version") await Json(response, await AppVersion.Check());
-            else if (path == "/api/maps") await Json(response, ListMaps());
-            else if (path == "/api/folders") await Json(response, ListFolders());
-            else if (path == "/api/author") await Json(response, AuthorNow());
-            // a conversion's target: folder + name under Maps (case as the game's file system ignores it)
-            else if (path == "/api/convert") await Json(response, jobs.Current);
-            else if (path == "/api/output-name")
-            {
-                if (MapFile(request) is { } source) await Json(response, OutputName(source));
-                else await Text(response, 404, "no such map");
-            }
-            else if (path == "/api/exists") await Json(response, TargetExists(request.QueryString["folder"] ?? "", request.QueryString["name"] ?? ""));
-            else if (path == "/api/scene") await Scene(request, response);
-            else if (path == "/api/geometry") await Geometry(request, response);
-            else if (path == "/api/texture") await Texture(request, response);
-            else if (path == "/api/preview-build") await Json(response, preview.Building());
-            else if (path == "/api/preview-scene")
-            {
-                if (preview.AddedScene(request.QueryString["id"] ?? "") is not { } scene) await Text(response, 404, "no such preview");
-                else if (request.QueryString["part"] == "geometry") await Bytes(response, 200, "application/octet-stream", scene.Geometry);
-                else await Bytes(response, 200, "application/json", scene.Manifest);
-            }
-            else if (path == "/api/settings")
-            {
-                if (MapFile(request) is { } map) await Json(response, await Task.Run(() => preview.StateOf(map)).ConfigureAwait(false));
-                else await Text(response, 404, "no such map");
-            }
-            else if (path.StartsWith("/api/")) await Text(response, 404, "no such endpoint");
+            var post = request.HttpMethod == "POST";
+            if (!post && request.HttpMethod != "GET") throw new Refused(405, "GET or POST only");
+            var call = new Call(request, response, post ? await BodyOf(request) : []);
+            if ((post ? Posts : Gets).TryGetValue(path, out var handler)) await handler(call);
+            else if (post || path.StartsWith("/api/")) throw new Refused(404, "no such endpoint");
             else await Static(response, path);
+        }
+        catch (Refused e)
+        {
+            try { await Text(response, e.Status, e.Message); } catch (Exception) { }
         }
         catch (Exception e) when (e is HttpListenerException or ObjectDisposedException) { } // client went away
         catch (Exception e)
@@ -100,264 +123,34 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
         }
     }
 
-    private async Task Post(HttpListenerRequest request, HttpListenerResponse response, string path)
+    private static async Task<byte[]> BodyOf(HttpListenerRequest request)
     {
         using var body = new MemoryStream();
         await request.InputStream.CopyToAsync(body);
-        if (path == "/api/state")
-        {
-            live.SetState(Encoding.UTF8.GetString(body.ToArray()));
-            await Text(response, 200, "ok");
-        }
-        else if (path is "/api/answer" or "/api/shot")
-            await Text(response, live.Answered(request.QueryString["id"], body.ToArray()) ? 200 : 404, "");
-        else if (path is "/api/setup-path" or "/api/setup-action")
-        {
-            try
-            {
-                if (path == "/api/setup-path") setup.SetPath(request.QueryString["name"] ?? "", JsonSerializer.Deserialize<string>(body.ToArray()) ?? "");
-                else setup.Act(request.QueryString["id"] ?? "");
-            }
-            catch (Exception e) when (e is ArgumentException or InvalidOperationException or IOException or JsonException or UnauthorizedAccessException)
-            {
-                await Text(response, 400, e.Message);
-                return;
-            }
-            await Json(response, await Task.Run(setup.Check));
-        }
-        else if (path == "/api/preview") await Preview(request, response, body.ToArray());
-        else if (path == "/api/save-settings") await SaveSettings(request, response, body.ToArray());
-        else if (path == "/api/convert") await Convert(request, response, body.ToArray());
-        else if (path == "/api/convert-cancel")
-        {
-            jobs.Cancel(request.QueryString["id"] ?? "");
-            await Text(response, 200, "ok");
-        }
-        else if (path == "/api/convert-dismiss")
-        {
-            jobs.Dismiss(request.QueryString["id"] ?? "");
-            await Text(response, 200, "ok");
-        }
-        else if (path == "/api/author")
-        {
-            AuthorEntry? author;
-            try { author = JsonSerializer.Deserialize<AuthorEntry>(body.ToArray(), new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
-            catch (JsonException e) { await Text(response, 400, e.Message); return; }
-            if (author is not { Login.Length: > 0 }) { await Text(response, 400, "a user ID is needed"); return; }
-            var login = author.Login.Trim();
-            // nickname and zone as the game wrote them into your own maps; typed only when none has the ID
-            var (nickname, zone) = author.Nickname?.Trim() is { Length: > 0 } typed
-                ? (typed, author.Zone?.Trim() is { Length: > 0 } z ? z : "World")
-                : await Task.Run(() => KnownAuthor(login)) ?? (null!, null!);
-            if (nickname is null) { await Text(response, 404, "no map of yours carries this ID"); return; }
-            Paths.SaveTestrunAuthor(login, nickname, zone);
-            await Json(response, AuthorNow());
-        }
-        else if (path == "/api/command")
-        {
-            var command = Encoding.UTF8.GetString(body.ToArray());
-            try { JsonDocument.Parse(command).Dispose(); }
-            catch (JsonException e) { await Text(response, 400, e.Message); return; }
-            var pages = await live.Send(command);
-            await Text(response, pages > 0 ? 200 : 503, pages > 0 ? $"sent to {pages} page(s)" : "no page open");
-        }
-        else await Text(response, 404, "no such endpoint");
+        return body.ToArray();
     }
 
-    private async Task Shot(HttpListenerResponse response)
+    private static T? Read<T>(byte[] body) where T : class
     {
-        if (await live.Shot() is { } png)
-        {
-            response.Headers["X-Shot-File"] = LiveLink.ShotFile;
-            await Bytes(response, 200, "image/png", png);
-        }
-        else await Text(response, 503, "no page answered");
+        try { return JsonSerializer.Deserialize<T>(body, ReadOptions); }
+        catch (JsonException e) { throw new Refused(400, e.Message); }
     }
 
-    // x, y: 0..1 across the page's 3D view, from the top left
-    private async Task Pick(HttpListenerRequest request, HttpListenerResponse response)
+    private static Task Ok(Call c, Action act)
     {
-        var at = (X: request.QueryString["x"], Y: request.QueryString["y"]);
-        if (!double.TryParse(at.X, CultureInfo.InvariantCulture, out var x) || !double.TryParse(at.Y, CultureInfo.InvariantCulture, out var y))
-        {
-            await Text(response, 400, "x and y: 0..1");
-            return;
-        }
-        var fields = string.Create(CultureInfo.InvariantCulture, $"\"x\":{x},\"y\":{y}");
-        if (await live.Ask("pick", fields) is { } json) await Bytes(response, 200, "application/json", json);
-        else await Text(response, 503, "no page answered");
-    }
-
-    private List<MapEntry> ListMaps()
-    {
-        var root = Paths.Maps;
-        return Directory.EnumerateFiles(root, "*.Map.Gbx", new EnumerationOptions { RecurseSubdirectories = true, MatchCasing = MatchCasing.CaseInsensitive })
-            .Select(file => new FileInfo(file))
-            .Select(info => new MapEntry(
-                Path.GetRelativePath(root, info.FullName),
-                DisplayName(info),
-                Path.GetDirectoryName(Path.GetRelativePath(root, info.FullName)) ?? "",
-                info.Length,
-                info.LastWriteTimeUtc))
-            .OrderBy(m => m.Folder, StringComparer.OrdinalIgnoreCase).ThenBy(m => m.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
-
-    private static bool TargetExists(string folder, string name)
-    {
-        if (MapNames.FileName(name) is not { } file || Inside(Paths.Maps, Path.Combine(folder.Trim(), "x")) is not { } inside) return false;
-        var dir = Path.GetDirectoryName(inside)!;
-        return Directory.Exists(dir) && Directory.EnumerateFiles(dir, "*.Map.Gbx", new EnumerationOptions { MatchCasing = MatchCasing.CaseInsensitive })
-            .Any(f => string.Equals(Path.GetFileName(f), file, StringComparison.OrdinalIgnoreCase));
-    }
-
-    // what a conversion names it by default (a name from its settings included)
-    private static string OutputName(string map, string suffix = MapNames.DefaultSuffix)
-        => Gbx.ParseHeaderNode<CGameCtnChallenge>(map) is var header ? MapNames.DefaultOutput(header.MapName, RunLog.Default.NameOf(header.MapUid), suffix) : "";
-
-    // Maps: several at once, each with its default name and its own settings (saved, else the defaults); else ?map= with Name and Settings
-    private sealed record ConvertRequest(JsonObject? Settings, string? Name, string? Folder, bool FakeAuthorTime, bool MeAsAuthor, bool RebuildBlocks, bool Overwrite,
-        List<string>? Maps, string? Suffix);
-
-    // starts it in the background; GET /api/convert follows it
-    private async Task Convert(HttpListenerRequest request, HttpListenerResponse response, byte[] body)
-    {
-        ConvertRequest? ask;
-        try { ask = JsonSerializer.Deserialize<ConvertRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }); }
-        catch (JsonException e) { await Text(response, 400, e.Message); return; }
-        if (ask is null) { await Text(response, 400, "nothing asked"); return; }
-        var batch = ask.Maps is { Count: > 0 };
-        var maps = batch ? ask.Maps!.Select(m => Inside(Paths.Maps, m)).ToList() : [MapFile(request)];
-        if (maps.Any(m => m is null || !m.EndsWith(".Map.Gbx", StringComparison.OrdinalIgnoreCase) || !File.Exists(m))) { await Text(response, 404, "no such map"); return; }
-        var name = ask.Name?.Trim() ?? "";
-        if (!batch && name.Length == 0) { await Text(response, 400, "a map name is needed"); return; }
-        if (!batch && MapNames.FileName(name) is null) { await Text(response, 400, "the name can't hold < > : \" / \\ | ? * or end in a dot"); return; }
-        var folder = ask.Folder?.Trim() ?? "";
-        var outDir = folder.Length == 0 ? Paths.Maps : Inside(Paths.Maps, folder);
-        if (outDir is null) { await Text(response, 400, "the folder must be under Maps"); return; }
-        // one that doesn't read fails in the run, with its own message
-        var names = batch ? maps.Select(m => { try { return OutputName(m!, ask.Suffix ?? MapNames.DefaultSuffix); } catch (Exception) { return null; } }).OfType<string>().ToList() : [name];
-        if (!ask.Overwrite && names.Any(n => TargetExists(folder, n))) { await Text(response, 409, "a map of that name is already there"); return; }
-        if (ask.MeAsAuthor && Paths.TestrunAuthorIfSet is null) { await Text(response, 400, "no user ID saved for Me as author"); return; }
-        var choices = new ConvertCommand.Choices(outDir, batch ? null : name, ask.FakeAuthorTime, ask.MeAsAuthor, ask.RebuildBlocks, ask.Overwrite)
-            { Settings = batch ? null : new MapSettings(ask.Settings ?? new JsonObject()), Suffix = ask.Suffix ?? MapNames.DefaultSuffix };
-        if (jobs.Start(maps!, choices, batch ? $"{maps.Count} maps" : name) is { } started) await Json(response, started);
-        else await Text(response, 409, "a conversion is already running");
-    }
-
-    private sealed record AuthorEntry(string Login, string? Nickname, string? Zone);
-
-    // the newest map under Maps by this account: its nickname and zone
-    private static (string Nickname, string Zone)? KnownAuthor(string login)
-    {
-        foreach (var file in Directory.EnumerateFiles(Paths.Maps, "*.Map.Gbx", new EnumerationOptions { RecurseSubdirectories = true, MatchCasing = MatchCasing.CaseInsensitive })
-            .OrderByDescending(File.GetLastWriteTimeUtc))
-        {
-            try
-            {
-                var map = Gbx.ParseHeaderNode<CGameCtnChallenge>(file);
-                if (map.AuthorLogin == login && map.AuthorNickname is { Length: > 0 } nickname) return (nickname, map.AuthorZone is { Length: > 0 } zone ? zone : "World");
-            }
-            catch (Exception) { }
-        }
-        return null;
-    }
-
-    // the account a converted map can carry as its author (local.jsonc "testrunAuthor"), null if none
-    private static AuthorEntry? AuthorNow() => Paths.TestrunAuthorIfSet is { } a ? new AuthorEntry(a.Login, a.Nickname, a.Zone) : null;
-
-    private sealed record FolderList(List<string> Folders, string Progress);
-
-    // every folder under Maps, empty ones too, "/" separated; and where a conversion goes by default
-    private static FolderList ListFolders()
-    {
-        static string Rel(string dir) => Path.GetRelativePath(Paths.Maps, dir).Replace('\\', '/');
-        var folders = Directory.EnumerateDirectories(Paths.Maps, "*", new EnumerationOptions { RecurseSubdirectories = true })
-            .Select(Rel).Order(StringComparer.OrdinalIgnoreCase).ToList();
-        return new FolderList(folders, Rel(Paths.OutFolder));
-    }
-
-    // as the game lists it
-    private string DisplayName(FileInfo file)
-    {
-        lock (names)
-            if (names.TryGetValue(file.FullName, out var known) && known.Modified == file.LastWriteTimeUtc) return known.Name;
-        string name;
-        try { name = MapNames.Plain(Gbx.ParseHeaderNode<CGameCtnChallenge>(file.FullName).MapName); }
-        catch (Exception) { name = file.Name[..^".Map.Gbx".Length]; }
-        lock (names) names[file.FullName] = (file.LastWriteTimeUtc, name);
-        return name;
-    }
-
-    private async Task Scene(HttpListenerRequest request, HttpListenerResponse response)
-    {
-        if (MapFile(request) is not { } map) { await Text(response, 404, "no such map"); return; }
-        await building.WaitAsync();
-        string manifest;
-        try { manifest = await Task.Run(() => SceneBundle.Ensure(map, request.QueryString["rebuild"] == "1")).ConfigureAwait(false); }
-        finally { building.Release(); }
-        await SendFile(response, manifest, "application/json");
-    }
-
-    private async Task Geometry(HttpListenerRequest request, HttpListenerResponse response)
-    {
-        if (MapFile(request) is not { } map) { await Text(response, 404, "no such map"); return; }
-        var file = SceneBundle.GeometryOf(map);
-        if (!File.Exists(file)) { await Text(response, 404, "scene not built"); return; }
-        await SendFile(response, file, "application/octet-stream");
-    }
-
-    // POST body: { "settings": { …as in settings/maps/<uid>.json… } }
-    private async Task Preview(HttpListenerRequest request, HttpListenerResponse response, byte[] body)
-    {
-        if (MapFile(request) is not { } map) { await Text(response, 404, "no such map"); return; }
-        var (settings, error) = SettingsIn(body);
-        if (error is not null) { await Text(response, 400, error); return; }
-        try { await Json(response, await Task.Run(() => preview.For(map, settings ?? MapSettings.Parse("{}"))).ConfigureAwait(false)); }
-        catch (ConversionPreview.Superseded e) { await Text(response, 409, e.Message); }
-    }
-
-    // POST body: { "settings": {…} | null }; null goes back to the defaults
-    private async Task SaveSettings(HttpListenerRequest request, HttpListenerResponse response, byte[] body)
-    {
-        if (MapFile(request) is not { } map) { await Text(response, 404, "no such map"); return; }
-        var (settings, error) = SettingsIn(body);
-        if (error is not null) { await Text(response, 400, error); return; }
-        await Task.Run(() => preview.Save(map, settings)).ConfigureAwait(false);
-        await Text(response, 200, "ok");
-    }
-
-    private static (MapSettings? Settings, string? Error) SettingsIn(byte[] body)
-    {
-        try
-        {
-            if (System.Text.Json.Nodes.JsonNode.Parse(body) is not System.Text.Json.Nodes.JsonObject root) return (null, "body must be an object");
-            return root["settings"] switch
-            {
-                System.Text.Json.Nodes.JsonObject o => (new MapSettings(o.DeepClone().AsObject()), null),
-                null => (null, null),
-                _ => (null, "settings must be an object or null"),
-            };
-        }
-        catch (JsonException e) { return (null, e.Message); }
-    }
-
-    private async Task Texture(HttpListenerRequest request, HttpListenerResponse response)
-    {
-        var root = Path.GetDirectoryName(Paths.ExtractedStadium)!;
-        var file = Inside(root, request.QueryString["path"]);
-        if (file is null || !File.Exists(file)) { await Text(response, 404, "no such texture"); return; }
-        response.Headers["Cache-Control"] = "max-age=3600";
-        await SendFile(response, file, "application/octet-stream");
+        act();
+        return Text(c.Response, 200, "ok");
     }
 
     private async Task Static(HttpListenerResponse response, string path)
     {
         var file = Inside(webRoot, path.TrimStart('/'));
         if (file is null || !File.Exists(file)) file = Path.Combine(webRoot, "index.html");
-        if (!File.Exists(file)) { await Text(response, 404, "page not built: npm run build in web/"); return; }
+        if (!File.Exists(file)) throw new Refused(404, "page not built: npm run build in web/");
         await SendFile(response, file, ContentTypes.GetValueOrDefault(Path.GetExtension(file), "application/octet-stream"));
     }
+
+    private static string MapFileOf(Call c) => MapFile(c.Request) ?? throw new Refused(404, "no such map");
 
     private static string? MapFile(HttpListenerRequest request)
         => Inside(Paths.Maps, request.QueryString["map"]) is { } file
@@ -391,7 +184,4 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
         response.ContentLength64 = bytes.Length;
         await response.OutputStream.WriteAsync(bytes);
     }
-
-
-    private sealed record MapEntry(string Path, string Name, string Folder, long Size, DateTime Modified);
 }

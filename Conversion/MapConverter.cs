@@ -21,18 +21,18 @@ public sealed class MapConverter(HashSet<string> knownBlocks, Translations trans
         shapes.Environment = items.Environment = collection;
         items.Style = new ItemStyle(rules.Options.SnowOnZoneSides, rules.Options.SnowOnGroundDeco, rules.SkinLift ?? ItemStyle.DefaultSkinLift, rules.SkinEdge ?? ItemStyle.DefaultSkinEdge);
         Flips.Run(map, shapes, rules);
-        SnowFill.ByKind(map, collection, shapes, rules);
-        var filled = rules.Options.FillEmptyWithSnow ? SnowFill.Run(map, collection, shapes, rules) : 0;
+        CoverFill.ByKind(map, collection, shapes, rules);
+        var filled = rules.Options.FillEmptyWithSnow ? CoverFill.Run(map, collection, shapes, rules) : 0;
         var run = new ConversionRun(map, collection, rules, translations, knownBlocks, shapes, items, surfaceParents, flatTops);
 
         run.Report.FilledCells = filled;
         foreach (var block in map.GetBlocks()) BlockRules.Decide(block, run);
         Neighbours.Keep(run);
-        SnowReach.Run(run);
+        CoverReach.Run(run);
         if (rules.Presets && rules.Options.RampToSkins) RampPass.Run(run);
 
         // these read the native names
-        var snow = new SnowSurfaces(map, run.Replaced.Concat(run.Customs.Keys), run.Renamed, run.Skinned, shapes, rules.Options.SnowOnZoneSides);
+        var snow = new CoverSurfaces(map, run.Replaced.Concat(run.Customs.Keys), run.Renamed, run.Skinned, shapes, items.Theme, rules.Options.SnowOnZoneSides);
         var trees = Trees.LostToBodies(run);
         PlaceNativesUnderBodies(run);
         RenameCustomBlocks(run);

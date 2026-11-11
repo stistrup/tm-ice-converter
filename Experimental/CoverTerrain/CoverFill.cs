@@ -5,7 +5,7 @@ using GBX.NET.Engines.Game;
 namespace TmIceConverter;
 
 // terrain options: empty cells (the game's flat ground, not in the map) get the flat terrain block; shores and cliffs snow by kind
-internal static class SnowFill
+internal static class CoverFill
 {
     public static int Run(CGameCtnChallenge map, string collection, BlockCatalog shapes, Translations rules)
     {
@@ -14,7 +14,7 @@ internal static class SnowFill
         var grid = map.GetBlocks().Where(b => !b.IsFree).ToList();
         var resolver = new ClipResolver(shapes);
         var placed = resolver.OfAll(grid);
-        // pillars stand on the ground, SnowRules.PillarOnSnow lifts them
+        // pillars stand on the ground, CoverRules.PillarOnSnow lifts them
         var owned = placed.Where((_, i) => grid[i].IsGround && !grid[i].IsPillar && !shapes.IsPillarBlock(grid[i].Name))
             .SelectMany(resolver.UnitCells).Select(c => (c.X, c.Z)).ToHashSet();
         var y = GroundY(collection);
@@ -37,7 +37,7 @@ internal static class SnowFill
         if (!shores && !cliffs) return;
         var ground = GroundY(collection);
         foreach (var b in map.GetBlocks())
-            if (!b.IsFree && shapes.IsTerrain(b.Name) && (shores && SnowRules.IsShore(b.Name) && b.Coord.Y < ground || cliffs && b.Name.Contains("Cliff") && b.Coord.Y <= ground))
+            if (!b.IsFree && shapes.IsTerrain(b.Name) && (shores && CoverRules.IsShore(b.Name) && b.Coord.Y < ground || cliffs && b.Name.Contains("Cliff") && b.Coord.Y <= ground))
                 rules.SnowCells.Add((b.Coord.X, b.Coord.Z));
     }
 

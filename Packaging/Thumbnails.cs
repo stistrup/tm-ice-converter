@@ -30,7 +30,7 @@ public static class Thumbnails
         {
             lock (made)
             {
-                if (For(ItemRecipe.SourceBlock(name)) is not { } icon) return;
+                if (For(ItemRecipe.SourceBlock(name, Theme.Default)) is not { } icon) return;
                 if (Gbx.ParseHeaderNode<CGameItemModel>(path) is { Flags: IconFlags, IconWebP: { } has } && has.SequenceEqual(icon)) return;
                 var gbx = Gbx.Parse<CGameItemModel>(path);
                 if (!gbx.Node.ContainsChunk<CGameCtnCollector.HeaderChunk2E001004>())

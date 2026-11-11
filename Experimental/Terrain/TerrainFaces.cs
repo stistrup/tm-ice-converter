@@ -29,6 +29,9 @@ internal static class TerrainFaces
         }).ToList();
     }
 
+    public static bool IsTerrain(string material, string? environment)
+        => material.StartsWith(TerrainShader) || ShaderOf(material, environment) is not null;
+
     public static string? ShaderOf(string material, string? environment)
     {
         var path = Path.Combine(Path.GetDirectoryName(Paths.ExtractedStadium)!, environment ?? "Stadium", "Media", "Material", material + ".Material.Gbx");

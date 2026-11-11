@@ -6,7 +6,7 @@ export const lookPrefix: Record<string, string> = { custom: '', twin: '', item: 
 // the converter ices only these on the upward faces (BlockNames.IsWallMaterial)
 export const wallMaterials = new Set(['TrackWall', 'TrackWallClips', 'Structure'])
 
-// as ItemMesh.Materials reads data/ice-materials.jsonc: "<block pattern>|name" wins for its blocks, then prefix + name, then the name
+// as ItemMaterials reads data/themes/ice/materials.jsonc: "<block pattern>|name" wins for its blocks, then prefix + name, then the name
 export function iceMaterialName(swaps: PreviewResult['swaps'], name: string, block: string, prefix: string): string | undefined {
   for (const [key, to] of Object.entries(swaps)) {
     const bar = key.indexOf('|')

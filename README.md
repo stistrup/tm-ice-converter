@@ -47,7 +47,7 @@ TmIceConverter convert <maps or folders> [--folder <dir>] [--name <name>] [--fak
 
 For working on the converter there are Blender tools: `view <map>` (a scene and renders of a map), `inspect <map>` (the same with a panel to look up and mark blocks) and `show <item>` (a built item). They're experimental and rough, but they somewhat work. I abandoned this route as soon as I started to work in the editor as that served the purpose as a debug tool. Blender preview could prove useful at some point, time will tell.
 
-The map-wide options and their defaults are `ConvertOptions` (`Rules/ConvertOptions.cs`). A map's own choices are what the GUI saves for it, `settings/maps/<map UID>.json` in the user folder; a map without one converts with the defaults. Block and item swaps live in `data/swaps.jsonc`, material mappings in `data/ice-materials.jsonc`.
+The map-wide options and their defaults are `ConvertOptions` (`Rules/ConvertOptions.cs`). A map's own choices are what the GUI saves for it, `settings/maps/<map UID>.json` in the user folder; a map without one converts with the defaults. Block and item swaps live in `data/swaps.jsonc`, the theme (what roads and ground turn into, and each material's mapping) in `data/themes/ice/`.
 
 ## Code structure
 

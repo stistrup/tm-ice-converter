@@ -7,7 +7,7 @@ namespace TmIceConverter;
 
 internal static class ItemSwaps
 {
-    public static void Run(ConversionRun run, SnowSurfaces snow)
+    public static void Run(ConversionRun run, CoverSurfaces snow)
     {
         var icedAt = new Dictionary<(float, float, float), int>();
         var removed = new List<CGameCtnAnchoredObject>();
@@ -15,46 +15,52 @@ internal static class ItemSwaps
         {
             if (item.ItemModel is not { Author: "Nadeo" } model) continue;
             if (run.Translations.Untouched(model.Id)) { Bump(run.Report.Untouched, model.Id); continue; }
-            var at = new Vector3(item.AbsolutePositionInMap.X, item.AbsolutePositionInMap.Y, item.AbsolutePositionInMap.Z);
-            var picked = run.Rules.ChoiceAt(model.Id, at) ?? (run.Rules.Presets ? null : "keep");
-            if (picked == "remove" || picked is null && run.Rules.RemovesItem(model.Id, at))
-            { removed.Add(item); Bump(run.Report.RemovedByList, model.Id); continue; }
-            if (picked == "keep" || picked is null && run.Rules.KeepsItem(model.Id)) { Bump(run.Report.KeptByList, model.Id); continue; }
             var p = item.AbsolutePositionInMap;
-            // "<Env>:<Item>" beats the bare id
-            bool Find(Dictionary<string, string> table, out string to)
-                => table.TryGetValue($"{run.Map.Collection}:{model.Id}", out to!) || table.TryGetValue(model.Id, out to!);
-            // the swap tables are all vegetation
-            // frozen: swapped whatever the options and the snow around say
-            var (trees, frozen) = (run.Rules.Options.ConvertTrees || picked == "frozen", picked == "frozen");
-            var to = "";
-            var always = trees && Find(run.Translations.Items, out to);
-            if ((always || trees && Find(run.Translations.ItemsOnSnow, out to)) && VariantSwap(run, item, to) is var (target, variant)
-                && (always || frozen || snow.Touches(new Vector3(p.X, p.Y, p.Z), TreeHeight(target))))
-            {
-                item.ItemModel = model with { Id = target, Collection = new Id(26) }; // Stadium2020
-                item.Flags = (short)(item.Flags & ~VariantBits | variant << 8);
-                Bump(run.Report.SwappedItems, (model.Id, target));
-            }
-            // stacked copies go up 1 cm each
-            else if (run.Items.ForItem(model.Id) is { } ice)
-            {
-                var spot = (MathF.Round(p.X, 2), MathF.Round(p.Y, 2), MathF.Round(p.Z, 2));
-                var stacked = icedAt.GetValueOrDefault(spot);
-                icedAt[spot] = stacked + 1;
-                if (stacked > 0) item.AbsolutePositionInMap = p with { Y = p.Y + 0.01f * stacked };
-                item.ItemModel = ice.Ident;
-                run.Report.UsedItems.Add(ice);
-                Bump(run.Report.IcedItems, model.Id);
-            }
-            else if (run.Items.Failures.ContainsKey(model.Id)) Bump(run.Report.ItemsNotIced, model.Id);
-            else if (snow.Under(new Vector3(p.X, p.Y, p.Z)) && FlushWithIce(run, item, snow))
+            var at = new Vector3(p.X, p.Y, p.Z);
+            var picked = run.Rules.ChoiceAt(model.Id, at) ?? (run.Rules.Presets ? null : "keep");
+            if (picked == "remove" || picked is null && run.Rules.RemovesItem(model.Id, at)) { removed.Add(item); Bump(run.Report.RemovedByList, model.Id); }
+            else if (picked == "keep" || picked is null && run.Rules.KeepsItem(model.Id)) Bump(run.Report.KeptByList, model.Id);
+            else if (SwapTree(run, item, model, picked, snow)) { }
+            else if (run.Items.ForItem(model.Id) is { } copy) PlaceCopy(run, item, model, copy, icedAt);
+            else if (run.Items.Failures.ContainsKey(model.Id)) Bump(run.Report.ItemsNotConverted, model.Id);
+            else if (snow.Under(at) && FlushWithIce(run, item, snow))
             {
                 item.AbsolutePositionInMap = p with { Y = p.Y - FlushSink };
                 Bump(run.Report.Sunk, model.Id);
             }
         }
         foreach (var item in removed) run.Map.AnchoredObjects!.Remove(item);
+    }
+
+    // the swap tables are all vegetation; frozen: swapped whatever the options and the snow around say
+    private static bool SwapTree(ConversionRun run, CGameCtnAnchoredObject item, Ident model, string? picked, CoverSurfaces snow)
+    {
+        // "<Env>:<Item>" beats the bare id
+        bool Find(Dictionary<string, string> table, out string to)
+            => table.TryGetValue($"{run.Map.Collection}:{model.Id}", out to!) || table.TryGetValue(model.Id, out to!);
+        var (trees, frozen) = (run.Rules.Options.ConvertTrees || picked == "frozen", picked == "frozen");
+        var to = "";
+        var always = trees && Find(run.Translations.Items, out to);
+        var p = item.AbsolutePositionInMap;
+        if (!((always || trees && Find(run.Translations.ItemsOnSnow, out to)) && VariantSwap(run, item, to) is var (target, variant)
+            && (always || frozen || snow.Touches(new Vector3(p.X, p.Y, p.Z), TreeHeight(target))))) return false;
+        item.ItemModel = model with { Id = target, Collection = new Id(26) }; // Stadium2020
+        item.Flags = (short)(item.Flags & ~VariantBits | variant << 8);
+        Bump(run.Report.SwappedItems, (model.Id, target));
+        return true;
+    }
+
+    // stacked copies go up 1 cm each
+    private static void PlaceCopy(ConversionRun run, CGameCtnAnchoredObject item, Ident model, BuiltItem copy, Dictionary<(float, float, float), int> placedAt)
+    {
+        var p = item.AbsolutePositionInMap;
+        var spot = (MathF.Round(p.X, 2), MathF.Round(p.Y, 2), MathF.Round(p.Z, 2));
+        var stacked = placedAt.GetValueOrDefault(spot);
+        placedAt[spot] = stacked + 1;
+        if (stacked > 0) item.AbsolutePositionInMap = p with { Y = p.Y + 0.01f * stacked };
+        item.ItemModel = copy.Ident;
+        run.Report.UsedItems.Add(copy);
+        Bump(run.Report.IcedItems, model.Id);
     }
 
     // a tree on snow: what it freezes to, "<Env>:<Item>" first
@@ -97,7 +103,7 @@ internal static class ItemSwaps
     // flat top flush with ice flickers: sink it
     private const float FlushSink = 0.02f;
 
-    private static bool FlushWithIce(ConversionRun run, CGameCtnAnchoredObject item, SnowSurfaces snow)
+    private static bool FlushWithIce(ConversionRun run, CGameCtnAnchoredObject item, CoverSurfaces snow)
     {
         var id = item.ItemModel.Id;
         var key = $"{run.Shapes.Environment}:{id}";

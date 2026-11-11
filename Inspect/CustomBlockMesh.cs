@@ -8,18 +8,19 @@ internal sealed partial record CustomBlockMesh(string Item, string Source, int V
     public string Archetype { get; init; } = Source;
     // ice raised over the same native block, which stays placed under it
     public bool Stacked { get; init; }
-    // SnowBlocks' terrain and gameplay ground: on DecoPlatformBase, whose clips the game doesn't show there (none in game shots); the source's clips aren't drawn either
+    // CoverBlocks' terrain and gameplay ground: on DecoPlatformBase, whose clips the game doesn't show there (none in game shots); the source's clips aren't drawn either
     public bool Snow { get; init; }
 
-    private const string Prefix = "IceConverter\\";
+    private const string Prefix = Paths.ItemFolder + "\\";
     private const string Suffix = ".Block.Gbx_CustomBlock";
 
     public static CustomBlockMesh? Parse(string blockName)
     {
         if (!blockName.StartsWith(Prefix) || !blockName.EndsWith(Suffix)) return null;
         var item = BlockExtras().Replace(blockName[Prefix.Length..^Suffix.Length], "");
-        if (item.IndexOf("_Ice") <= 0) return null;
-        var source = ItemRecipe.SourceBlock(item);
+        var theme = Theme.Default;
+        if (item.IndexOf(theme.NameTag) <= 0) return null;
+        var source = ItemRecipe.SourceBlock(item, theme);
         var variant = VariantMark().Match(item);
         var on = OnArchetype().Match(blockName);
         var mesh = variant.Success
@@ -28,7 +29,7 @@ internal sealed partial record CustomBlockMesh(string Item, string Source, int V
         return mesh with { Archetype = on.Success ? on.Groups[1].Value : mesh.Source, Stacked = blockName.Contains("_lift1"), Snow = SnowBlock().IsMatch(blockName) };
     }
 
-    // see ItemBuilder.BlockFor and SnowBlocks
+    // see ItemBuilder.BlockFor and CoverBlocks
     [GeneratedRegex(@"(_on_[^_]+)?(_lift1)?(_r\d+(l\d+)?)?(_snowland|_snowhollow|_decosnow2|_snowground)?$")]
     private static partial Regex BlockExtras();
 

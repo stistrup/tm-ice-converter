@@ -3,7 +3,7 @@ using System.Numerics;
 namespace TmIceConverter;
 
 // connected snow on a terrain cell, and where each patch meets the cell's edge
-internal static class SnowPatches
+internal static class CoverPatches
 {
     public const float AtEdge = 0.05f;
     private const float OnPoint = 0.05f;

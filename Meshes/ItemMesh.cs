@@ -1,151 +1,152 @@
 using System.Numerics;
-using System.Text.RegularExpressions;
 
 namespace TmIceConverter;
 
 internal sealed record ItemMeshResult(List<MeshPiece> Pieces, string? Waypoint, BlockCatalog Catalog, string? Error = null);
 
 // a block's mesh pieces, as its recipe wants them
-internal sealed class ItemMesh(IceMaterials iceMaterials, HashSet<string> missing)
+internal sealed class ItemMesh(Theme theme, HashSet<string> missing)
 {
     public const string NothingToCover = "nothing to cover";
 
-    private const float TopMinY = 0.02f;
     private const float TopOfIceMinArea = 256;
     // m; was 0.3 with the whole bank in snow
-    private const float SnowUnderWater = 0.1f;
+    private const float CoverUnderWater = 0.1f;
     // m above flat ground where the snow stops up a slope
-    private const float SnowLip = 0.3f;
-    private const string Snow = "PlatformIce_DecoHill";
+    private const float CoverLip = 0.3f;
+
+    // each step skips what isn't its kind; null: nothing to cover
+    private delegate List<MeshPiece>? Step(List<MeshPiece> pieces, ItemJob job);
+
+    // the order is the logic
+    private Step[] Steps =>
+    [
+        WithIcedTops,
+        WithoutFoot,
+        WithoutLayerMasks,
+        CoverTerrain,
+        WithPads,
+        WithoutKeptNativeFaces,
+        TerrainOrRest,
+        CoverGround,
+        WithNativeLinks,
+    ];
 
     public ItemMeshResult Make(ItemRequest r)
     {
-        var catalog = new BlockCatalog(Paths.ExtractedStadium) { Environment = r.Environment };
-        var recipe = ItemRecipe.For(r, catalog);
-        ItemMeshResult Stop(string error) => new([], null, catalog, error);
-
-        var (materialMap, native) = Materials(r, recipe, catalog.Environment);
-        var tilt = Matrix4x4.CreateFromYawPitchRoll(0, r.Tilt.X, r.Tilt.Y);
-        var export = Exporter(r, recipe, catalog, materialMap, tilt);
-        var parts = catalog.FindPlacedBlockParts(r.Block, r.Ground, r.Variant, r.Mobil, r.Clips)
-            ?? throw new InvalidDataException($"{r.Block} has nothing to draw");
-        var waypoint = recipe.Skin ? null : catalog.Waypoint(r.Block);
-        // water only drawn: its physics is the native block's water
-        var pieces = export.Export(parts).Where(p => p.Visible || p.Material != "Water").ToList();
-        if (recipe.TopsBody)
+        var job = ItemJob.For(r, theme);
+        var pieces = Drawn(job);
+        foreach (var step in Steps)
         {
-            if (WithIcedTops(pieces, parts, recipe, materialMap, export, tilt) is not { } withTops) return Stop(NothingToCover);
-            pieces = withTops;
+            if (step(pieces, job) is not { } next) return Stop(job, NothingToCover);
+            pieces = next;
         }
-        if (!r.Style.TerrainSnow && ItemRecipe.OnTerrain(r.Block, r.Ground, r.Kind)) pieces = PieceOps.WithoutFoot(pieces);
-        // terrain layer masks: another environment's terrain material reads them as its own layers
-        if (recipe.Body && catalog.IsTerrain(r.Block)) pieces = pieces.Select(p => p with { Colors = null }).ToList();
-        if (r.Kind == ItemKind.SnowTerrain) pieces = SnowTerrain(pieces, catalog.Environment, r.SnowKeep);
-        var gameplay = BlockNames.IsGameplayBlock(r.Block);
-        if (recipe.Skin && gameplay) pieces = Pads.AroundPad(pieces, new BlockCatalog(Paths.ExtractedStadium).Plain.Export(parts), Pads.PadGameplayOf(r.Block), r.Style.SkinLift);
-        else if (gameplay) pieces = Pads.IcyPads(pieces, Pads.PadGameplayOf(r.Block));
-        if (recipe.Stacked) pieces = pieces.Where(p => !IsTerrainFace(p, catalog.Environment) && !p.Material.StartsWith("Deco")).ToList();
-        else if (recipe.OnTerrainBody)
-        {
-            // terrain shaders light by position over the whole lightmap, the road's part too: visible terrain goes to its own item
-            pieces = pieces.Where(p => !p.Visible || IsTerrainFace(p, catalog.Environment) == recipe.TerrainFaces).ToList();
-            pieces = TerrainFaces.AsTerrainBelow(pieces, catalog.Environment);
-            if (recipe.TerrainFaces) pieces = pieces.Where(p => p.Visible).ToList();
-            if (recipe.TerrainFaces && pieces.Count == 0) return Stop(NothingToCover);
-        }
-        // the kept native gate draws its curtain
-        if (r.Kind == ItemKind.SnowGround) pieces = SnowGround(pieces.Where(p => !p.Material.Contains("TriggerFX")).ToList(), catalog.Environment);
-        pieces = pieces.Select(p => (native.Contains(p.Material) || recipe.Body && !materialMap.ContainsKey(p.Material) && !(MaterialLib.Surface(p.Material) is { } own && !MaterialLib.NotIce.Contains(own)))
-            && MaterialLib.NativeLink(p.Material, catalog.Environment) is not null ? p with { Material = MaterialLib.NativePrefix + p.Material } : p).ToList();
-        lock (missing) missing.UnionWith(catalog.Missing);
-        if (pieces.Count == 0) return Stop(catalog.Missing.Count > 0 ? "its prefab isn't extracted yet" : recipe.Top || recipe.Skin && gameplay ? NothingToCover : "no geometry found");
-        if (r.Kind == ItemKind.TopOfIce && pieces.Where(p => p.Visible).Sum(PieceOps.Area) < TopOfIceMinArea) return Stop(NothingToCover);
-        if (waypoint is not null) pieces.AddRange(Waypoints.Pieces(waypoint, pieces).ToList());
-        // tilt baked into the mesh; custom blocks are tilted by the game
-        if (r.Tilt != default && !recipe.TopsBody) pieces = pieces.Select(p => PieceOps.Turned(p, tilt)).ToList();
-        return new ItemMeshResult(pieces, waypoint, catalog);
+        lock (missing) missing.UnionWith(job.Catalog.Missing);
+        if (WhyNothing(pieces, job) is { } error) return Stop(job, error);
+        if (job.Waypoint is { } waypoint) pieces.AddRange(Waypoints.Pieces(waypoint, pieces, theme.Road).ToList());
+        return new ItemMeshResult(Tilted(pieces, job), job.Waypoint, job.Catalog);
     }
 
-    // terrain in snow: shores down to the water, the rest its ground (flat ground, a hill's or cliff's foot); drives as it looks
-    private static List<MeshPiece> SnowTerrain(List<MeshPiece> pieces, string? environment, IReadOnlyList<Vector2>? keep)
+    private static ItemMeshResult Stop(ItemJob job, string error) => new([], null, job.Catalog, error);
+
+    // water only drawn: its physics is the native block's water
+    private static List<MeshPiece> Drawn(ItemJob job)
+        => job.Export.Export(job.Parts).Where(p => p.Visible || p.Material != "Water").ToList();
+
+    private static string? WhyNothing(List<MeshPiece> pieces, ItemJob job)
     {
-        pieces = TerrainFaces.AsTerrainBelow(pieces, environment);
-        if (pieces.FirstOrDefault(p => p.Visible && p.Material == "Water") is { } water)
-        {
-            var line = water.Positions[1] - SnowUnderWater;
-            return PieceOps.SnowAboveCollision(PieceOps.SnowAbove(pieces, line, Snow, keep), line, Snow, keep);
-        }
+        if (pieces.Count == 0 && job.Catalog.Missing.Count > 0) return "its prefab isn't extracted yet";
+        if (pieces.Count == 0) return job.Recipe.Top || job.Recipe.Skin && job.Gameplay ? NothingToCover : "no geometry found";
+        if (job.Kind == ItemKind.TopOfTwin && VisibleArea(pieces) < TopOfIceMinArea) return NothingToCover;
+        return null;
+    }
+
+    // custom blocks are tilted by the game
+    private static List<MeshPiece> Tilted(List<MeshPiece> pieces, ItemJob job)
+        => job.Request.Tilt == default || job.Recipe.TopsBody ? pieces : pieces.Select(p => PieceOps.Turned(p, job.Tilt)).ToList();
+
+    private static float VisibleArea(List<MeshPiece> pieces) => pieces.Where(p => p.Visible).Sum(PieceOps.Area);
+
+    // wall faces up iced as placed, the rest as sides; null: too little faces up
+    private List<MeshPiece>? WithIcedTops(List<MeshPiece> pieces, ItemJob job)
+    {
+        if (!job.Recipe.TopsBody) return pieces;
+        var topFiles = new GameFiles(Paths.ExtractedStadium);
+        var iced = ItemExporters.IcedTops(job, topFiles).Export(job.Parts);
+        var area = VisibleArea(iced);
+        if (area == 0 || job.Kind == ItemKind.TopOfTwinBody && area < TopOfIceMinArea) return null;
+        lock (missing) missing.UnionWith(topFiles.Missing);
+        var sides = ItemExporters.Sides(job).Export(job.Parts);
+        return [.. pieces, .. sides.Select(p => p with { Name = p.Name + "_side" }), .. iced.Select(p => p with { Name = p.Name + "_top" })];
+    }
+
+    private static List<MeshPiece> WithoutFoot(List<MeshPiece> pieces, ItemJob job)
+    {
+        var r = job.Request;
+        if (r.Style.TerrainSnow || !ItemRecipe.OnTerrain(r.Block, r.Ground, r.Kind)) return pieces;
+        return PieceOps.WithoutFoot(pieces, job.Theme);
+    }
+
+    // another environment's terrain material reads them as its own layers
+    private static List<MeshPiece> WithoutLayerMasks(List<MeshPiece> pieces, ItemJob job)
+    {
+        if (!job.Recipe.Body || !job.Catalog.IsTerrain(job.Block)) return pieces;
+        return pieces.Select(p => p with { Colors = null }).ToList();
+    }
+
+    // shores down to the water, the rest its ground (flat ground, a hill's or cliff's foot); drives as it looks
+    private static List<MeshPiece> CoverTerrain(List<MeshPiece> pieces, ItemJob job)
+    {
+        if (job.Kind != ItemKind.CoveredTerrain) return pieces;
+        var (keep, cover) = (job.Request.SnowKeep, job.Theme.Cover);
+        pieces = TerrainFaces.AsTerrainBelow(pieces, job.Environment);
+        if (WaterLine(pieces) is { } line) return PieceOps.CoverAboveCollision(PieceOps.CoverAbove(pieces, line, cover, keep), line, cover, keep);
         // the ground in snow, up to the lip where it climbs; none on top yet
-        return PieceOps.SnowFoot(PieceOps.SnowFoot(pieces, SnowLip, Snow, false, keep), SnowLip, Snow, true, keep);
+        return PieceOps.CoverFoot(PieceOps.CoverFoot(pieces, CoverLip, cover, false, keep), CoverLip, cover, true, keep);
+    }
+
+    private static List<MeshPiece> WithPads(List<MeshPiece> pieces, ItemJob job)
+    {
+        if (!job.Gameplay) return pieces;
+        var pad = Pads.PadGameplayOf(job.Block);
+        if (!job.Recipe.Skin) return Pads.IcyPads(pieces, pad);
+        var plain = new BlockCatalog(Paths.ExtractedStadium).Plain.Export(job.Parts);
+        return Pads.AroundPad(pieces, plain, pad, job.Request.Style.SkinLift);
+    }
+
+    // the kept native block under it draws these
+    private static List<MeshPiece> WithoutKeptNativeFaces(List<MeshPiece> pieces, ItemJob job)
+    {
+        if (!job.Recipe.Stacked) return pieces;
+        return pieces.Where(p => !job.IsTerrainFace(p) && !p.Material.StartsWith("Deco")).ToList();
+    }
+
+    // terrain shaders light by position over the whole lightmap, the road's part too: visible terrain goes to its own item
+    private static List<MeshPiece>? TerrainOrRest(List<MeshPiece> pieces, ItemJob job)
+    {
+        if (job.Recipe.Stacked || !job.Recipe.OnTerrainBody) return pieces;
+        var terrainItem = job.Recipe.TerrainFaces;
+        pieces = pieces.Where(p => !p.Visible || job.IsTerrainFace(p) == terrainItem).ToList();
+        pieces = TerrainFaces.AsTerrainBelow(pieces, job.Environment);
+        if (!terrainItem) return pieces;
+        pieces = pieces.Where(p => p.Visible).ToList();
+        return pieces.Count == 0 ? null : pieces;
     }
 
     // a ground body holding water (a lake): its terrain above the water in snow, like a shore; rocks and the rest stay
-    private static List<MeshPiece> SnowGround(List<MeshPiece> pieces, string? environment)
+    private static List<MeshPiece> CoverGround(List<MeshPiece> pieces, ItemJob job)
     {
-        if (pieces.FirstOrDefault(p => p.Visible && p.Material == "Water") is not { } water) return pieces;
-        var line = water.Positions[1] - SnowUnderWater;
-        var terrain = pieces.Where(p => IsTerrainFace(p, environment)).ToList();
-        return [.. PieceOps.SnowAboveCollision(PieceOps.SnowAbove(terrain, line, Snow), line, Snow), .. pieces.Where(p => !IsTerrainFace(p, environment))];
+        if (job.Kind != ItemKind.CoveredGround) return pieces;
+        // the kept native gate draws its curtain
+        pieces = pieces.Where(p => !p.Material.Contains("TriggerFX")).ToList();
+        if (WaterLine(pieces) is not { } line) return pieces;
+        var terrain = pieces.Where(job.IsTerrainFace).ToList();
+        return [.. PieceOps.CoverAboveCollision(PieceOps.CoverAbove(terrain, line, job.Theme.Cover), line, job.Theme.Cover), .. pieces.Where(p => !job.IsTerrainFace(p))];
     }
 
-    private static bool IsTerrainFace(MeshPiece p, string? environment)
-        => p.Material.StartsWith(TerrainFaces.TerrainShader) || TerrainFaces.ShaderOf(p.Material, environment) is not null;
+    private static List<MeshPiece> WithNativeLinks(List<MeshPiece> pieces, ItemJob job)
+        => pieces.Select(p => job.LinksNative(p.Material) ? p with { Material = MaterialLib.NativePrefix + p.Material } : p).ToList();
 
-    private (Dictionary<string, string> Map, HashSet<string> Native) Materials(ItemRequest r, ItemRecipe recipe, string? environment)
-    {
-        var block = r.Block;
-        var map = iceMaterials.Map(recipe.Top ? "top:" : recipe.Skin ? "skin:" : null);
-        // "<block pattern>|<material>": only for those blocks
-        foreach (var (key, to) in map.Where(kv => kv.Key.Contains('|')).ToList())
-            if (key.Split('|') is [var pattern, var material] && Regex.IsMatch(block, "^" + Regex.Escape(pattern).Replace("\\*", ".*") + "$"))
-                map[material] = to;
-        if (recipe.Body && r.Kind != ItemKind.SnowGround) foreach (var key in map.Keys.Where(m => m.StartsWith("Deco") && !MaterialLib.SkinCovers(block, m, recipe.ZoneSides)).ToList()) map.Remove(key);
-        // terrain snow: the cut decides, not the map
-        if (recipe.OnTerrainBody || r.Kind == ItemKind.SnowTerrain) foreach (var key in map.Keys.Where(m => m.StartsWith(TerrainFaces.TerrainShader) || TerrainFaces.ShaderOf(m, environment) is not null).ToList()) map.Remove(key);
-        // snow bodies keep their water surface (shores, lakes); elsewhere water under ice is left out
-        if (r.Kind is ItemKind.SnowTerrain or ItemKind.SnowGround) map["Water"] = "native";
-        // "native" in ice-materials.jsonc: the game's own material, linked after import
-        var native = map.Where(kv => kv.Value == "native").Select(kv => kv.Key).ToHashSet();
-        foreach (var key in native) map.Remove(key);
-        if (recipe.Skin || recipe.Top) native.Clear();
-        if (BlockNames.Effect(block) is { } effect) foreach (var (k, v) in Pads.EffectLook(effect)) map[k] = v;
-        return (map, native);
-    }
-
-    private MeshExporter Exporter(ItemRequest r, ItemRecipe recipe, BlockCatalog catalog, Dictionary<string, string> map, Matrix4x4 tilt)
-    {
-        var (block, top, skin, environment) = (r.Block, recipe.Top, recipe.Skin, catalog.Environment);
-        return new MeshExporter(catalog.Files, map)
-        {
-            KeepMaterial = top ? BlockNames.IsWallMaterial
-                : recipe.TopsBody ? m => !BlockNames.IsWallMaterial(m)
-                : r.Kind == ItemKind.Gated ? m => !Pads.IsPadLook(m)
-                : skin ? m => MaterialLib.SkinCovers(block, m, recipe.ZoneSides)
-                : r.Ground && !recipe.Body && !BlockNames.IsWholeOnGround(block, environment) ? m => !m.StartsWith("Deco")
-                : null,
-            Lift = skin ? r.Style.SkinLift : 0,
-            SkirtAngle = r.Style.SkinEdge,
-            Up = Vector3.TransformNormal(Vector3.UnitY, Matrix4x4.Transpose(tilt)),
-            KeepFace = top ? n => Vector3.TransformNormal(n, tilt).Y > TopMinY : null,
-            // the lip keeps the road's own look (its texture's dark edge), linked to the game material
-            LipAs = top ? null : m => iceMaterials.SwappedToIce(map, m) ? (skin ? "" : MaterialLib.NativeLink(m, environment) is not null ? MaterialLib.NativePrefix + m : "CustomConcrete") : null,
-            PlatformLayout = top,
-        };
-    }
-
-    // null: too little faces up
-    private List<MeshPiece>? WithIcedTops(List<MeshPiece> pieces, List<(string Path, Matrix4x4 Transform)> parts, ItemRecipe recipe, Dictionary<string, string> map, MeshExporter export, Matrix4x4 tilt)
-    {
-        bool Up(Vector3 n) => Vector3.TransformNormal(n, tilt).Y > TopMinY;
-        var topFiles = new GameFiles(Paths.ExtractedStadium);
-        var tops = new MeshExporter(topFiles, iceMaterials.Map("top:"))
-            { KeepMaterial = BlockNames.IsWallMaterial, Up = export.Up, KeepFace = Up, PlatformLayout = true };
-        var sides = new MeshExporter(new GameFiles(Paths.ExtractedStadium), map)
-            { KeepMaterial = BlockNames.IsWallMaterial, Up = export.Up, KeepFace = n => !Up(n), LipAs = export.LipAs };
-        var iced = tops.Export(parts);
-        var area = iced.Where(p => p.Visible).Sum(PieceOps.Area);
-        if (area == 0 || recipe.Kind == ItemKind.TopOfIceBody && area < TopOfIceMinArea) return null;
-        lock (missing) missing.UnionWith(topFiles.Missing);
-        return [.. pieces, .. sides.Export(parts).Select(p => p with { Name = p.Name + "_side" }), .. iced.Select(p => p with { Name = p.Name + "_top" })];
-    }
+    private static float? WaterLine(List<MeshPiece> pieces)
+        => pieces.FirstOrDefault(p => p.Visible && p.Material == "Water") is { } water ? water.Positions[1] - CoverUnderWater : null;
 }

@@ -505,7 +505,7 @@ export class MapScene {
       b.fromBufferAttribute(position, at(i + 1))
       c.fromBufferAttribute(position, at(i + 2))
       const normal = ab.subVectors(b, a).cross(ac.subVectors(c, a))
-      // the converter's top minimum (ItemMesh.TopMinY)
+      // the converter's top minimum (ItemExporters.TopMinY)
       if (normal.lengthSq() > 0 && normal.normalize().y > 0.02) keep.push(at(i), at(i + 1), at(i + 2))
     }
     let shape: BufferGeometry | null = null

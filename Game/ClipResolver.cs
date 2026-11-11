@@ -8,6 +8,8 @@ namespace TmIceConverter;
 // full free clips replace deletable ones
 public sealed class ClipResolver(BlockCatalog shapes)
 {
+    private BlockCatalog Shapes => shapes;
+
     public sealed record Placed(string Name, bool Ground, int Variant, Matrix4x4 Place);
 
     public Placed Of(CGameCtnBlock block)
@@ -57,23 +59,95 @@ public sealed class ClipResolver(BlockCatalog shapes)
 
     private static readonly Int3 Down = new(0, -1, 0), Up = new(0, 1, 0);
 
-    public List<HashSet<int>> Resolve(IReadOnlyList<Placed> blocks)
+    public List<HashSet<int>> Resolve(IReadOnlyList<Placed> blocks) => new Pass(this, blocks).Shown();
+
+    // one resolve: every clip side by cell and direction, then what each shows
+    private sealed class Pass
     {
-        var sides = new Dictionary<(Int3 Cell, Int3 Dir), List<SideAt>>();
-        var pillar = blocks.Select(b => shapes.IsPillarBlock(b.Name)).ToArray();
-        for (int i = 0; i < blocks.Count; i++)
+        private readonly ClipResolver resolver;
+        private readonly IReadOnlyList<Placed> blocks;
+        private readonly bool[] pillar;
+        private readonly Dictionary<(Int3 Cell, Int3 Dir), List<SideAt>> sides = [];
+        private readonly Dictionary<Int3, List<int>> occupants = [];
+        private readonly Dictionary<(Int3, Int3, string), bool> columns = [];
+
+        public Pass(ClipResolver resolver, IReadOnlyList<Placed> blocks)
         {
-            foreach (var side in shapes.ClipSides(blocks[i].Name, blocks[i].Ground, blocks[i].Variant))
+            (this.resolver, this.blocks) = (resolver, blocks);
+            var shapes = resolver.Shapes;
+            pillar = blocks.Select(b => shapes.IsPillarBlock(b.Name)).ToArray();
+            for (int i = 0; i < blocks.Count; i++)
             {
-                var cell = Cell(side.Center, blocks[i].Place);
-                var key = (cell, Cell(side.Probe, blocks[i].Place) - cell);
-                if (!sides.TryGetValue(key, out var list)) sides[key] = list = [];
-                list.Add(new SideAt(i, side));
+                foreach (var side in shapes.ClipSides(blocks[i].Name, blocks[i].Ground, blocks[i].Variant))
+                {
+                    var cell = Cell(side.Center, blocks[i].Place);
+                    var key = (cell, Cell(side.Probe, blocks[i].Place) - cell);
+                    if (!sides.TryGetValue(key, out var list)) sides[key] = list = [];
+                    list.Add(new SideAt(i, side));
+                }
             }
+            for (int i = 0; i < blocks.Count; i++)
+                foreach (var c in resolver.UnitCells(blocks[i]))
+                    (occupants.TryGetValue(c, out var l) ? l : occupants[c] = []).Add(i);
         }
 
-        var columns = new Dictionary<(Int3, Int3, string), bool>();
-        bool HasVertical((Int3, Int3) at, string group, out bool onPillar)
+        public List<HashSet<int>> Shown()
+        {
+            var shown = blocks.Select(_ => new HashSet<int>()).ToList();
+            foreach (var ((cell, dir), list) in sides)
+            {
+                var facingAt = sides.GetValueOrDefault((cell + dir, Neg(dir))) ?? [];
+                foreach (var at in list)
+                    foreach (var c in Picked(cell, dir, list, at, facingAt))
+                        shown[at.Block].Add(ClipKey.Of(at.Side.Bit, c.Index, c.Vertical ? ColumnAt(cell, dir, c.VerticalGroup, blocks[at.Block].Ground) : 0));
+            }
+            return shown;
+        }
+
+        // the free clips this side shows
+        private List<ClipInfo> Picked(Int3 cell, Int3 dir, List<SideAt> list, SideAt at, List<SideAt> facingAt)
+        {
+            var facing = facingAt.SelectMany(s => s.Side.Clips).ToList();
+            var connected = at.Side.Clips.Any(a => !a.Anti && facingAt.Any(f => f.Side.Clips.Any(b => Compatible(a, b)
+                && (dir.Y == 0 || Grouped(a, b) || Shaped(dir, list, at, a, f, b)))));
+            bool Shows(ClipInfo c)
+            {
+                // anti-clips show where they connect
+                if (c.Anti) return facing.Any(f => Compatible(c, f));
+                // facing poles of the same group: neither shows
+                if (c.Vertical && c.VerticalGroup is not null)
+                    return Column(cell, dir, c.VerticalGroup)
+                        && !(facing.Any(f => f.Vertical && f.VerticalGroup == c.VerticalGroup) && Column(cell + dir, Neg(dir), c.VerticalGroup));
+                // a full clip on the facing side removes deletable ones too
+                return !connected && !(dir.Y > 0 && PillarAbove(cell, at.Block)) && !(c.Deletable && facing.Any(f => f.Full));
+            }
+            var picked = at.Side.Clips.Where(c => c.Type.StartsWith("FreeClip")).Where(Shows).ToList();
+            if (picked.Any(c => c.Full)) picked = picked.Where(c => c.Full || !c.Deletable).ToList();
+            return picked;
+        }
+
+        // shaped tops/bottoms connect facing the same or the opposite way; when several in a cell match
+        // the same clip, only those facing its way connect
+        private bool Shaped(Int3 dir, List<SideAt> list, SideAt at, ClipInfo a, SideAt f, ClipInfo b)
+        {
+            var apart = Apart(at, a, f, b);
+            return a.MultiDir == "AllDir" || apart == 0
+                || apart == 2 && !(dir.Y > 0 && list.Any(o => o.Block != at.Block && o.Side.Clips.Any(c => Compatible(c, b) && Apart(o, c, f, b) == 0)));
+        }
+
+        private int Apart(SideAt x, ClipInfo a, SideAt y, ClipInfo b) => ((Dir(x, a) - Dir(y, b)) % 4 + 4) % 4;
+
+        private int Dir(SideAt s, ClipInfo c)
+        {
+            var block = blocks[s.Block];
+            return ClipTurns.DirOf(block.Place) + resolver.Shapes.ShapedClipTurn(block.Name, block.Ground, block.Variant, s.Side.Bit, c);
+        }
+
+        // stacked pillars: only the top one shows its top
+        private bool PillarAbove(Int3 cell, int block)
+            => occupants.TryGetValue(cell + Up, out var l) && l.Any(o => o != block && pillar[o] && blocks[o].Name == blocks[block].Name);
+
+        private bool HasVertical((Int3, Int3) at, string group, out bool onPillar)
         {
             onPillar = false;
             if (!sides.TryGetValue(at, out var list)) return false;
@@ -81,7 +155,9 @@ public sealed class ClipResolver(BlockCatalog shapes)
             onPillar = matching.Any(s => pillar[s.Block]);
             return matching.Count > 0;
         }
-        bool Column(Int3 cell, Int3 dir, string group)
+
+        // a column of vertical clips that reaches a pillar
+        private bool Column(Int3 cell, Int3 dir, string group)
         {
             if (columns.TryGetValue((cell, dir, group), out var known)) return known;
             var found = false;
@@ -91,66 +167,17 @@ public sealed class ClipResolver(BlockCatalog shapes)
             return columns[(cell, dir, group)] = found;
         }
 
-        int ColumnAt(Int3 cell, Int3 dir, string? group, bool ground)
+        private int ColumnAt(Int3 cell, Int3 dir, string? group, bool ground)
         {
             if (group is null) return 0;
             var top = !HasVertical((cell + Up, dir), group, out _);
             var bottom = !HasVertical((cell + Down, dir), group, out _);
             return (top ? ClipKey.ColumnTop : 0) | (bottom ? ClipKey.ColumnBottom : 0) | (bottom && ground ? ClipKey.ColumnOnGround : 0);
         }
-
-        var occupants = new Dictionary<Int3, List<int>>();
-        for (int i = 0; i < blocks.Count; i++)
-            foreach (var c in UnitCells(blocks[i]))
-                (occupants.TryGetValue(c, out var l) ? l : occupants[c] = []).Add(i);
-        int Apart(SideAt x, ClipInfo a, SideAt y, ClipInfo b)
-        {
-            int Dir(SideAt s, ClipInfo c) => ClipTurns.DirOf(blocks[s.Block].Place) + shapes.ShapedClipTurn(blocks[s.Block].Name, blocks[s.Block].Ground, blocks[s.Block].Variant, s.Side.Bit, c);
-            return ((Dir(x, a) - Dir(y, b)) % 4 + 4) % 4;
-        }
-        // stacked pillars: only the top one shows its top
-        bool PillarAbove(Int3 cell, int block)
-            => occupants.TryGetValue(cell + Up, out var l) && l.Any(o => o != block && pillar[o] && blocks[o].Name == blocks[block].Name);
-
-        var shown = blocks.Select(_ => new HashSet<int>()).ToList();
-        foreach (var ((cell, dir), list) in sides)
-        {
-            var facingAt = sides.GetValueOrDefault((cell + dir, Neg(dir))) ?? [];
-            var facing = facingAt.SelectMany(s => s.Side.Clips).ToList();
-            foreach (var at in list)
-            {
-                // anti-clips show where they connect
-                // shaped tops/bottoms connect facing the same or the opposite way; when several in a cell match
-                // the same clip, only those facing its way connect
-                bool Shaped(ClipInfo a, SideAt f, ClipInfo b)
-                {
-                    var apart = Apart(at, a, f, b);
-                    return a.MultiDir == "AllDir" || apart == 0
-                        || apart == 2 && !(dir.Y > 0 && list.Any(o => o.Block != at.Block && o.Side.Clips.Any(c => Compatible(c, b) && Apart(o, c, f, b) == 0)));
-                }
-                var connected = at.Side.Clips.Any(a => !a.Anti && facingAt.Any(f => f.Side.Clips.Any(b => Compatible(a, b)
-                    && (dir.Y == 0 || Grouped(a, b) || Shaped(a, f, b)))));
-                var picked = at.Side.Clips
-                    .Where(c => c.Type.StartsWith("FreeClip"))
-                    .Where(c => c.Anti ? facing.Any(f => Compatible(c, f))
-                        : c.Vertical && c.VerticalGroup is not null
-                        // facing poles of the same group: neither shows
-                        ? Column(cell, dir, c.VerticalGroup)
-                            && !(facing.Any(f => f.Vertical && f.VerticalGroup == c.VerticalGroup) && Column(cell + dir, Neg(dir), c.VerticalGroup))
-                        // a full clip on the facing side removes deletable ones too
-                        : !connected && !(dir.Y > 0 && PillarAbove(cell, at.Block)) && !(c.Deletable && facing.Any(f => f.Full)))
-                    .ToList();
-                if (picked.Any(c => c.Full)) picked = picked.Where(c => c.Full || !c.Deletable).ToList();
-                foreach (var c in picked)
-                    shown[at.Block].Add(ClipKey.Of(at.Side.Bit, c.Index, c.Vertical ? ColumnAt(cell, dir, c.VerticalGroup, blocks[at.Block].Ground) : 0));
-            }
-        }
-        return shown;
     }
 
     private static bool Grouped(ClipInfo a, ClipInfo b)
         => a.Group is not null && b.Group is not null && (a.Group == b.Group || a.Group == b.SymmetricGroup || a.SymmetricGroup == b.Group);
-
 
     private static bool Compatible(ClipInfo a, ClipInfo b)
     {

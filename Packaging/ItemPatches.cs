@@ -22,17 +22,18 @@ internal static class ItemPatches
     }
 
     // the importer keeps colours only for DColor0 materials; without them DecoHill reads as grass. Same set the editor fills on resave.
-    private static readonly string[] ColouredMaterials = ["Custom", "PlatformIce_Deco", "PlatformIce_Decal", "Decal", "Chrono", "GlassWaterWall"];
+    private static string[] ColouredMaterials(Theme theme) => ["Custom", theme.Family + "_Deco", theme.Family + "_Decal", "Decal", "Chrono", "GlassWaterWall"];
 
-    public static void AddVertexColours(string itemPath)
+    public static void AddVertexColours(string itemPath, Theme theme)
     {
+        var coloured = ColouredMaterials(theme);
         var gbx = Gbx.Parse<CGameItemModel>(itemPath);
         if ((gbx.Node.EntityModel as CGameCommonItemEntityModel)?.StaticObject?.Mesh is not { } mesh) return;
         var added = false;
         foreach (var geom in mesh.ShadedGeoms ?? [])
         {
             var name = mesh.CustomMaterials is { } mats && geom.MaterialIndex < mats.Length ? mats[geom.MaterialIndex].MaterialUserInst?.MaterialName : null;
-            if (name is null || !ColouredMaterials.Any(name.StartsWith)) continue;
+            if (name is null || !coloured.Any(name.StartsWith)) continue;
             if (mesh.Visuals?[geom.VisualIndex] is not CPlugVisualIndexedTriangles { VertexStreams: [{ Positions: { } pos, Colors: { } colors } stream, ..] }) continue;
             if (colors.ContainsKey(0)) continue;
             InsertColourDecl(stream);

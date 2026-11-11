@@ -21,12 +21,7 @@ internal static class Neighbours
             for (int k = 0; k < remaining.Count; k++)
             {
                 var (block, i) = remaining[k];
-                if (IceTops.OnlyTopsAppear(now[k], target[i]) && !(BlockKinds.IsWallOnly(run, block, placed[i].Variant, target[i]) && AdapterAbove(run, block))
-                    // stands: an end cap is fine
-                    || block.Name.StartsWith("Stand") || run.SceneryKept.Contains(block) || run.Renamed.Contains(block) || run.Customs.ContainsKey(block) || run.Skinned.Contains(block)
-                    // an item copy has no trigger
-                    || block.IsGround || run.Shapes.IsPillarBlock(block.Name) || BlockNames.IsGameplayBlock(block.Name) || run.OnKeepList(block) || BlockKinds.IsConcrete(run, block, placed[i].Variant, target[i])
-                    || BlockKinds.IsWallOnly(run, block, placed[i].Variant, target[i]) && !(IceTops.TopAppears(now[k], target[i]) && AdapterAbove(run, block))) continue;
+                if (StaysBlock(run, block, placed[i].Variant, now[k], target[i])) continue;
                 if (!ItemPlacer.Place(run, block, placed[i].Variant, target[i])) continue;
                 replaced.Add(block);
                 Bump(run.Report.KeptByItem, block.Name);
@@ -35,8 +30,22 @@ internal static class Neighbours
             if (added == 0) break;
         }
         var final = grid.Select((b, i) => (Block: b, Index: i)).Where(x => !replaced.Contains(x.Block)).ToList();
-        IceTops.NowShown(run, final, resolver.Resolve(final.Select(x => resolver.Of(x.Block) is var p && p.Name == placed[x.Index].Name
+        SurfaceTops.NowShown(run, final, resolver.Resolve(final.Select(x => resolver.Of(x.Block) is var p && p.Name == placed[x.Index].Name
             ? p with { Variant = placed[x.Index].Variant } : p).ToList()));
+    }
+
+    // fine as it is, or can't become an item copy
+    private static bool StaysBlock(ConversionRun run, CGameCtnBlock block, int variant, IReadOnlySet<int> now, IReadOnlySet<int> target)
+    {
+        bool WallOnly() => BlockKinds.IsWallOnly(run, block, variant, target);
+        if (SurfaceTops.OnlyTopsAppear(now, target) && !(WallOnly() && AdapterAbove(run, block))) return true;
+        // stands: an end cap is fine
+        if (block.Name.StartsWith("Stand")) return true;
+        if (run.SceneryKept.Contains(block) || run.Renamed.Contains(block) || run.Customs.ContainsKey(block) || run.Skinned.Contains(block)) return true;
+        // an item copy has no trigger
+        if (block.IsGround || run.Shapes.IsPillarBlock(block.Name) || BlockNames.IsGameplayBlock(block.Name)) return true;
+        if (run.OnKeepList(block) || BlockKinds.IsConcrete(run, block, variant, target)) return true;
+        return WallOnly() && !(SurfaceTops.TopAppears(now, target) && AdapterAbove(run, block));
     }
 
     private static bool AdapterAbove(ConversionRun run, CGameCtnBlock block)

@@ -8,8 +8,8 @@ using GBX.NET.Engines.Meta;
 
 namespace TmIceConverter;
 
-// what the game's data says about blocks and items, per environment
-public sealed class BlockCatalog
+// what the game's data says about blocks and items, per environment; clips and items in the other parts
+public sealed partial class BlockCatalog
 {
     private readonly string stadiumDir;
     private readonly ClipFit fit;
@@ -106,64 +106,9 @@ public sealed class BlockCatalog
             && npb != 255 && npb != variantIndex && npb <= (block.Info.AdditionalVariantsAir?.Length ?? 0)
             ? npb : null;
 
-    public IReadOnlyList<ClipSide> ClipSides(string blockName, bool ground, int variantIndex)
-    {
-        if (!TryLoadBlock(blockName, out var block) || PickVariant(block.Info, ground, variantIndex) is not { } variant) return [];
-        var clipOnly = BlockParts.MobilPrefab(variant, block.Path) is null;
-        return BlockParts.ClipSlots(variant).Select(s =>
-            {
-                var clips = ClipInfos(s.Clips).ToList();
-                return new ClipSide(s.Bit, s.Probe)
-                {
-                    Center = s.UnitOrigin + new Vector3(16, 4, 16),
-                    Clips = clips,
-                    ClipOnly = clipOnly,
-                };
-            })
-            .Where(s => s.Clips.Count > 0).ToList();
-    }
-
-    private static IEnumerable<ClipInfo> ClipInfos(External<CGameCtnBlockInfoClip>[]? clips)
-    {
-        var seen = new HashSet<string>();
-        for (int i = 0; i < (clips?.Length ?? 0); i++)
-        {
-            if (clips![i].File?.FilePath is not { } file || !seen.Add(file)) continue;
-            var node = clips[i].Node;
-            yield return new ClipInfo(i, node?.Ident.Id ?? Path.GetFileName(file).Split('.')[0], node?.ClipType.ToString() ?? "",
-                BlockParts.IsVertical(clips[i]), NonEmpty(node?.ClipGroupId), NonEmpty(node?.SymmetricalClipGroupId),
-                NonEmpty((node as CGameCtnBlockInfoClipVertical)?.VerticalClipGroupId), NonEmpty(node?.ASymmetricalClipId),
-                node?.IsFullFreeClip ?? false, node?.CanBeDeletedByFullFreeClip ?? false, IsAntiClip(node), node?.TopBottomMultiDir.ToString() ?? "SameDir");
-        }
-    }
-
-    // GBX.NET's U03 is IsAntiClip
-    private static bool IsAntiClip(CGameCtnBlockInfoClip? node)
-        => node?.Chunks.Get<CGameCtnBlockInfoClip.Chunk03053006>() is { U03: > 0 };
-
-    private static string? NonEmpty(string? text) => string.IsNullOrEmpty(text) ? null : text;
-
-    // a block's TerrainModifier: a material folder plus a game skin listing which materials it swaps
-    // (TrackWallToDecoCliff: only TrackWall, from PlatformGrass). GBX.NET can't read the modifier's body; its paths are plain text
+    // a block's TerrainModifier (TrackWallToDecoCliff: only TrackWall, from PlatformGrass)
     public MaterialModifier? MaterialModifierOf(string blockName)
-    {
-        if (!TryLoadBlock(blockName, out var block) || block.Info.MaterialModifierFile?.FilePath is not { } file) return null;
-        var ancestor = Gbx.ParseHeader(block.Path).RefTable?.AncestorLevel ?? 0;
-        var modifierFile = GameFiles.ResolveRef(block.Path, ancestor, file);
-        if (!File.Exists(modifierFile)) return null;
-        var text = System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(modifierFile));
-        var gameData = Path.GetDirectoryName(stadiumDir)!;
-        var folder = Regex.Match(text, @"[A-Za-z0-9_]+\\Media\\Modifier\\[A-Za-z0-9_]+\\") is { Success: true } f
-            ? Path.Combine(gameData, f.Value.Replace('\\', '/').TrimEnd('/')) : null;
-        var skin = Regex.Match(text, @"([A-Za-z0-9_]+)\.GameSkin\.gbx", RegexOptions.IgnoreCase) is { Success: true } k
-            ? Path.Combine(stadiumDir, "GameSkin", k.Groups[1].Value + ".GameSkin.gbx") : null;
-        if (folder is null || !Directory.Exists(folder) || skin is null || !File.Exists(skin)) return null;
-        var swaps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var fid in Gbx.ParseHeaderNode<CPlugGameSkin>(skin).HeaderFids ?? [])
-            if (fid.Directory is { } source)
-                swaps.TryAdd(Path.GetFileName(source.Replace('\\', '/')).Split('.')[0], fid.Name.TrimStart('*'));
-        return new MaterialModifier(folder, swaps);
-    }
+        => TryLoadBlock(blockName, out var block) && block.Info.MaterialModifierFile?.FilePath is { } file ? MaterialModifier.Read(block.Path, file, stadiumDir) : null;
 
     private static CGameCtnBlockInfoVariant? PickVariant(CGameCtnBlockInfo info, bool ground, int index)
     {
@@ -171,74 +116,6 @@ public sealed class BlockCatalog
         CGameCtnBlockInfoVariant? baseVariant = ground ? info.VariantBaseGround : info.VariantBaseAir;
         var variant = index > 0 && extra?.ElementAtOrDefault(index - 1) is { } e ? e : baseVariant;
         return variant is { Mobils.Length: > 0 } ? variant : (CGameCtnBlockInfoVariant?)info.VariantBaseAir ?? info.VariantBaseGround;
-    }
-
-    // quarter turns of a shaped top/bottom clip on top of its block's direction: learned from maps, else the fitted mesh turn
-    public int ShapedClipTurn(string blockName, bool ground, int variantIndex, int bit, ClipInfo clip)
-        => ClipTurns.Learned(blockName, bit, clip.Name)
-            ?? (ShapedClipTurns(blockName, ground, variantIndex).TryGetValue((bit, clip.Index), out var turn) ? ClipTurns.DirOf(turn) : 0);
-
-    private readonly Dictionary<(string, bool, int), Dictionary<(int Bit, int Index), Matrix4x4>> shapedTurns = [];
-
-    // turn of each shaped top/bottom clip inside its block: the clip mesh fitted to the block's corners
-    public IReadOnlyDictionary<(int Bit, int Index), Matrix4x4> ShapedClipTurns(string blockName, bool ground, int variantIndex)
-    {
-        if (shapedTurns.TryGetValue((blockName, ground, variantIndex), out var known)) return known;
-        var turns = shapedTurns[(blockName, ground, variantIndex)] = [];
-        if (!TryLoadBlock(blockName, out var block) || PickVariant(block.Info, ground, variantIndex) is not { } variant
-            || BlockParts.MobilPrefab(variant, block.Path) is not { } main) return turns;
-        var corners = fit.Corners([main]);
-        var ancestor = Gbx.ParseHeader(block.Path).RefTable?.AncestorLevel ?? 0;
-        foreach (var (unitOrigin, bit, clips, place, _) in BlockParts.ClipSlots(variant))
-        {
-            if (bit % 6 < 4) continue;
-            for (int i = 0; i < (clips?.Length ?? 0); i++)
-                if (clips![i] is { Node: { ASymmetricalClipId.Length: > 0 } node, File: { } file }
-                    && ((CGameCtnBlockInfoVariant?)node.VariantBaseAir ?? node.VariantBaseGround) is { } clipVariant
-                    && BlockParts.MobilPrefab(clipVariant, GameFiles.ResolveRef(block.Path, ancestor, file.FilePath)) is { } part)
-                {
-                    // sloped bottoms follow the road; corners can't tell a slope's ends apart
-                    var sloped = bit % 6 == 4 ? fit.BottomClipTurn("AllDir", part, main) : Matrix4x4.Identity;
-                    turns[(bit, i)] = !sloped.IsIdentity || fit.Slope(part, upOnly: false).Length() >= 0.1f && bit % 6 == 4
-                        ? sloped : fit.FittedTopTurn(part, place * Matrix4x4.CreateTranslation(unitOrigin), corners);
-                }
-        }
-        return turns;
-    }
-
-    private static readonly Dictionary<string, ILookup<string, string>> itemFolders = [];
-
-    // env's own version first
-    public string? ItemFile(string itemId)
-    {
-        var gameData = Path.GetDirectoryName(stadiumDir)!;
-        var dirs = environment is null or "Stadium2020" ? [stadiumDir] : new[] { Path.Combine(gameData, environment), stadiumDir };
-        foreach (var dir in dirs.Select(d => Path.Combine(d, "Items")))
-        {
-            ILookup<string, string> files;
-            lock (itemFolders)
-                if (!itemFolders.TryGetValue(dir, out files!))
-                    itemFolders[dir] = files = (Directory.Exists(dir)
-                        ? Directory.EnumerateFiles(dir, "*.Item.Gbx", new EnumerationOptions { RecurseSubdirectories = true, MatchCasing = MatchCasing.CaseInsensitive })
-                        : []).ToLookup(f => Path.GetFileName(f).Split('.')[0], StringComparer.OrdinalIgnoreCase);
-            if (files[itemId].FirstOrDefault() is { } file) return file;
-        }
-        return null;
-    }
-
-    private static readonly Dictionary<string, List<string>?> itemVariants = [];
-
-    // model names of a variant list item: FallTreeMedium, Fall.Prefab…
-    public List<string>? ItemVariants(string itemId)
-    {
-        if (ItemFile(itemId) is not { } file) return null;
-        lock (itemVariants)
-            if (itemVariants.TryGetValue(file, out var known)) return known;
-        var found = Gbx.ParseNode<CGameItemModel>(file).EntityModel is NPlugItem_SVariantList { Variants: { } variants }
-            ? variants.Select(v => Path.GetFileName(v.EntityModelFile?.FilePath ?? "") is var f && f.EndsWith(".Prefab.Gbx") ? f[..^".Gbx".Length] : f.Split('.')[0]).ToList()
-            : null;
-        lock (itemVariants) itemVariants[file] = found;
-        return found;
     }
 
     public string? Waypoint(string blockName)
@@ -293,6 +170,3 @@ public sealed class BlockCatalog
         return variant.BlockUnitModels is { Length: > 0 } units ? units.Select(u => u.RelativeOffset).ToList() : [new Int3(0, 0, 0)];
     }
 }
-
-// swaps: game material name -> the name to load from Folder instead
-public sealed record MaterialModifier(string Folder, IReadOnlyDictionary<string, string> Swaps);

@@ -38,7 +38,7 @@ internal sealed class ConversionRun
     public HashSet<CGameCtnBlock> Renamed { get; } = new(ReferenceEqualityComparer.Instance);
     public HashSet<CGameCtnBlock> Skinned { get; } = new(ReferenceEqualityComparer.Instance);
     // renamed only at the end: clips and snow work on the native name
-    public Dictionary<CGameCtnBlock, IceBlock> Customs { get; } = new(ReferenceEqualityComparer.Instance);
+    public Dictionary<CGameCtnBlock, BuiltBlock> Customs { get; } = new(ReferenceEqualityComparer.Instance);
     public Dictionary<CGameCtnBlock, (string Archetype, IReadOnlySet<int> Baked, bool Lift)> BuiltAs { get; } = new(ReferenceEqualityComparer.Instance);
     public HashSet<CGameCtnBlock> Stacked { get; } = new(ReferenceEqualityComparer.Instance);
     public Dictionary<(int X, int Z), CGameCtnBlock>? SnowedGameplay { get; set; }

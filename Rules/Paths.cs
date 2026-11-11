@@ -106,9 +106,12 @@ public static class Paths
 
     private sealed record Author(string Login, string Nickname, string Zone);
 
-    public static string Items => Path.Combine(TrackmaniaUser, "Items", "IceConverter");
+    // our folder under Items and Blocks; item idents start with it
+    public const string ItemFolder = "IceConverter";
+
+    public static string Items => Path.Combine(TrackmaniaUser, "Items", ItemFolder);
     // the importer's input only; it reads nothing outside Work
-    public static string Work => Path.Combine(TrackmaniaUser, "Work", "Items", "IceConverter");
+    public static string Work => Path.Combine(TrackmaniaUser, "Work", "Items", ItemFolder);
     // our own files, outside the game's folders
     public static string Cache => Local.Paths?.GetValueOrDefault("cache") is { Length: > 0 }
         ? Local.Folder("cache")

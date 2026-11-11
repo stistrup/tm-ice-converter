@@ -18,11 +18,11 @@ internal sealed partial class Setup(string dataDir)
 
     public Status Check()
     {
-        var running = GameRunning();
+        var running = InstallSearch.GameRunning();
         var steps = new List<Step>();
-        var game = Folder("game", "Game folder", Games(), dir => File.Exists(System.IO.Path.Combine(dir, "Trackmania.exe")),
+        var game = Folder("game", "Game folder", InstallSearch.Games(), dir => File.Exists(System.IO.Path.Combine(dir, "Trackmania.exe")),
             "Where Trackmania.exe is", "No Trackmania.exe here");
-        var user = Folder("trackmania", "Trackmania user folder", UserFolders(), dir => Directory.Exists(System.IO.Path.Combine(dir, "Maps")),
+        var user = Folder("trackmania", "Trackmania user folder", InstallSearch.UserFolders(), dir => Directory.Exists(System.IO.Path.Combine(dir, "Maps")),
             "Documents/Trackmania, with your Maps", "No Maps folder here. Start the game once");
         steps.Add(game);
         steps.Add(user);
@@ -49,7 +49,7 @@ internal sealed partial class Setup(string dataDir)
         switch (id)
         {
             case "devmode":
-                if (GameRunning()) throw new InvalidOperationException("Close the game first");
+                if (InstallSearch.GameRunning()) throw new InvalidOperationException("Close the game first");
                 SetDevMode();
                 break;
             case "plugin":
@@ -58,7 +58,7 @@ internal sealed partial class Setup(string dataDir)
                 foreach (var file in Directory.GetFiles(PluginSource)) File.Copy(file, System.IO.Path.Combine(target, System.IO.Path.GetFileName(file)), true);
                 break;
             case "extract":
-                if (!GameRunning()) throw new InvalidOperationException("Start the game first");
+                if (!InstallSearch.GameRunning()) throw new InvalidOperationException("Start the game first");
                 if (!PluginAlive()) throw new InvalidOperationException("The plugin isn't loaded in the game");
                 File.WriteAllText(System.IO.Path.Combine(Paths.ExtractPlugin, "extract-request.txt"), "");
                 File.Delete(System.IO.Path.Combine(Paths.ExtractPlugin, "extract-progress.txt"));
@@ -88,7 +88,7 @@ internal sealed partial class Setup(string dataDir)
         const string title = "Openplanet";
         if (!gameOk) return new Step("openplanet", title, "wait", "Needs the game folder");
         var installed = File.Exists(System.IO.Path.Combine(Paths.Game, "Openplanet.dll"));
-        var folder = Folder("openplanet", title, OpenplanetFolders(), dir => File.Exists(System.IO.Path.Combine(dir, "Settings.ini")),
+        var folder = Folder("openplanet", title, InstallSearch.OpenplanetFolders(), dir => File.Exists(System.IO.Path.Combine(dir, "Settings.ini")),
             "Its OpenplanetNext folder", "No OpenplanetNext here. Start the game once with Openplanet");
         if (!installed) return folder with { State = "todo", Text = "Install Openplanet, then start the game once", Link = "https://openplanet.dev/download" };
         return folder;
@@ -107,16 +107,16 @@ internal sealed partial class Setup(string dataDir)
     private static Step BlenderStep()
     {
         var set = Paths.PathIfSet("blender");
-        var found = BlenderCandidates().ToList();
-        if (set is null && OnPath("blender") is null && found.Count > 0) Paths.SavePath("blender", set = found[0]);
-        var path = set ?? OnPath("blender");
+        var found = InstallSearch.BlenderCandidates().ToList();
+        if (set is null && InstallSearch.OnPath("blender") is null && found.Count > 0) Paths.SavePath("blender", set = found[0]);
+        var path = set ?? InstallSearch.OnPath("blender");
         return path is not null && File.Exists(path)
             ? new Step("blender", "Blender", "ok", "Builds the ice pieces' models", path, found)
             : new Step("blender", "Blender", "todo", set is null ? "Not found: install Blender" : "No Blender at this path", set, found,
                 Link: "https://www.blender.org/download/");
     }
 
-    private static Step Wine() => OnPath("wine") is { } wine
+    private static Step Wine() => InstallSearch.OnPath("wine") is { } wine
         ? new Step("wine", "Wine", "ok", "Runs NadeoImporter on Linux", wine)
         : new Step("wine", "Wine", "todo", "Install wine from your distribution's packages");
 
@@ -197,91 +197,4 @@ internal sealed partial class Setup(string dataDir)
 
     private static double Number(Dictionary<string, string> values, string key)
         => double.TryParse(values.GetValueOrDefault(key), System.Globalization.CultureInfo.InvariantCulture, out var n) ? n : 0;
-
-    // under Proton the process name is cut short; its command line has the exe
-    private static bool GameRunning() => OperatingSystem.IsWindows()
-        ? Process.GetProcessesByName("Trackmania").Length > 0
-        : Directory.EnumerateDirectories("/proc").Any(dir =>
-        {
-            try
-            {
-                return File.ReadAllText(System.IO.Path.Combine(dir, "cmdline")).Split('\0')
-                    .Any(arg => arg.EndsWith("Trackmania.exe", StringComparison.OrdinalIgnoreCase));
-            }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { return false; }
-        });
-
-    private static string? OnPath(string name)
-    {
-        var names = OperatingSystem.IsWindows() ? [name + ".exe"] : new[] { name };
-        return (Environment.GetEnvironmentVariable("PATH") ?? "").Split(System.IO.Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-            .SelectMany(dir => names.Select(n => System.IO.Path.Combine(dir, n))).FirstOrDefault(File.Exists);
-    }
-
-    // ---- where to look
-
-    private static string Home => Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-
-    private static IEnumerable<string> SteamLibraries()
-    {
-        string[] roots = OperatingSystem.IsWindows()
-            ? [System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "Steam")]
-            : [System.IO.Path.Combine(Home, ".local/share/Steam"), System.IO.Path.Combine(Home, ".steam/steam"),
-                System.IO.Path.Combine(Home, ".var/app/com.valvesoftware.Steam/.local/share/Steam"), System.IO.Path.Combine(Home, "snap/steam/common/.local/share/Steam")];
-        var libraries = new List<string>();
-        foreach (var root in roots)
-        {
-            var vdf = System.IO.Path.Combine(root, "steamapps", "libraryfolders.vdf");
-            if (!File.Exists(vdf)) continue;
-            libraries.AddRange(VdfPath().Matches(File.ReadAllText(vdf)).Select(m => m.Groups[1].Value.Replace(@"\\", @"\")));
-        }
-        return libraries.Distinct();
-    }
-
-    [GeneratedRegex("\"path\"\\s+\"([^\"]+)\"")]
-    private static partial Regex VdfPath();
-
-    // Proton's Windows user inside the game's prefix
-    private static IEnumerable<string> ProtonUsers()
-        => SteamLibraries().Select(lib => System.IO.Path.Combine(lib, "steamapps", "compatdata", "2225070", "pfx", "drive_c", "users", "steamuser"));
-
-    private static IEnumerable<string> Games()
-    {
-        foreach (var lib in SteamLibraries()) yield return System.IO.Path.Combine(lib, "steamapps", "common", "Trackmania");
-        if (!OperatingSystem.IsWindows()) yield break;
-        var x86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
-        var programs = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-        yield return System.IO.Path.Combine(x86, "Ubisoft", "Ubisoft Game Launcher", "games", "Trackmania");
-        yield return System.IO.Path.Combine(programs, "Epic Games", "TrackmaniaNext");
-        yield return System.IO.Path.Combine(programs, "Epic Games", "Trackmania");
-    }
-
-    private static IEnumerable<string> UserFolders()
-    {
-        if (!OperatingSystem.IsWindows()) return ProtonUsers().Select(u => System.IO.Path.Combine(u, "Documents", "Trackmania"));
-        var documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        return [System.IO.Path.Combine(documents, "Trackmania"), System.IO.Path.Combine(documents, "Trackmania2020"),
-            System.IO.Path.Combine(Home, "OneDrive", "Documents", "Trackmania")];
-    }
-
-    private static IEnumerable<string> OpenplanetFolders()
-    {
-        // next to Documents, in the same Windows user
-        if (Paths.PathIfSet("trackmania") is { } user && Directory.GetParent(user)?.Parent is { } profile)
-            yield return System.IO.Path.Combine(profile.FullName, "OpenplanetNext");
-        if (OperatingSystem.IsWindows()) yield return System.IO.Path.Combine(Home, "OpenplanetNext");
-        else foreach (var u in ProtonUsers()) yield return System.IO.Path.Combine(u, "OpenplanetNext");
-    }
-
-    private static IEnumerable<string> BlenderCandidates()
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            var foundation = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Blender Foundation");
-            return Directory.Exists(foundation)
-                ? Directory.GetDirectories(foundation).OrderDescending().Select(d => System.IO.Path.Combine(d, "blender.exe")).Where(File.Exists)
-                : [];
-        }
-        return new[] { "/usr/bin/blender", "/usr/local/bin/blender", "/snap/bin/blender", "/var/lib/flatpak/exports/bin/org.blender.Blender" }.Where(File.Exists);
-    }
 }

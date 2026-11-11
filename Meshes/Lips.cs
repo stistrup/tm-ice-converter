@@ -22,9 +22,9 @@ internal sealed class Lips
         var bestLod = geoms.Select(g => g.LodMask).Where(m => m != 0).Select(m => m & -m).DefaultIfEmpty(1).Min();
         foreach (var geom in geoms.Where(g => g.LodMask == 0 ? !hasLods : (g.LodMask & bestLod) != 0))
         {
-            if (!MeshExporter.MaterialName(mesh, geom.MaterialIndex).Contains("Border")) continue;
+            if (!MeshData.MaterialName(mesh, geom.MaterialIndex).Contains("Border")) continue;
             if (mesh.Visuals?[geom.VisualIndex] is not CPlugVisualIndexedTriangles { VertexStreams: [{ Positions: { } pos }, ..], IndexBuffer.Indices: { } idx }) continue;
-            var p = MeshExporter.Transform(pos, world);
+            var p = MeshData.Transform(pos, world);
             Vector3 At(int i) => new(p[3 * i], p[3 * i + 1], p[3 * i + 2]);
             for (int t = 0; t + 2 < idx.Length; t += 3) borders.Add((At(idx[t]), At(idx[t + 1]), At(idx[t + 2])));
         }

@@ -1,0 +1,18 @@
+// what roads turn into and what covers the ground; materials.jsonc maps each game material
+{
+  // in item names: gIce_<block>_Ice…
+  "tag": "Ice",
+  // physics surfaces that drive as the theme
+  "surfaces": ["RoadIce", "Ice", "Snow"],
+  // physics surfaces it replaces; skins cover these (and RoadSynthetic)
+  "replaces": ["Asphalt", "Dirt", "Grass", "Green", "Plastic", "Sand"],
+  // importer library materials
+  "road": "PlatformIce_PlatformTech",
+  "cover": "PlatformIce_DecoHill",
+  // the library's material family for this theme (PlatformIce_*)
+  "family": "PlatformIce",
+  // under gameplay pads
+  "padSurface": "RoadIce",
+  // the game's own blocks in this surface: PlatformIce…, RoadIce…; null: none
+  "blockWord": "Ice"
+}
