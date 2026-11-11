@@ -28,9 +28,9 @@ public sealed record ConvertOptions(
     bool ConvertScenery = false,
     [property: Description("Empty cells, the game's flat ground, become snow too")]
     bool FillEmptyWithSnow = false,
-    [property: Description("Shores (water hills) get snow above the water line")]
+    [property: Description("Shores (water hills) at ground level get snow above the water line; raised lakes stay")]
     bool SnowOnWaterHills = false,
-    [property: Description("Cliffs get snow at their foot")]
+    [property: Description("Cliffs standing on the ground get snow at their foot; cliffs on terraces stay")]
     bool SnowOnCliffs = false,
     [property: Description("Native blocks keep their place under an ice skin instead of becoming custom blocks: smaller maps, one ice look")]
     bool SkinsOnly = false,

@@ -17,7 +17,7 @@ internal static class SnowFill
         // pillars stand on the ground, SnowRules.PillarOnSnow lifts them
         var owned = placed.Where((_, i) => grid[i].IsGround && !grid[i].IsPillar && !shapes.IsPillarBlock(grid[i].Name))
             .SelectMany(resolver.UnitCells).Select(c => (c.X, c.Z)).ToHashSet();
-        var y = 8 + (int)(Placement.EnvironmentDrop(collection) / 8);
+        var y = GroundY(collection);
         var filled = 0;
         for (int x = 0; x < size.X; x++)
             for (int z = 0; z < size.Z; z++)
@@ -30,15 +30,19 @@ internal static class SnowFill
         return filled;
     }
 
-    // snowOnWaterHills / snowOnCliffs: those terrain columns snow as if picked
-    public static void ByKind(CGameCtnChallenge map, BlockCatalog shapes, Translations rules)
+    // snowOnWaterHills / snowOnCliffs, ground level only: those terrain columns snow as if picked
+    public static void ByKind(CGameCtnChallenge map, string collection, BlockCatalog shapes, Translations rules)
     {
         var (shores, cliffs) = (rules.Options.SnowOnWaterHills, rules.Options.SnowOnCliffs);
         if (!shores && !cliffs) return;
+        var ground = GroundY(collection);
         foreach (var b in map.GetBlocks())
-            if (!b.IsFree && shapes.IsTerrain(b.Name) && (shores && SnowRules.IsShore(b.Name) || cliffs && b.Name.Contains("Cliff")))
+            if (!b.IsFree && shapes.IsTerrain(b.Name) && (shores && SnowRules.IsShore(b.Name) && b.Coord.Y < ground || cliffs && b.Name.Contains("Cliff") && b.Coord.Y <= ground))
                 rules.SnowCells.Add((b.Coord.X, b.Coord.Z));
     }
+
+    // grid Y of the flat ground; ground-level water lies one below
+    private static int GroundY(string collection) => 8 + (int)(Placement.EnvironmentDrop(collection) / 8);
 
     // the environment's one flat land block (Dirt, Grass, Land); Stadium has no terrain blocks
     private static string? FlatBlock(string collection)
