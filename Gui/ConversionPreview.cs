@@ -25,16 +25,16 @@ internal sealed partial class ConversionPreview(string dataDir)
     // per kind what a piece can be picked to become; "" = as the rules say
     public static readonly Dictionary<string, List<Choice>> Choices = new()
     {
-        ["roads"] = [new("", "As the rules say"), new("keep", "Keep original"), new("custom", "Custom ice block"), new("item", "Ice item"), new("skin", "Ice skin")],
-        ["waypoints"] = [new("", "As the rules say"), new("keep", "Keep original"), new("custom", "Custom ice block"), new("skin", "Ice skin")],
-        ["deco"] = [new("", "As the rules say"), new("keep", "Keep original"), new("snow", "Snow"), new("tops", "Ice on tops")],
+        ["roads"] = [new("", "Rule"), new("keep", "Original"), new("custom", "Custom block"), new("item", "Custom item"), new("skin", "Ice skin")],
+        ["waypoints"] = [new("", "Rule"), new("keep", "Original"), new("custom", "Custom block"), new("skin", "Ice skin")],
+        ["deco"] = [new("", "Rule"), new("keep", "Original"), new("snow", "Snow"), new("tops", "Ice tops")],
         // pillars and free-placed blocks: the snow rule leaves them alone
-        ["decononsnow"] = [new("", "As the rules say"), new("keep", "Keep original"), new("tops", "Ice on tops")],
-        ["terrain"] = [new("", "As the rules say"), new("keep", "Keep original"), new("snow", "Snow")],
-        ["shore"] = [new("", "As the rules say"), new("keep", "Keep original"), new("snow", "Snow")],
-        ["special"] = [new("", "As the rules say"), new("keep", "Keep original"), new("plain", "Plain ice")],
-        ["specialground"] = [new("", "As the rules say"), new("keep", "Keep original"), new("plain", "Plain ice"), new("snow", "Snow ground")],
-        ["items"] = [new("", "As the rules say"), new("keep", "Keep original"), new("remove", "Remove"), new("frozen", "Frozen (trees)")],
+        ["decononsnow"] = [new("", "Rule"), new("keep", "Original"), new("tops", "Ice tops")],
+        ["terrain"] = [new("", "Rule"), new("keep", "Original"), new("snow", "Snow")],
+        ["shore"] = [new("", "Rule"), new("keep", "Original"), new("snow", "Snow")],
+        ["special"] = [new("", "Rule"), new("keep", "Original"), new("plain", "Plain ice")],
+        ["specialground"] = [new("", "Rule"), new("keep", "Original"), new("plain", "Plain ice"), new("snow", "Snow")],
+        ["items"] = [new("", "Rule"), new("keep", "Original"), new("remove", "Remove"), new("frozen", "Snow trees")],
     };
 
     public static readonly Dictionary<string, string> KindLabels = new()

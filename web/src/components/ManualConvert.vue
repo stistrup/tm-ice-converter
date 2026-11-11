@@ -64,15 +64,18 @@ function deselect(indices: number[]) {
           {{ group.label }} <span :class="$style.muted">({{ group.keys.length }})</span>
           <button type="button" :class="$style.deselect" @click="deselect(group.indices)">Deselect</button>
         </span>
-        <select
-          :class="$style.select"
-          :value="group.value"
-          :aria-label="group.label"
-          @change="choose(group.keys, ($event.target as HTMLSelectElement).value)"
-        >
-          <option v-if="group.value === MIXED" :value="MIXED" disabled>— mixed —</option>
-          <option v-for="choice in group.choices" :key="choice.value" :value="choice.value">{{ choice.label }}</option>
-        </select>
+        <div :class="$style.radios" role="radiogroup" :aria-label="group.label">
+          <label v-for="choice in group.choices" :key="choice.value" :class="$style.radio">
+            <input
+              type="radio"
+              :name="`pick-${group.kind}`"
+              :checked="group.value === choice.value"
+              @change="choose(group.keys, choice.value)"
+            />
+            <span>{{ choice.label }}</span>
+          </label>
+          <span v-if="group.value === MIXED" :class="$style.muted">mixed</span>
+        </div>
       </div>
     </div>
   </section>
@@ -126,13 +129,30 @@ function deselect(indices: number[]) {
   background: #3a3a3a;
 }
 
-.select {
-  height: 22px;
-  padding: 0 4px;
-  color: var(--text);
-  background: var(--field);
-  border: 1px solid var(--line);
-  border-radius: 2px;
+.radios {
+  display: flex;
+  flex-flow: row wrap;
+  gap: 2px 8px;
+  align-items: center;
+  font-size: 11px;
+}
+
+.radio {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+  align-items: center;
+  min-height: 16px;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.radio input {
+  flex: none;
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  margin: 0;
 }
 
 .muted {

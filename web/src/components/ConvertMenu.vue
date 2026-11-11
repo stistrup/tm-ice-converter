@@ -429,9 +429,10 @@ function removeRule(key: string) {
 }
 
 .spinner {
+  flex: none;
   width: 10px;
   height: 10px;
-  border: 1.5px solid currentColor;
+  border: 1.5px solid var(--accent);
   border-right-color: transparent;
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
