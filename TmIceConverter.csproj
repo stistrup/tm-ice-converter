@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <DefaultItemExcludes>$(DefaultItemExcludes);archive/**;web/**;dist/**</DefaultItemExcludes>
     <!-- the release; the GUI shows it and checks GitHub for a newer one -->
-    <Version>0.1.2</Version>
+    <Version>0.2.0</Version>
     <!-- maps convert on several threads at once: about a third faster than the desktop GC, same peak memory -->
     <ServerGarbageCollection>true</ServerGarbageCollection>
   </PropertyGroup>
