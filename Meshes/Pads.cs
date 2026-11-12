@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using GBX.NET;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // gameplay blocks: the effect's pad and its look
 internal static class Pads

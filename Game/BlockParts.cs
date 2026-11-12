@@ -2,7 +2,7 @@ using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.Game;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // the prefabs and clips that make up a placed block
 internal static class BlockParts

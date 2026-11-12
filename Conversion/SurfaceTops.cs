@@ -1,8 +1,8 @@
 using GBX.NET.Engines.Game;
-using static TmIceConverter.BlockFlags;
-using static TmIceConverter.Counts;
+using static TmSurfaceEditor.BlockFlags;
+using static TmSurfaceEditor.Counts;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 internal static class SurfaceTops
 {
@@ -32,7 +32,7 @@ internal static class SurfaceTops
             return;
         }
         if (ItemPlacer.Place(run, block, variant, clips, kind) && run.Topped.Add(block))
-            Bump(run.Report.TopsIced, block.Name);
+            Bump(run.Report.TopsThemed, block.Name);
     }
 
     // tops that only show after conversion

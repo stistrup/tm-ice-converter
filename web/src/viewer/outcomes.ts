@@ -13,9 +13,7 @@ export const outcomes: Record<string, { label: string; color: number | null }> =
   unchanged: { label: 'Unchanged', color: null },
 }
 
-export function outcomeLabel(outcome: string) {
-  return outcomes[outcome]?.label ?? outcome
-}
+export const outcomeLabel = (outcome: string) => outcomes[outcome]?.label ?? outcome
 
 // where the name says less than the option does
 const optionLabels: Record<string, string> = {
@@ -26,7 +24,7 @@ const optionLabels: Record<string, string> = {
 }
 
 // convertScenery -> Convert scenery
-export function optionLabel(name: string) {
+export const optionLabel = (name: string) => {
   if (optionLabels[name]) return optionLabels[name]
   const words = name.replace(/([A-Z])/g, ' $1').toLowerCase()
   return words[0].toUpperCase() + words.slice(1)

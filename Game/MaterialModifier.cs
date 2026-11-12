@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 using GBX.NET;
 using GBX.NET.Engines.Plug;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // a block's TerrainModifier: a material folder plus a game skin listing which materials it swaps.
 // Swaps: game material name -> the name to load from Folder instead

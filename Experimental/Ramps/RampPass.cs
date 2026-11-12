@@ -1,9 +1,9 @@
 using System.Numerics;
 using GBX.NET;
-using static TmIceConverter.BlockFlags;
-using static TmIceConverter.Counts;
+using static TmSurfaceEditor.BlockFlags;
+using static TmSurfaceEditor.Counts;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 internal static class RampPass
 {

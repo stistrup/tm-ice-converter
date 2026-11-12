@@ -1,9 +1,9 @@
 using System.Text.Json.Nodes;
 using GBX.NET;
 using GBX.NET.Engines.Game;
-using static TmIceConverter.ConvertCommand;
+using static TmSurfaceEditor.ConvertCommand;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // one convert over several maps: read, plan, build pieces, convert and save
 internal sealed class ConvertBatch
@@ -14,9 +14,9 @@ internal sealed class ConvertBatch
     private readonly ConvertProgress progress;
     private readonly CancellationToken cancel;
     private readonly ItemBuilder items;
-    private readonly Translations translations;
+    private readonly ConversionRules dataRules;
     private readonly HashSet<string> known;
-    private readonly RunLog log = RunLog.Default;
+    private readonly SettingsStore log = SettingsStore.Default;
     private List<(BlockCatalog Shapes, MapConverter Converter)> workers = [];
     private readonly List<MapResult> results = [];
 
@@ -24,17 +24,17 @@ internal sealed class ConvertBatch
     {
         (this.choices, this.progress, this.cancel) = (choices, progress, cancel);
         items = new ItemBuilder(dataDir) { RewriteBlocks = choices.RebuildBlocks, MeshWhilePlanning = true };
-        translations = Translations.Load(dataDir);
+        dataRules = ConversionRules.Load(dataDir);
         known = KnownBlocks(dataDir);
     }
 
-    private sealed record Prepared(string Path, MapSettings Settings, Translations Own, string From, List<string> Problems, string Name, string Target);
+    private sealed record Prepared(string Path, MapSettings Settings, ConversionRules Own, string From, List<string> Problems, string Name, string Target);
 
     public List<MapResult> Run(IReadOnlyList<string> paths)
     {
         // several maps at once: each worker its own catalog and converter (their caches aren't shared), the item builder is
         workers = Enumerable.Range(0, Math.Clamp(Math.Min(paths.Count, System.Environment.ProcessorCount / 2), 1, MaxWorkers))
-            .Select(_ => new BlockCatalog(Paths.ExtractedStadium)).Select(shapes => (Shapes: shapes, Converter: new MapConverter(known, translations, shapes, items))).ToList();
+            .Select(_ => new BlockCatalog(Paths.ExtractedStadium)).Select(shapes => (Shapes: shapes, Converter: new MapConverter(known, dataRules, shapes, items))).ToList();
         // rough seconds per map, measured on the campaign maps
         progress.Expect("Read map", 0.1 * paths.Count);
         progress.Expect("Plan pieces", 1.2 * paths.Count);
@@ -114,15 +114,16 @@ internal sealed class ConvertBatch
         // pieces built while converting can fail too
         var itemFailures = items.Failures;
         var failures = itemFailures.Select(f => $"{f.Key}: {f.Value}").ToList();
-        File.WriteAllText(map.Target[..^".Map.Gbx".Length] + ".report.md", ReportWriter.Format(map.Path, report, itemFailures));
-        var used = map.Settings.WithOptions(translations.For(source.Name, map.Own).Options.All());
+        var used = map.Settings.WithOptions(dataRules.For(source.Name, map.Own).Options.All());
         var run = log.Add(choices.Kind, source, new MapRef(gbx.Node.MapUid, MapsRelative(map.Target), map.Name, MapFingerprint.Of(gbx.Node)), used, map.Problems);
-        return new(map.Path, new Outcome(map.Target, map.Name, run.Id, map.From, Summary(report), map.Problems, failures, 0), null);
+        var reportFile = log.ReportFile(run.Id);
+        File.WriteAllText(reportFile, ReportWriter.Format(map.Path, report, itemFailures));
+        return new(map.Path, new Outcome(map.Target, map.Name, run.Id, reportFile, map.From, Summary(report), map.Problems, failures, 0), null);
     }
 
     private static string Summary(ConversionReport report)
     {
-        var snow = report.SnowTerrain.Count > 0 ? $" {report.SnowTerrain.Values.Sum()} terrain in snow," : "";
+        var snow = report.CoveredTerrain.Count > 0 ? $" {report.CoveredTerrain.Values.Sum()} terrain in snow," : "";
         return $"{report.Swapped.Values.Sum()} swapped, {report.ReplacedByBlock.Values.Sum()} custom blocks,{snow}"
             + $" {report.ReplacedByItem.Values.Sum()} replaced by items, {report.Skinned.Values.Sum()} skinned, {report.Left} left as they were";
     }
@@ -190,7 +191,7 @@ internal sealed class ConvertBatch
     {
         var json = MapSettings.Parse(File.ReadAllText(file));
         return json.Json["settings"] is JsonObject inner && (json.Json.ContainsKey("source") || json.Json.ContainsKey("updated"))
-            ? new MapSettings(inner.DeepClone().AsObject()) : json;
+            ? new MapSettings(MapSettings.Upgrade(inner.DeepClone().AsObject(), 0)) : json;
     }
 
     private static string MapsRelative(string path)

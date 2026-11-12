@@ -1,0 +1,37 @@
+// what a piece can be picked to become: each pick once, with its label and what it does; each kind (as the preview groups pieces) lists its picks.
+// The converter knows the values (Translations.PieceChoices); this file only shows them
+{
+  "picks": {
+    "": { "label": "Rule", "description": "As the conversion rules decide" },
+    "keep": { "label": "Original", "description": "Stays as it is" },
+    "twin": { "label": "Native ice", "description": "The game's own ice version of the block" },
+    "twincover": { "label": "Native ice, snow", "description": "The game's own ice version, with snow over its ground" },
+    "custom": { "label": "Custom block", "description": "An ice copy of the block; closest to the original look" },
+    "item": { "label": "Custom item", "description": "An ice item in its place" },
+    "skin": { "label": "Ice skin", "description": "The original stays, a thin ice layer on top; smallest maps" },
+    "tops": { "label": "Ice tops", "description": "The original stays, ice only on its upward faces" },
+    "snow": { "label": "Snow", "description": "The ground in snow; the column above it follows" },
+    "plain": { "label": "Plain ice", "description": "Without its effect, as a plain block" },
+    "gate": { "label": "Effect on a gate", "description": "Plain ice with a gate that keeps the effect" },
+    "flip": { "label": "Flip", "description": "Turned around: you enter from the other side" },
+    "snowflip": { "label": "Snow flipped", "description": "Turned around, on snow ground" },
+    "remove": { "label": "Remove", "description": "Taken out of the map" },
+    "frozen": { "label": "Snow trees", "description": "Swapped for a frozen or snowy one" },
+    "copy": { "label": "Ice copy", "description": "An ice copy of the item" },
+    "sink": { "label": "Sunk into the ice", "description": "Lowered a little, so a flat top doesn't flicker with the ice" }
+  },
+  "kinds": {
+    "roads": { "label": "Roads, platforms", "picks": ["", "keep", "twin", "custom", "item", "skin", "tops"] },
+    "waypoints": { "label": "Start, checkpoint, finish", "picks": ["", "keep", "twin", "custom", "item", "skin"] },
+    "deco": { "label": "Deco, walls", "picks": ["", "keep", "snow", "tops", "twin", "twincover", "custom", "item", "skin"] },
+    // the snow rule leaves these alone
+    "decononsnow": { "label": "Pillars, free-placed deco", "picks": ["", "keep", "tops", "twin", "custom"] },
+    "terrain": { "label": "Terrain", "picks": ["", "keep", "snow"] },
+    "shore": { "label": "Shore, water", "picks": ["", "keep", "snow"] },
+    "special": { "label": "Special", "picks": ["", "keep", "plain", "twin", "custom", "gate", "remove"] },
+    "specialground": { "label": "Special, on the ground", "picks": ["", "keep", "plain", "snow"] },
+    "reactor": { "label": "Reactor", "picks": ["", "keep", "plain", "flip"] },
+    "reactorground": { "label": "Reactor, on the ground", "picks": ["", "keep", "plain", "snow", "flip", "snowflip"] },
+    "items": { "label": "Items", "picks": ["", "keep", "remove", "frozen", "copy", "sink"] }
+  }
+}

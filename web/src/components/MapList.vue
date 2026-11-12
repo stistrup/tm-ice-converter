@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { MapEntry } from '../api'
+import { readJson, writeJson } from '../storage'
 import { useMapStore } from '../stores/map'
 
 interface Folder {
@@ -20,26 +21,12 @@ const STORAGE_KEY = 'open-map-folders'
 
 const store = useMapStore()
 const search = ref('')
-const openFolders = ref(new Set<string>(readOpenFolders()))
+const openFolders = ref(new Set<string>(readJson<string[]>(STORAGE_KEY, [])))
 const shown = defineModel<boolean>('shown', { default: true })
-
-function readOpenFolders(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]')
-  } catch {
-    return []
-  }
-}
 
 watch(
   openFolders,
-  (open) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify([...open]))
-    } catch {
-      // only a convenience
-    }
-  },
+  (open) => writeJson(STORAGE_KEY, [...open]),
   { deep: true },
 )
 
@@ -91,7 +78,7 @@ const rows = computed(() => {
   return list
 })
 
-function toggle(path: string) {
+const toggle = (path: string) => {
   if (needle.value) return
   if (openFolders.value.has(path)) openFolders.value.delete(path)
   else openFolders.value.add(path)
@@ -99,29 +86,19 @@ function toggle(path: string) {
 
 const chosen = computed(() => store.maps.filter((map) => store.chosenMaps.has(map.path)).length)
 
-function chosenUnder(folder: Folder) {
-  return folder.all.filter((map) => store.chosenMaps.has(map.path)).length
-}
-
-function chooseFolder(folder: Folder, on: boolean) {
-  for (const map of folder.all) {
-    if (on) store.chosenMaps.add(map.path)
-    else store.chosenMaps.delete(map.path)
+// ticked maps under each folder, by its path
+const chosenUnder = computed(() => {
+  const counts = new Map<string, number>()
+  const count = (folder: Folder) => {
+    counts.set(folder.path, folder.all.filter((map) => store.chosenMaps.has(map.path)).length)
+    for (const child of folder.folders.values()) count(child)
   }
-}
+  count(tree.value)
+  return counts
+})
 
-function chooseMap(map: MapEntry, on: boolean) {
-  if (on) store.chosenMaps.add(map.path)
-  else store.chosenMaps.delete(map.path)
-}
-
-function checked(event: Event) {
-  return (event.target as HTMLInputElement).checked
-}
-
-function indent(depth: number) {
-  return { paddingLeft: `${6 + depth * 12}px` }
-}
+const checked = (event: Event) => (event.target as HTMLInputElement).checked
+const indent = (depth: number) => ({ paddingLeft: `${6 + depth * 12}px` })
 </script>
 
 <template>
@@ -159,10 +136,10 @@ function indent(depth: number) {
           <input
             type="checkbox"
             :class="$style.tick"
-            :checked="chosenUnder(row.folder) === row.folder.all.length"
-            :indeterminate="chosenUnder(row.folder) > 0 && chosenUnder(row.folder) < row.folder.all.length"
+            :checked="chosenUnder.get(row.folder.path) === row.folder.all.length"
+            :indeterminate="(chosenUnder.get(row.folder.path) ?? 0) > 0 && (chosenUnder.get(row.folder.path) ?? 0) < row.folder.all.length"
             :aria-label="`Select maps in ${row.folder.name}`"
-            @change="chooseFolder(row.folder, checked($event))"
+            @change="store.choose(row.folder.all.map((map) => map.path), checked($event))"
           />
         </div>
         <div
@@ -179,7 +156,7 @@ function indent(depth: number) {
             :class="$style.tick"
             :checked="store.chosenMaps.has(row.map.path)"
             :aria-label="`Select ${row.map.name}`"
-            @change="chooseMap(row.map, checked($event))"
+            @change="store.choose([row.map.path], checked($event))"
           />
         </div>
       </template>
@@ -212,12 +189,7 @@ function indent(depth: number) {
 }
 
 .chevron {
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-right: 1.5px solid var(--muted);
-  border-bottom: 1.5px solid var(--muted);
-  transform: translateY(-2px) rotate(45deg);
+  composes: chevron from '../ui.module.css';
 }
 
 .chevron.open {

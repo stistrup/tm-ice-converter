@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 internal static class Geometry
 {

@@ -1,9 +1,9 @@
 using GBX.NET;
 using GBX.NET.Engines.Game;
-using static TmIceConverter.BlockFlags;
-using static TmIceConverter.Counts;
+using static TmSurfaceEditor.BlockFlags;
+using static TmSurfaceEditor.Counts;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // neighbours whose clips would change become items too
 internal static class Neighbours

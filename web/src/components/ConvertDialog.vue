@@ -1,22 +1,22 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { fetchAuthor, fetchFolders, fetchOutputName, saveAuthor, targetExists, type Author, type FolderList } from '../api'
+import { fetchOutputName, targetExists } from '../api'
 import { useConvertStore } from '../stores/convert'
 import { useMapStore } from '../stores/map'
 import { usePreviewStore } from '../stores/preview'
+import AuthorChoice from './AuthorChoice.vue'
+import ConvertBar from './ConvertBar.vue'
+import ConvertProgress from './ConvertProgress.vue'
+import FolderChoice from './FolderChoice.vue'
 
 const store = useMapStore()
 const preview = usePreviewStore()
 const converting = useConvertStore()
 const dialog = ref<HTMLDialogElement>()
+const authorChoice = ref<InstanceType<typeof AuthorChoice>>()
+const folderChoice = ref<InstanceType<typeof FolderChoice>>()
 const outputName = ref('')
-// picked from the folders in Maps, or a new one typed
-const folderMode = ref<'type' | 'pick'>('pick')
-const typedFolder = ref('')
-const pickedFolder = ref('')
-const list = ref<FolderList | null>(null)
-const folders = computed(() => list.value?.folders ?? [])
-const targetFolder = computed(() => (folderMode.value === 'pick' ? pickedFolder.value : typedFolder.value).trim())
+const targetFolder = ref('')
 
 // the maps ticked in the list; with none (or Only the open map) it converts the open one
 const chosen = computed(() => store.maps.filter((map) => store.chosenMaps.has(map.path)))
@@ -39,7 +39,7 @@ const overwrite = ref(false)
 let existsCall = 0
 let existsTimer: ReturnType<typeof setTimeout> | undefined
 
-async function existsAs(name: string) {
+const existsAs = async (name: string) => {
   try {
     return name.trim() !== '' && (await targetExists(targetFolder.value, name))
   } catch {
@@ -63,18 +63,12 @@ const job = computed(() => converting.job)
 const running = computed(() => job.value?.state === 'running')
 // the dialog shows the conversion (running or its result) instead of the form
 const showingJob = computed(() => job.value !== null && converting.inDialog)
-const heading = computed(() => {
-  const j = job.value
-  if (!j) return ''
-  if (j.state === 'running') return j.cancelling ? 'Cancelling' : 'Converting'
-  return { done: 'Converted', cancelled: 'Cancelled', failed: 'Conversion failed:' }[j.state]
-})
 const canConvert = computed(
   () => !running.value && (batch.value || (store.currentMap !== null && outputName.value.trim().length > 0)) && (!exists.value || overwrite.value),
 )
 
 // one map with the settings the preview shows (the working ones), several with their own (drafts); it runs in the backend
-async function convert() {
+const convert = async () => {
   const current = store.currentMap
   if (!canConvert.value || (!batch.value && !current)) return
   startError.value = ''
@@ -91,76 +85,28 @@ async function convert() {
       overwrite: overwrite.value,
     })
     overwrite.value = false
+    // converting is the commitment, when asked
+    if (!batch.value && saveSettings.value) void preview.save()
   } catch (e) {
     startError.value = e instanceof Error ? e.message : String(e)
   }
 }
 
-// per step: done, running (with its count) or still to come
-function stepState(index: number): 'done' | 'now' | 'todo' {
-  const step = job.value?.progress.step ?? -1
-  if (job.value?.state === 'done' || index < step) return 'done'
-  return index === step && job.value?.state === 'running' ? 'now' : 'todo'
-}
-
-const percent = computed(() => Math.round(job.value?.state === 'done' ? 100 : (job.value?.progress.percent ?? 0)))
-const stepNow = computed(() => {
-  const p = job.value?.progress
-  if (!p || p.step < 0 || p.step >= p.stepNames.length) return p?.detail ?? 'Starting'
-  return `${p.stepNames[p.step]}${p.total ? ` ${p.done}/${p.total}` : ''}`
-})
-
 const fakeAuthorTime = ref(false)
 const meAsAuthor = ref(false)
 const rebuildBlocks = ref(false)
-// the account "Me as author" puts on the map; entered here when there's none
-const author = ref<Author | null>(null)
-const editing = ref(false)
-const draft = ref<Author>({ login: '', nickname: '', zone: '' })
-const authorError = ref('')
-
-// nickname and zone come from your own maps; typed only when none carries the ID
-const typingName = ref(false)
-
-function startEditing() {
-  draft.value = { login: author.value?.login ?? '', nickname: '', zone: '' }
-  authorError.value = ''
-  typingName.value = false
-  editing.value = true
-}
-
-async function storeAuthor() {
-  authorError.value = ''
-  try {
-    author.value = await saveAuthor({ login: draft.value.login.trim(), nickname: draft.value.nickname.trim(), zone: draft.value.zone.trim() })
-    editing.value = false
-  } catch (e) {
-    authorError.value = e instanceof Error ? e.message : String(e)
-    if (!typingName.value) {
-      typingName.value = true
-      authorError.value += ': type the nickname and zone'
-    }
-  }
-}
-
-function useFolder(folder: string) {
-  if (folders.value.includes(folder)) {
-    folderMode.value = 'pick'
-    pickedFolder.value = folder
-  } else {
-    folderMode.value = 'type'
-    typedFolder.value = folder
-  }
-}
+// off by default: trying things out keeps the saved settings
+const saveSettings = ref(false)
 
 // the form; a finished conversion still shown is let go
-async function open() {
+const open = async () => {
   if (running.value) return showJob()
   if (job.value) void converting.dismiss()
   startError.value = ''
   const current = store.currentMap
   if (!current && !chosen.value.length) return
   onlyOpen.value = false
+  saveSettings.value = false
   outputName.value = current ? `${(current.name ?? '').replace(/\s*\(ice[^)]*\)$/i, '')} (ICE)` : ''
   dialog.value?.showModal()
   if (current)
@@ -170,61 +116,41 @@ async function open() {
   batchBases.value = {}
   for (const map of chosen.value)
     fetchOutputName(map.path).then((name) => (batchBases.value[map.path] = name.replace(/ \(ICE\)$/, '')), () => undefined)
-  editing.value = false
-  const [folderList, account] = await Promise.allSettled([fetchFolders(), fetchAuthor()])
-  list.value = folderList.status === 'fulfilled' ? folderList.value : null
-  author.value = account.status === 'fulfilled' ? account.value : null
-  if (!author.value) {
-    meAsAuthor.value = false
-    draft.value = { login: '', nickname: '', zone: '' }
-  }
-  useFolder(list.value?.progress ?? '')
+  await Promise.all([folderChoice.value?.refresh(), authorChoice.value?.refresh()])
 }
 
-function showJob() {
+const showJob = () => {
   converting.inDialog = true
   if (!dialog.value?.open) dialog.value?.showModal()
 }
 
 // while it runs, closing sends it to the corner bar
-function background() {
+const background = () => {
   converting.inDialog = false
   dialog.value?.close()
 }
 
 // a finished one is let go with the dialog
-function close() {
+const close = () => {
   if (running.value) return background()
   if (job.value && converting.inDialog) void converting.dismiss()
   dialog.value?.close()
 }
 
 // a click on the backdrop lands on the dialog itself
-function onClick(event: MouseEvent) {
+const onClick = (event: MouseEvent) => {
   if (event.target === dialog.value) close()
 }
 
 // Esc, or closed some other way
-function onClosed() {
+const onClosed = () => {
   if (running.value) converting.inDialog = false
 }
 </script>
 
 <template>
   <div :class="$style.corner">
-    <div v-if="job && !converting.inDialog" :class="[$style.bar, $style[job.state]]">
-      <button type="button" :class="$style.barMain" :title="`Show the conversion of ${job.name}`" @click="showJob">
-        <span :class="$style.barText">
-          <template v-if="job.state === 'running'">{{ job.cancelling ? 'Cancelling' : 'Converting' }} {{ job.name }} · {{ stepNow }}</template>
-          <template v-else-if="job.state === 'done'">Converted {{ job.name }}</template>
-          <template v-else-if="job.state === 'cancelled'">Cancelled {{ job.name }}</template>
-          <template v-else>Conversion of {{ job.name }} failed</template>
-        </span>
-        <span v-if="job.state === 'running'" :class="$style.barPercent">{{ percent }}%</span>
-        <span :class="$style.barTrack" aria-hidden="true"><span :class="$style.barFill" :style="{ width: `${percent}%` }" /></span>
-      </button>
-      <button v-if="job.state !== 'running'" type="button" :class="$style.barClose" aria-label="Dismiss" @click="converting.dismiss()">×</button>
-    </div>
+    <ConvertBar @show="showJob" />
     <button
       v-if="!(job?.state === 'running' && !converting.inDialog)"
       type="button"
@@ -236,55 +162,7 @@ function onClosed() {
     </button>
   </div>
   <dialog ref="dialog" :class="$style.dialog" aria-labelledby="convert-title" @click="onClick" @close="onClosed">
-    <div v-if="showingJob && job" :class="$style.form">
-      <header :class="$style.header">
-        <span id="convert-title">
-          {{ heading }} {{ job.name }}
-        </span>
-      </header>
-      <div :class="$style.body">
-        <ol :class="$style.steps">
-          <li v-for="(name, i) in job.progress.stepNames" :key="name" :class="$style[stepState(i)]">
-            <span :class="$style.mark" aria-hidden="true">{{ stepState(i) === 'done' ? '✓' : stepState(i) === 'now' ? '›' : '' }}</span>
-            <span :class="$style.grow">{{ name }}</span>
-            <span v-if="stepState(i) === 'now' && job.progress.total" :class="$style.count">{{ job.progress.done }}/{{ job.progress.total }}</span>
-            <span v-if="stepState(i) === 'now' && job.progress.detail" :class="$style.muted">{{ job.progress.detail }}</span>
-          </li>
-        </ol>
-        <p v-if="job.progress.step < 0 && job.progress.detail" :class="$style.muted">{{ job.progress.detail }}…</p>
-        <div :class="$style.overall">
-          <span :class="$style.track" aria-hidden="true"><span :class="$style.fill" :style="{ width: `${percent}%` }" /></span>
-          <span :class="$style.count">{{ percent }}%</span>
-        </div>
-        <ul v-if="job.count > 1 && (job.results.length || job.state === 'cancelled')" :class="$style.results" role="status">
-          <li v-for="result in job.results" :key="result.map">
-            <span v-if="result.output" :class="$style.ok">✓ {{ result.output }}</span>
-            <span v-else :class="$style.error">✗ {{ result.map }}: {{ result.error }}</span>
-          </li>
-          <li v-if="job.state === 'cancelled'" :class="$style.muted">Cancelled: {{ job.results.filter((r) => r.output).length }} of {{ job.count }} maps saved.</li>
-        </ul>
-        <div v-if="job.outcome" :class="$style.result" role="status">
-          <p :class="$style.ok">Saved: {{ job.outcome.output.startsWith('/') ? '' : 'Maps/' }}{{ job.outcome.output }}</p>
-          <p v-for="problem in job.outcome.problems" :key="problem" :class="$style.warn">Left out: {{ problem }}</p>
-          <p v-if="job.outcome.failures.length" :class="$style.warn" :title="job.outcome.failures.join('\n')">
-            {{ job.outcome.failures.length }} piece(s) failed to build, see the report next to the map
-          </p>
-          <p v-if="job.outcome.missingFiles" :class="$style.warn">
-            {{ job.outcome.missingFiles }} game files aren't extracted: in Openplanet: Plugins › Extract game files, then convert again
-          </p>
-        </div>
-        <p v-if="job.error" :class="$style.error" role="alert">{{ job.error }}</p>
-      </div>
-      <footer :class="$style.actions">
-        <template v-if="running">
-          <button type="button" :class="$style.button" :disabled="job.cancelling" @click="converting.cancel()">
-            {{ job.cancelling ? 'Cancelling…' : 'Cancel' }}
-          </button>
-          <button type="button" :class="$style.button" @click="background">Continue in background</button>
-        </template>
-        <button v-else type="button" :class="$style.button" @click="close">Close</button>
-      </footer>
-    </div>
+    <ConvertProgress v-if="showingJob && job" @close="close" @background="background" />
     <form v-else method="dialog" :class="$style.form" @submit.prevent="convert">
       <header :class="$style.header">
         <span id="convert-title">{{ batch ? `Convert ${chosen.length} map${chosen.length === 1 ? '' : 's'}` : `Convert ${store.currentMap?.name}` }}</span>
@@ -317,59 +195,14 @@ function onClosed() {
             <input v-model="fakeAuthorTime" type="checkbox" />
             <span>Fake 1h author time</span>
           </label>
-          <div :class="$style.option">
-            <label :class="$style.option">
-              <input v-model="meAsAuthor" type="checkbox" :disabled="!author" />
-              <span>{{ author ? `Me (${author.nickname}) as author` : 'Me as author' }}</span>
-            </label>
-            <button v-if="!editing" type="button" :class="$style.link" @click="startEditing">{{ author ? 'Change' : 'Set user ID' }}</button>
-          </div>
-          <div v-if="editing" :class="$style.author">
-            <label :class="$style.field">
-              <span>User ID</span>
-              <input v-model="draft.login" type="text" placeholder="22 characters, as on trackmania.io" />
-            </label>
-            <label v-if="typingName" :class="$style.field">
-              <span>Nickname</span>
-              <input v-model="draft.nickname" type="text" />
-            </label>
-            <label v-if="typingName" :class="$style.field">
-              <span>Zone</span>
-              <input v-model="draft.zone" type="text" placeholder="World|Europe|Sweden" />
-            </label>
-            <p v-if="authorError" :class="$style.error">{{ authorError }}</p>
-            <div :class="$style.authorActions">
-              <button type="button" :class="$style.button" @click="editing = false">Cancel</button>
-              <button type="button" :class="$style.button" :disabled="!draft.login.trim() || (typingName && !draft.nickname.trim())" @click="storeAuthor">Save</button>
-            </div>
-          </div>
+          <AuthorChoice ref="authorChoice" v-model="meAsAuthor" />
           <label :class="$style.option">
             <input v-model="rebuildBlocks" type="checkbox" />
             <span>DEV: Rebuild custom blocks</span>
             <span :class="$style.info" title="Write the custom blocks again even when their items didn't change" aria-label="What it does">i</span>
           </label>
         </div>
-        <fieldset :class="$style.field">
-          <legend>Save to</legend>
-          <label :class="$style.option">
-            <input v-model="folderMode" type="radio" value="pick" :disabled="!folders.length" />
-            <span>Existing folder</span>
-          </label>
-          <select v-model="pickedFolder" :class="$style.select" :disabled="folderMode !== 'pick'" aria-label="Existing folder">
-            <option v-for="folder in folders" :key="folder" :value="folder">{{ folder }}</option>
-          </select>
-          <label :class="$style.option">
-            <input v-model="folderMode" type="radio" value="type" />
-            <span>New folder</span>
-          </label>
-          <input
-            v-model="typedFolder"
-            type="text"
-            placeholder="Saved in Maps (leave empty to not save in a folder)"
-            :disabled="folderMode !== 'type'"
-            aria-label="New folder"
-          />
-        </fieldset>
+        <FolderChoice ref="folderChoice" v-model="targetFolder" />
         <div v-if="exists" :class="$style.exists">
           <p v-if="batch" :class="$style.warn">{{ targetFolder || 'Maps' }} already has {{ existing.length }} of them.</p>
           <p v-else :class="$style.warn">{{ targetFolder || 'Maps' }} already has “{{ outputName.trim() }}”.</p>
@@ -378,6 +211,10 @@ function onClosed() {
             <span>{{ batch && existing.length > 1 ? 'Overwrite them' : 'Overwrite it' }}</span>
           </label>
         </div>
+        <label v-if="!batch && preview.dirty" :class="$style.option">
+          <input v-model="saveSettings" type="checkbox" />
+          <span>Save these settings</span>
+        </label>
         <p v-if="startError" :class="$style.error" role="alert">{{ startError }}</p>
       </div>
       <footer :class="$style.actions">
@@ -397,168 +234,9 @@ function onClosed() {
   align-items: flex-end;
 }
 
-.bar {
-  display: flex;
-  align-items: stretch;
-  width: 380px;
-  max-width: calc(100vw - 200px);
-  height: 32px;
-  margin-right: 6px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-bottom: 0;
-  border-radius: 3px 3px 0 0;
-}
-
-.barMain {
-  position: relative;
-  display: flex;
-  flex: 1;
-  gap: 8px;
-  align-items: center;
-  min-width: 0;
-  padding: 0 10px 4px;
-  color: var(--text);
-  text-align: left;
-  cursor: default;
-  background: none;
-  border: 0;
-}
-
-.barMain:hover {
-  background: var(--hover);
-}
-
-.barText {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.barPercent {
-  flex: none;
-  color: var(--strong);
-}
-
-.barTrack {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 4px;
-  background: var(--field);
-}
-
-.barFill {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-  transition: width 0.3s;
-}
-
-.done .barFill {
-  background: #6cbf6c;
-}
-
-.failed .barFill {
-  width: 100% !important;
-  background: var(--error);
-}
-
-.failed .barText {
-  color: var(--error);
-}
-
-.barClose {
-  flex: none;
-  width: 28px;
-  color: var(--muted);
-  cursor: default;
-  background: none;
-  border: 0;
-  border-left: 1px solid var(--line);
-}
-
-.barClose:hover {
-  color: var(--strong);
-  background: var(--hover);
-}
-
-.steps {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.steps li {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  min-height: 20px;
-}
-
-.mark {
-  flex: none;
-  width: 12px;
-  text-align: center;
-}
-
-.steps .done {
-  color: var(--text);
-}
-
-.steps .done .mark {
-  color: #6cbf6c;
-}
-
-.steps .now {
-  color: var(--strong);
-  font-weight: 600;
-}
-
-.steps .now .mark {
-  color: var(--accent);
-}
-
-.steps .todo {
-  color: var(--muted);
-}
-
 .grow {
   flex: 1;
   min-width: 0;
-}
-
-.count {
-  flex: none;
-  color: var(--muted);
-  font-weight: 400;
-}
-
-.overall {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.track {
-  flex: 1;
-  height: 8px;
-  overflow: hidden;
-  background: var(--field);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-}
-
-.fill {
-  display: block;
-  height: 100%;
-  background: var(--accent);
-  transition: width 0.3s;
 }
 
 .open {
@@ -625,46 +303,11 @@ function onClosed() {
 }
 
 .field {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.field legend {
-  margin-bottom: 3px;
-  padding: 0;
+  composes: field from '../ui.module.css';
 }
 
 .option {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  min-height: 18px;
-  cursor: default;
-}
-
-.option input {
-  flex: none;
-  width: auto;
-  height: auto;
-  margin: 0;
-}
-
-.select {
-  height: 22px;
-  padding: 0 4px;
-  color: var(--text);
-  background: var(--field);
-  border: 1px solid var(--line);
-  border-radius: 2px;
-}
-
-.select:disabled,
-.field input[type='text']:disabled {
-  opacity: 0.5;
+  composes: option from '../ui.module.css';
 }
 
 .checks {
@@ -672,110 +315,12 @@ function onClosed() {
   gap: 2px;
 }
 
-/* a disabled option reads as off: its label greyed with it */
-.option:has(> input:disabled) {
-  color: var(--muted);
-  opacity: 0.5;
-}
-
-.author {
-  display: grid;
-  gap: 6px;
-  margin: 2px 0 4px 20px;
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-}
-
-.authorActions {
-  display: flex;
-  gap: 6px;
-  justify-content: flex-end;
-}
-
-.link {
-  padding: 0;
-  color: var(--muted);
-  text-decoration: underline;
-  cursor: default;
-  background: none;
-  border: 0;
-}
-
-.link:hover {
-  color: var(--strong);
-}
-
 .error {
-  margin: 0;
-  color: var(--error);
-}
-
-.status {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  color: var(--muted);
-}
-
-.spinner {
-  flex: none;
-  width: 10px;
-  height: 10px;
-  border: 1.5px solid currentColor;
-  border-right-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.result {
-  display: grid;
-  gap: 3px;
-}
-
-.result p {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.ok {
-  color: var(--strong);
+  composes: error from '../ui.module.css';
 }
 
 .info {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 13px;
-  height: 13px;
-  font-size: 9px;
-  font-style: italic;
-  font-weight: 700;
-  color: var(--muted);
-  cursor: default;
-  border: 1px solid var(--muted);
-  border-radius: 50%;
-}
-
-.info:hover {
-  color: var(--strong);
-  border-color: var(--strong);
-}
-
-.results,
-.batch {
-  display: grid;
-  gap: 2px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  overflow-wrap: anywhere;
+  composes: info from '../ui.module.css';
 }
 
 .batch {
@@ -807,8 +352,7 @@ function onClosed() {
 }
 
 .muted {
-  margin: 0;
-  color: var(--muted);
+  composes: muted from '../ui.module.css';
 }
 
 .actions {
@@ -819,16 +363,7 @@ function onClosed() {
 }
 
 .button {
-  height: 22px;
-  padding: 0 12px;
-  cursor: default;
-  background: #3a3a3a;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-}
-
-.button:hover:not(:disabled) {
-  background: #454545;
+  composes: button from '../ui.module.css';
 }
 
 .primary,

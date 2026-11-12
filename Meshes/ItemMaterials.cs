@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // Map: block material -> library material; Native: left as the game's own
 internal sealed record ItemMaterials(Dictionary<string, string> Map, HashSet<string> Native)

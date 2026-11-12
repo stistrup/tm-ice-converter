@@ -1,4 +1,4 @@
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 public sealed record SceneData(
     string Map,

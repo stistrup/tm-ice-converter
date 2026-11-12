@@ -1,4 +1,4 @@
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 internal static class CliArgs
 {

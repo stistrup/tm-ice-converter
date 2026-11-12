@@ -1,8 +1,8 @@
 using GBX.NET;
 using GBX.NET.Engines.Game;
-using static TmIceConverter.CliArgs;
+using static TmSurfaceEditor.CliArgs;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // convert, watch: the options the GUI's Convert popup has
 internal sealed class ConvertCommand(string dataDir)
@@ -21,13 +21,13 @@ internal sealed class ConvertCommand(string dataDir)
     }
 
     // Output: absolute
-    public sealed record Outcome(string Output, string Name, string RunId, string From, string Summary, List<string> Problems, List<string> Failures, int MissingFiles);
+    public sealed record Outcome(string Output, string Name, string RunId, string Report, string From, string Summary, List<string> Problems, List<string> Failures, int MissingFiles);
 
     public sealed record MapResult(string Map, Outcome? Done, string? Error);
 
     public const string Usage = """
           convert <map.Gbx | folder>... [options]
-              Convert maps to ice, each to "<map name> (ICE).Map.Gbx" with a .report.md next to it.
+              Convert maps to ice, each to "<map name> (ICE).Map.Gbx"; the report goes with the run (settings/runs).
               --folder <dir>        where they go: a folder under Maps, or an absolute path (default: ICE in progress)
               --name <map name>     the converted map's name (one map only); the file is named after it
               --fake-author-time    validated with a 1:00:00.000 author time, so it can go to a club without driving it
@@ -35,7 +35,7 @@ internal sealed class ConvertCommand(string dataDir)
               --rebuild-blocks      write the custom blocks again even when their items didn't change
               --overwrite           replace a map of the same file name; it keeps that map's UID
               --settings <from>     a settings file, a run id or file, "saved" or "defaults" (data/options.jsonc);
-                                    default: the settings the GUI saved for the map, else the defaults
+                                    default: the map's working copy (the GUI's edits), else its saved settings, else the defaults
               --set <option>=true|false   override an option for this run (repeatable)
               A new file name gets a UID of its own (from the original map and the name). Every conversion is
               logged with its settings (see runs).
@@ -65,7 +65,7 @@ internal sealed class ConvertCommand(string dataDir)
         if (Parse(ref rest, allowName: false) is not { } parsed) return 2;
         if (rest.Length > 0) return Fail($"watch takes options only, not {rest[0]}");
         var choices = parsed with { Overwrite = true };
-        var translations = Translations.Load(dataDir);
+        var dataRules = ConversionRules.Load(dataDir);
         Console.WriteLine($"Watching {Paths.DropFolder} (Ctrl+C to stop)");
         var sizes = new Dictionary<string, long>();
         while (true)
@@ -76,7 +76,7 @@ internal sealed class ConvertCommand(string dataDir)
                 var size = new FileInfo(p).Length;
                 var stable = sizes.TryGetValue(p, out var last) && last == size;
                 sizes[p] = size;
-                var output = DefaultTarget(p, choices.Folder, translations);
+                var output = DefaultTarget(p, choices.Folder, dataRules);
                 return stable && (output is null || !File.Exists(output) || File.GetLastWriteTimeUtc(output) < File.GetLastWriteTimeUtc(p));
             }).ToList();
             if (ready.Count > 0) Report(ConvertWithBar(ready, choices));
@@ -128,7 +128,7 @@ internal sealed class ConvertCommand(string dataDir)
             Console.WriteLine($"  settings: {done!.From}");
             foreach (var problem in done.Problems) Console.WriteLine($"  left out: {problem}");
             Console.WriteLine($"  {done.Summary} -> {done.Output}");
-            Console.WriteLine($"  run {done.RunId}");
+            Console.WriteLine($"  run {done.RunId}, report {done.Report}");
         }
         if (results.Select(r => r.Done?.MissingFiles ?? 0).DefaultIfEmpty().Max() is > 0 and var missing)
         {
@@ -149,12 +149,12 @@ internal sealed class ConvertCommand(string dataDir)
             .FirstOrDefault(f => string.Equals(Path.GetFileName(f), fileName, StringComparison.OrdinalIgnoreCase)) is { } there
             ? there : Path.Combine(folder, fileName);
 
-    private static string? DefaultTarget(string map, string folder, Translations translations)
+    private static string? DefaultTarget(string map, string folder, ConversionRules dataRules)
     {
         try
         {
             var header = Gbx.ParseHeaderNode<CGameCtnChallenge>(map);
-            return MapNames.FileName(MapNames.DefaultOutput(header.MapName, RunLog.Default.NameOf(header.MapUid))) is { } file ? Existing(folder, file) : null;
+            return MapNames.FileName(MapNames.DefaultOutput(header.MapName, SettingsStore.Default.NameOf(header.MapUid))) is { } file ? Existing(folder, file) : null;
         }
         catch (Exception) { return null; }
     }
@@ -166,8 +166,8 @@ internal sealed class ConvertCommand(string dataDir)
         var clock = System.Diagnostics.Stopwatch.StartNew();
         var shapes = new BlockCatalog(Paths.ExtractedStadium);
         var items = new ItemBuilder(dataDir) { Planning = true };
-        var translations = Translations.Load(dataDir);
-        var converter = new MapConverter(KnownBlocks(dataDir), translations, shapes, items);
+        var dataRules = ConversionRules.Load(dataDir);
+        var converter = new MapConverter(KnownBlocks(dataDir), dataRules, shapes, items);
         Console.WriteLine($"setup {clock.ElapsedMilliseconds} ms");
         for (var i = 1; i <= 3; i++)
         {

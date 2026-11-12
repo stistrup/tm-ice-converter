@@ -3,7 +3,7 @@ using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.GameData;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // block meshes -> FBX (Blender) -> NadeoImporter -> fix-ups, with a cache; custom blocks and item copies in the other parts
 public sealed partial class ItemBuilder
@@ -148,7 +148,7 @@ public sealed partial class ItemBuilder
 
     private static string ItemPath(string name) => Path.Combine(Paths.Items, name + ".Item.gbx");
 
-    private static Ident ItemIdent(string name) => new($"{Paths.ItemFolder}\\{name}.Item.gbx", new Id(26), "IceConverter");
+    private static Ident ItemIdent(string name) => new($"{Paths.ItemFolder}\\{name}.Item.gbx", new Id(26), Paths.ItemAuthor);
 
     // null: noted; with MeshWhilePlanning the mesh is made now, so the plan knows at once if it's empty or fails
     private string? Plan(ItemRequest request, string name, string? builtFrom)

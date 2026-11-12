@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // where the game, its user folder, Openplanet and Blender usually are
 internal static partial class InstallSearch

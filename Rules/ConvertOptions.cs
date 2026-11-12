@@ -1,42 +1,42 @@
 using System.ComponentModel;
 using System.Reflection;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
-// the map-wide switches; these defaults are what a map without settings of its own converts with.
-// Description: the GUI's info text
+// the switches; these defaults are what a map without settings of its own converts with.
+// Category: map (a map-wide job), piece (how pieces convert: what presets set), look (the material's look). Description: the GUI's info text
 public sealed record ConvertOptions(
-    [property: Description("Forced camera changes are taken out of the in-game clips")]
+    [property: Category("map"), Description("Forced camera changes are taken out of the in-game clips")]
     bool RemoveForcedCameras = false,
-    [property: Description("Engine-off blocks become reset blocks, engine-off gates are removed")]
+    [property: Category("map"), Description("Engine-off blocks become reset blocks, engine-off gates are removed")]
     bool EngineOffToReset = false,
-    [property: Description("Slow-motion and reset pads become ice with a gate that keeps the effect")]
+    [property: Category("piece"), Description("Slow-motion and reset pads become ice with a gate that keeps the effect")]
     bool EffectsToGate = false,
-    [property: Description("Engine-off blocks become plain blocks, engine-off gates are removed; wins over engine-off to reset")]
+    [property: Category("map"), Description("Engine-off blocks become plain blocks, engine-off gates are removed; wins over engine-off to reset")]
     bool EngineOffToPlain = false,
-    [property: Description("Snow on open-zone sides, inside custom blocks and skins only; roads swapped to the game's own ice roads keep their grass")]
+    [property: Category("look"), Description("Snow on open-zone sides, inside custom blocks and skins only; roads swapped to the game's own ice roads keep their grass")]
     bool SnowOnZoneSides = false,
-    [property: Description("Deco platforms on or in the ground: native ice with a snow skin")]
+    [property: Category("piece"), Description("Deco platforms on or in the ground: native ice with a snow skin")]
     bool SnowOnGroundDeco = false,
-    [property: Description("Blocks that would become whole items become custom blocks instead")]
+    [property: Category("piece"), Description("Blocks that would become whole items become custom blocks instead")]
     bool CustomBlocks = true,
-    [property: Description("Starts, checkpoints and finishes as custom blocks too")]
+    [property: Category("piece"), Description("Starts, checkpoints and finishes as custom blocks too")]
     bool CustomWaypoints = true,
-    [property: Description("Trees and plants become frozen or snowy ones")]
+    [property: Category("piece"), Description("Trees and plants become frozen or snowy ones")]
     bool ConvertTrees = false,
-    [property: Description("Deco blocks, pillars, concrete and walls get snow")]
+    [property: Category("piece"), Description("Deco blocks, pillars, concrete and walls get snow")]
     bool ConvertScenery = false,
-    [property: Description("Empty cells, the game's flat ground, become snow too")]
+    [property: Category("map"), Description("Empty cells, the game's flat ground, become snow too")]
     bool FillEmptyWithSnow = false,
-    [property: Description("Shores (water hills) at ground level get snow above the water line; raised lakes stay")]
+    [property: Category("map"), Description("Shores (water hills) at ground level get snow above the water line; raised lakes stay")]
     bool SnowOnWaterHills = false,
-    [property: Description("Cliffs standing on the ground get snow at their foot; cliffs on terraces stay")]
+    [property: Category("map"), Description("Cliffs standing on the ground get snow at their foot; cliffs on terraces stay")]
     bool SnowOnCliffs = false,
-    [property: Description("Native blocks keep their place under an ice skin instead of becoming custom blocks: smaller maps, one ice look")]
+    [property: Category("piece"), Description("Native blocks keep their place under an ice skin instead of becoming custom blocks: smaller maps, one ice look")]
     bool SkinsOnly = false,
-    [property: Description("Starts, checkpoints and finishes stay native under an ice skin; they are the largest custom blocks")]
+    [property: Category("piece"), Description("Starts, checkpoints and finishes stay native under an ice skin; they are the largest custom blocks")]
     bool SkinWaypoints = false,
-    [property: Description("Experimental: custom blocks next to a skinned block lift their ice toward it, so the surfaces meet")]
+    [property: Category("piece"), Description("Experimental: custom blocks next to a skinned block lift their ice toward it, so the surfaces meet")]
     bool RampToSkins = false)
 {
     public ConvertOptions With(string name, bool value) => name switch
@@ -63,8 +63,8 @@ public sealed record ConvertOptions(
     // every option by its settings name, with its description
     public IEnumerable<(string Name, bool Value)> All() => Properties.Select(p => (NameOf(p), (bool)p.GetValue(this)!));
 
-    public static IEnumerable<(string Name, string Description)> Described()
-        => Properties.Select(p => (NameOf(p), p.GetCustomAttribute<DescriptionAttribute>()?.Description ?? ""));
+    public static IEnumerable<(string Name, string Category, string Description)> Described()
+        => Properties.Select(p => (NameOf(p), p.GetCustomAttribute<CategoryAttribute>()?.Category ?? "", p.GetCustomAttribute<DescriptionAttribute>()?.Description ?? ""));
 
     private static IEnumerable<PropertyInfo> Properties
         => typeof(ConvertOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.PropertyType == typeof(bool));

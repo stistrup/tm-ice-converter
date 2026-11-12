@@ -215,7 +215,7 @@ void ExtractListed()
 {
     IO::FileSource meshRefs("mesh-refs.txt");
     auto paths = meshRefs.ReadToEnd().Split("\n");
-    string viewRefs = IO::FromDataFolder("Plugins/IceConverterExtract/view-refs.txt");
+    string viewRefs = IO::FromDataFolder("Plugins/SurfaceEditorExtract/view-refs.txt");
     if (IO::FileExists(viewRefs)) {
         IO::File f(viewRefs, IO::FileMode::Read);
         auto more = f.ReadToEnd().Split("\n");

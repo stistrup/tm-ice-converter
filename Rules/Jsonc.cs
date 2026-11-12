@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 internal static class Jsonc
 {

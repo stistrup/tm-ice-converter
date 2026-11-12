@@ -5,7 +5,7 @@ using System.Text.Json;
 using GBX.NET;
 using GBX.NET.Engines.Game;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // a map's scene for the browser: manifest.json + geometry.bin, cached per map file
 internal static class SceneBundle

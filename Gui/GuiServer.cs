@@ -2,7 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // localhost only; HttpListener rejects other Host headers. Endpoints by topic in the other parts.
 internal sealed partial class GuiServer(string url, string webRoot, ConversionPreview preview, ConvertJobs jobs, string dataDir)
@@ -58,6 +58,7 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
         ["/api/texture"] = Texture,
         ["/api/preview-build"] = c => Json(c.Response, preview.Building()),
         ["/api/preview-scene"] = PreviewScene,
+        ["/api/presets"] = c => Json(c.Response, Preset.Load(dataDir).Select(p => new { p.Name, p.Kinds })),
         ["/api/settings"] = async c => await Json(c.Response, await Task.Run(() => preview.StateOf(MapFileOf(c))).ConfigureAwait(false)),
     };
 
@@ -69,7 +70,12 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
         ["/api/setup-path"] = SetupStep,
         ["/api/setup-action"] = SetupStep,
         ["/api/preview"] = Preview,
-        ["/api/save-settings"] = SaveSettings,
+        ["/api/edit"] = Edit,
+        ["/api/undo"] = c => Document(c, (log, uid) => log.Undo(uid)),
+        ["/api/redo"] = c => Document(c, (log, uid) => log.Redo(uid)),
+        ["/api/save-settings"] = c => Document(c, (log, uid) => log.SaveWorking(uid)),
+        ["/api/revert"] = c => Document(c, (log, uid) => log.Revert(uid)),
+        ["/api/apply-preset"] = ApplyPreset,
         ["/api/convert"] = Convert,
         ["/api/convert-cancel"] = c => Ok(c, () => jobs.Cancel(c.Query("id") ?? "")),
         ["/api/convert-dismiss"] = c => Ok(c, () => jobs.Dismiss(c.Query("id") ?? "")),
@@ -85,7 +91,7 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
         using var listener = new HttpListener();
         listener.Prefixes.Add(url);
         listener.Start();
-        Console.WriteLine($"Ice Converter is running on {url}. Close this window to quit.");
+        Console.WriteLine($"Surface Editor is running on {url}. Close this window to quit.");
         Started?.Invoke();
         while (true)
         {

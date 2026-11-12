@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // raises a skin off the surface below it
 internal static class SkinLift

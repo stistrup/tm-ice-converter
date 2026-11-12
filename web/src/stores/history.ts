@@ -1,69 +1,94 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
-import { ref, watch } from 'vue'
-import type { MapSettings } from '../api'
+import { computed, ref, watch } from 'vue'
 import { useMapStore } from './map'
 import { usePreviewStore } from './preview'
 
-interface Snapshot {
-  selection: number[]
-  settings: MapSettings
+// a step: the selection before and after, and whether the settings changed (the backend holds those steps)
+interface Step {
+  before: number[]
+  after: number[]
+  settings: boolean
 }
 
-// undo/redo over what the user changes on the open map: the selection and the conversion options
+// undo/redo over what the user changes on the open map: the selection here, the settings in the map's working copy
 export const useHistoryStore = defineStore('history', () => {
   const map = useMapStore()
   const preview = usePreviewStore()
-  const past = ref<Snapshot[]>([])
-  const future = ref<Snapshot[]>([])
+  const past = ref<Step[]>([])
+  const future = ref<Step[]>([])
 
-  const now = (): Snapshot => ({ selection: map.selection, settings: preview.working })
+  // key order aside, as the backend compares
+  const canonical = (value: unknown): string =>
+    JSON.stringify(value, (_k, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : v))
+  const sameSelection = (a: number[], b: number[]) => a.length === b.length && a.every((v, i) => v === b[i])
 
-  function restore(snapshot: Snapshot) {
-    map.selection = snapshot.selection
-    // the preview follows the settings by itself
-    preview.working = snapshot.settings
-  }
-
-  const same = (a: Snapshot, b: Snapshot) => JSON.stringify(a) === JSON.stringify(b)
-
-  // one undo step per change that did something
-  function change(fn: () => void) {
-    const before = now()
-    fn()
-    commit(before)
-  }
-
-  function commit(before: Snapshot) {
-    if (same(before, now())) return
-    past.value = [...past.value.slice(-199), before]
+  const push = (step: Step) => {
+    past.value = [...past.value.slice(-199), step]
     future.value = []
   }
 
+  // one undo step per change that did something
+  const change = (fn: () => void) => {
+    const before = map.selection
+    const settingsBefore = canonical(preview.working)
+    fn()
+    const settings = canonical(preview.working) !== settingsBefore
+    if (!settings && sameSelection(before, map.selection)) return
+    if (settings) void preview.commit()
+    push({ before, after: map.selection, settings })
+  }
+
+  // a step of its own
+  const revert = () => {
+    if (!preview.dirty) return
+    void preview.revert()
+    push({ before: map.selection, after: map.selection, settings: true })
+  }
+
+  // a preset's picks: one step
+  const preset = async (name: string, only: string[] | null) => {
+    const selection = map.selection
+    await preview.applyPreset(name, only)
+    push({ before: selection, after: selection, settings: true })
+  }
+
   // a shift-drag stroke is one step
-  let strokeBefore: Snapshot | null = null
-  function stroke(phase: 'start' | 'end') {
-    if (phase === 'start') strokeBefore = now()
+  let strokeBefore: number[] | null = null
+  const stroke = (phase: 'start' | 'end') => {
+    if (phase === 'start') strokeBefore = map.selection
     else if (strokeBefore) {
-      commit(strokeBefore)
+      if (!sameSelection(strokeBefore, map.selection)) push({ before: strokeBefore, after: map.selection, settings: false })
       strokeBefore = null
     }
   }
 
-  function undo() {
+  // with nothing of this session left, the working copy's own history (edits from before a reload)
+  const undo = () => {
     const last = past.value.at(-1)
-    if (!last) return
+    if (!last) {
+      if (preview.canUndo) void preview.undo()
+      return
+    }
     past.value = past.value.slice(0, -1)
-    future.value = [...future.value, now()]
-    restore(last)
+    future.value = [...future.value, last]
+    map.selection = last.before
+    if (last.settings) void preview.undo()
   }
 
-  function redo() {
+  const redo = () => {
     const next = future.value.at(-1)
-    if (!next) return
+    if (!next) {
+      if (preview.canRedo) void preview.redo()
+      return
+    }
     future.value = future.value.slice(0, -1)
-    past.value = [...past.value, now()]
-    restore(next)
+    past.value = [...past.value, next]
+    map.selection = next.after
+    if (next.settings) void preview.redo()
   }
+
+  const canUndo = computed(() => past.value.length > 0 || preview.canUndo)
+  const canRedo = computed(() => future.value.length > 0 || preview.canRedo)
 
   watch(
     () => map.currentMap,
@@ -73,7 +98,7 @@ export const useHistoryStore = defineStore('history', () => {
     },
   )
 
-  return { past, future, change, stroke, undo, redo }
+  return { past, future, canUndo, canRedo, change, revert, preset, stroke, undo, redo }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useHistoryStore, import.meta.hot))

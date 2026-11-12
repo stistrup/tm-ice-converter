@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 internal static partial class BlockNames
 {

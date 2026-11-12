@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // what one item is made from
 internal sealed record ItemJob(Theme Theme, ItemRequest Request, ItemRecipe Recipe, BlockCatalog Catalog, ItemMaterials Materials, Matrix4x4 Tilt,

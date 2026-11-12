@@ -2,7 +2,7 @@ using GBX.NET;
 using GBX.NET.Engines.GameData;
 using GBX.NET.Engines.Meta;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // the game's item files
 public sealed partial class BlockCatalog

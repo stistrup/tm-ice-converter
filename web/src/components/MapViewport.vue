@@ -1,13 +1,12 @@
 <script setup lang="ts">
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMapStore } from '../stores/map'
-import { MapScene, type LookChange } from '../viewer/MapScene'
-import { iceMaterialName, lookPrefix, wallMaterials } from '../viewer/iceLook'
+import { MapScene } from '../viewer/MapScene'
+import { previewDraw } from '../viewer/previewDraw'
 import ConvertMenu from './ConvertMenu.vue'
 import ConvertDialog from './ConvertDialog.vue'
 import InspectPanel from './InspectPanel.vue'
 import { displayName } from '../viewer/names'
-import { outcomes } from '../viewer/outcomes'
 import { usePreviewStore } from '../stores/preview'
 import { useHistoryStore } from '../stores/history'
 import { useConvertStore } from '../stores/convert'
@@ -22,58 +21,18 @@ const preview = usePreviewStore()
 const history = useHistoryStore()
 const converting = useConvertStore()
 
-// changed pieces drawn as converted where their meshes exist (originals hidden), else in the converter's own materials;
-// what's left (swapped, sunk, removed without a mesh) keeps a colour
-async function showPreview() {
+const showPreview = async () => {
   const view = store.view
   if (!view) return
-  const groups = new Map<number, number[]>()
-  const changes: LookChange[] = []
   const result = preview.showOriginal ? null : preview.result
-  const hiddenBlocks = new Set(result?.hiddenBlocks)
-  const hiddenItems = new Set(result?.hiddenItems)
-  if (result)
-    preview.decisions?.forEach((decision, index) => {
-      const info = store.infos[index]
-      if (decision?.outcome === 'removed') {
-        changes.push({ index, materials: view.materialNames(index).map(() => view.ghostMaterial), topsOnly: false })
-        return
-      }
-      const real = typeof info?.block === 'number' ? hiddenBlocks.has(info.block) : typeof info?.item === 'number' && hiddenItems.has(info.item)
-      if (real) {
-        changes.push({ index, materials: view.materialNames(index).map(() => null), topsOnly: false })
-        return
-      }
-      if (!decision) return
-      const prefix = lookPrefix[decision.outcome]
-      if (prefix !== undefined) {
-        const topsOnly = decision.outcome === 'tops'
-        const block = displayName(store.infos[index])
-        const materials = view.materialNames(index).map((name) => {
-          if (!name || (topsOnly && !wallMaterials.has(name))) return undefined
-          const to = iceMaterialName(result.swaps, name, block, prefix)
-          if (to === undefined || to === 'native') return topsOnly ? null : undefined
-          if (to === '') return null
-          return result.looks[to] ? view.lookMaterial(result.looks[to]) : undefined
-        })
-        changes.push({ index, materials, topsOnly })
-        return
-      }
-      const color = outcomes[decision.outcome]?.color
-      if (color == null) return
-      const group = groups.get(color)
-      if (group) group.push(index)
-      else groups.set(color, [index])
-    })
-  const tints = [...groups].map(([color, indices]) => ({ color, indices }))
-  await view.showPreview(result ? { changed: preview.changed, looks: changes, tints } : null)
+  await view.showPreview(result ? previewDraw(view, result, preview.decisions ?? [], store.infos, preview.changed) : null)
   preview.lookVersion++
 }
 
 const hoverName = computed(() => (store.hovered === null ? '' : displayName(store.infos[store.hovered])))
 
-function createView() {
-  return markRaw(
+const createView = () =>
+  markRaw(
     new MapScene(canvas.value!, {
       hover: (index) => (store.hovered = index),
       select: (index, add) => history.change(() => store.pick(index, add)),
@@ -84,19 +43,18 @@ function createView() {
       cameraMoved: () => store.cameraMoves++,
     }),
   )
-}
 
 // only this viewport's own view: on a hot reload the new viewport mounts before the old one unmounts
 let ownView: MapScene | null = null
 
-function closeView() {
+const closeView = () => {
   if (!ownView) return
   ownView.dispose()
   if (store.view === ownView) store.view = null
   ownView = null
 }
 
-async function showScene(scene: typeof store.scene) {
+const showScene = async (scene: typeof store.scene) => {
   closeView()
   if (!scene) return
   canvasKey.value++
@@ -132,12 +90,12 @@ watch(() => store.selection, (selection) => store.view?.setSelection(selection))
 watch(() => preview.decisions, showPreview)
 watch(() => preview.showOriginal, showPreview)
 
-function onPointerMove(event: PointerEvent) {
+const onPointerMove = (event: PointerEvent) => {
   const rect = stage.value!.getBoundingClientRect()
   pointer.value = { x: event.clientX - rect.left, y: event.clientY - rect.top }
 }
 
-function onKey(event: KeyboardEvent) {
+const onKey = (event: KeyboardEvent) => {
   if (event.target instanceof HTMLInputElement && event.target.type !== 'checkbox') return
   if (event.key === 'Home') store.view?.frameAll()
   else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {

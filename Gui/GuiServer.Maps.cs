@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 using GBX.NET;
 using GBX.NET.Engines.Game;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // maps under Maps: lists, scenes, previews and their settings
 internal sealed partial class GuiServer
@@ -60,7 +60,7 @@ internal sealed partial class GuiServer
 
     // what a conversion names it by default (a name from its settings included)
     private static string OutputName(string map, string suffix = MapNames.DefaultSuffix)
-        => Gbx.ParseHeaderNode<CGameCtnChallenge>(map) is var header ? MapNames.DefaultOutput(header.MapName, RunLog.Default.NameOf(header.MapUid), suffix) : "";
+        => Gbx.ParseHeaderNode<CGameCtnChallenge>(map) is var header ? MapNames.DefaultOutput(header.MapName, SettingsStore.Default.NameOf(header.MapUid), suffix) : "";
 
     private async Task Scene(Call c)
     {
@@ -103,13 +103,43 @@ internal sealed partial class GuiServer
         catch (ConversionPreview.Superseded e) { throw new Refused(409, e.Message); }
     }
 
-    // POST body: { "settings": {…} | null }; null goes back to the defaults
-    private async Task SaveSettings(Call c)
+    // the map's working copy: POST /api/edit with { "settings": {…} } is one undoable step; undo, redo, save (working → saved), revert (→ saved, a step)
+    private async Task Document(Call c, Func<SettingsStore, string, DocumentState> act)
     {
         var map = MapFileOf(c);
-        var settings = SettingsIn(c.Body);
-        await Task.Run(() => preview.Save(map, settings)).ConfigureAwait(false);
-        await Text(c.Response, 200, "ok");
+        var state = await Task.Run(() =>
+        {
+            lock (documents) return act(SettingsStore.Default, Gbx.ParseHeaderNode<CGameCtnChallenge>(map).MapUid);
+        }).ConfigureAwait(false);
+        await Json(c.Response, state);
+    }
+
+    private readonly object documents = new();
+
+    private sealed record PresetAsk(string Preset, List<string>? Only);
+
+    // POST { "preset": name, "only": [piece keys] | null }: one step on the working copy; the map converts by picks from then on
+    private async Task ApplyPreset(Call c)
+    {
+        var map = MapFileOf(c);
+        var ask = Read<PresetAsk>(c.Body) ?? throw new Refused(400, "no preset named");
+        var preset = Preset.Load(dataDir).FirstOrDefault(p => p.Name == ask.Preset) ?? throw new Refused(404, "no such preset");
+        var uid = Gbx.ParseHeaderNode<CGameCtnChallenge>(map).MapUid;
+        DocumentState working;
+        lock (documents) working = SettingsStore.Default.Document(uid);
+        var only = ask.Only?.Select(PresetApply.Normal).ToHashSet();
+        JsonObject settings;
+        try { settings = await PresetRun.Apply(preview, map, new MapSettings(working.Settings), preset, only); }
+        catch (ConversionPreview.Superseded e) { throw new Refused(409, e.Message); }
+        DocumentState state;
+        lock (documents) state = SettingsStore.Default.Edit(uid, settings);
+        await Json(c.Response, state);
+    }
+
+    private Task Edit(Call c)
+    {
+        var settings = SettingsIn(c.Body) ?? new MapSettings([]);
+        return Document(c, (log, uid) => log.Edit(uid, settings.Json));
     }
 
     private static MapSettings? SettingsIn(byte[] body)

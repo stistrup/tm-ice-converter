@@ -3,7 +3,7 @@ using GBX.NET;
 using GBX.NET.Engines.GameData;
 using GBX.NET.Engines.Meta;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // trees a block prefab places are lost with its custom body; the environment's own vegetation items stand in
 public sealed class Vegetation(string gameData)

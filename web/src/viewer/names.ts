@@ -1,8 +1,8 @@
 import type { InstanceInfo } from '../api'
 
-// RoadTechCurve1, not IceConverter\gIce_RoadTechCurve1_Ice_BlueBay_none.Block.Gbx_CustomBlock
+// RoadTechCurve1, not SurfaceEditor\gIce_RoadTechCurve1_Ice_BlueBay_none.Block.Gbx_CustomBlock
 // '' for an index from the scene before (a hover can land while the next map loads)
-export function displayName(info: InstanceInfo | undefined): string {
+export const displayName = (info: InstanceInfo | undefined): string => {
   if (!info) return ''
   if (typeof info.sourceBlock === 'string') return info.sourceBlock
   return info.name.split('\\').pop()!.replace(/\.(Item|Block)\.gbx.*$/i, '')
@@ -27,9 +27,7 @@ const hints: Record<string, string> = {
   flags: 'Raw block flags from the map file: variant and mobil, plus bits such as ground, ghost and free placement',
 }
 
-function kindLabel(kind: string) {
-  return kind[0].toUpperCase() + kind.slice(1)
-}
+const kindLabel = (kind: string) => kind[0].toUpperCase() + kind.slice(1)
 
 // the editor's block colour (DifficultyColor); Default = as painted
 const colourNames = ['Default', 'White', 'Green', 'Blue', 'Red', 'Black']
@@ -39,7 +37,7 @@ const order = Object.keys(labels)
 const rank = (key: string) => (order.includes(key) ? order.indexOf(key) : order.length)
 const hiddenKeys = new Set(['placeholder', 'cell', 'position', 'direction', 'units', 'block', 'item'])
 
-export function infoRows(info: InstanceInfo): { key: string; label: string; value: string; hint?: string }[] {
+export const infoRows = (info: InstanceInfo): { key: string; label: string; value: string; hint?: string }[] => {
   return Object.entries(info)
     .filter(([key]) => !hiddenKeys.has(key))
     .filter(([key]) => key !== 'name' || displayName(info) !== info.name)

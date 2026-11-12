@@ -16,12 +16,12 @@ type Command =
 // once per page: a hot-reloaded App mounts again, and every extra event stream takes one of the browser's few connections
 let started = false
 
-export function startLiveLink() {
+export const startLiveLink = () => {
   if (started) return
   started = true
   const store = useMapStore()
 
-  function piece(index: number | null) {
+  const piece = (index: number | null) => {
     if (index === null || !store.infos[index]) return null
     const position = store.view?.positionOf(index)
     const size = store.view?.sizeOf(index)
@@ -36,7 +36,7 @@ export function startLiveLink() {
   }
 
   let timer = 0
-  function report() {
+  const report = () => {
     clearTimeout(timer)
     timer = window.setTimeout(() => {
       const state = {
@@ -55,7 +55,7 @@ export function startLiveLink() {
 
   watch(() => [store.currentMap, store.scene, store.selected, store.hovered, store.hidden, store.cameraMoves, store.view], report)
 
-  async function run(command: Command) {
+  const run = async (command: Command) => {
     if (command.type === 'shot') {
       if (!store.view) return
       const png = await (await fetch(store.view.capture())).blob()
@@ -90,7 +90,7 @@ export function startLiveLink() {
   // a server restart can leave the stream hanging open behind the Vite proxy, or closed for good: reconnect on silence
   let events: EventSource | null = null
   let heard = Date.now()
-  function connect() {
+  const connect = () => {
     events?.close()
     heard = Date.now()
     events = new EventSource('/api/events')

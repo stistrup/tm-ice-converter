@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using static TmIceConverter.CliArgs;
+using static TmSurfaceEditor.CliArgs;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 internal sealed class GuiCommand(string dataDir)
 {

@@ -1,8 +1,8 @@
 using GBX.NET;
 using GBX.NET.Engines.Game;
-using static TmIceConverter.CliArgs;
+using static TmSurfaceEditor.CliArgs;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // scan, compress, learn-clip-turns
 internal static class ToolCommands
@@ -61,5 +61,39 @@ internal static class ToolCommands
         var mixed = seen.Count(kv => kv.Value.Count > 1);
         Console.WriteLine($"{seen.Count} block/clip turns -> {ClipTurns.FilePath}{(mixed > 0 ? $"; {mixed} not unanimous (see the comments)" : "")}");
         return 0;
+    }
+}
+
+// mapdiff <a> <b>: blocks and items one map has and the other hasn't
+internal static class MapDiff
+{
+    public static int Run(string[] rest)
+    {
+        if (rest is [var one, "--dups"]) return Dups(one);
+        if (rest is not [var a, var b]) return CliArgs.Fail("mapdiff takes two maps");
+        var (left, right) = (Lines(a), Lines(b));
+        foreach (var line in left.Except(right)) Console.WriteLine($"- {line}");
+        foreach (var line in right.Except(left)) Console.WriteLine($"+ {line}");
+        if (left.Count != right.Count) Console.WriteLine($"{left.Count} vs {right.Count} entries");
+        else if (left.Index().FirstOrDefault(e => e.Item != right[e.Index]) is var (at, line) && line is not null)
+            Console.WriteLine($"same entries, order differs from #{at}: {line} | {right[at]}");
+        return 0;
+    }
+
+    // grid blocks sharing name and cell: one pick key for both
+    private static int Dups(string path)
+    {
+        var map = GBX.NET.Gbx.ParseNode<GBX.NET.Engines.Game.CGameCtnChallenge>(path);
+        foreach (var g in map.GetBlocks().Where(b => !b.IsFree).GroupBy(b => (b.Name, b.Coord)).Where(g => g.Count() > 1))
+            Console.WriteLine($"{g.Key.Name} {g.Key.Coord}: " + string.Join(" | ", g.Select(b => $"{b.Direction} flags {b.Flags:X}")));
+        return 0;
+    }
+
+    private static List<string> Lines(string path)
+    {
+        var map = GBX.NET.Gbx.ParseNode<GBX.NET.Engines.Game.CGameCtnChallenge>(path);
+        var blocks = map.GetBlocks().Select(x => $"block {x.Name} {x.Coord} {x.Direction} flags {x.Flags:X} colour {x.Color} at {x.AbsolutePositionInMap} ypr {x.YawPitchRoll}");
+        var items = (map.AnchoredObjects ?? []).Select(o => $"item {o.ItemModel.Id} at {o.AbsolutePositionInMap} ypr {o.PitchYawRoll} flags {o.Flags:X}");
+        return blocks.Concat(items).ToList();
     }
 }

@@ -1,9 +1,9 @@
 using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.Game;
-using static TmIceConverter.BlockFlags;
+using static TmSurfaceEditor.BlockFlags;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 internal static class ItemPlacer
 {

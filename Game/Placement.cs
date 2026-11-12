@@ -2,7 +2,7 @@ using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.Game;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 internal static class Placement
 {

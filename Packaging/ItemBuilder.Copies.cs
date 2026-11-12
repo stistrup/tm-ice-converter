@@ -1,7 +1,7 @@
 using GBX.NET;
 using GBX.NET.Engines.GameData;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // themed copies of placed items that drive on a replaced surface (mats, tubes, ramps)
 public sealed partial class ItemBuilder

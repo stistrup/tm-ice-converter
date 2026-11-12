@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // how each kind of item reads its block's meshes
 internal static class ItemExporters
@@ -25,7 +25,7 @@ internal static class ItemExporters
     }
 
     // the wall faces facing up, as Top would draw them
-    public static MeshExporter IcedTops(ItemJob job, GameFiles files)
+    public static MeshExporter ThemedTops(ItemJob job, GameFiles files)
         => new(files, job.Theme.Map("top:"))
             { KeepMaterial = BlockNames.IsWallMaterial, Up = job.Export.Up, KeepFace = n => FacesUp(n, job.Tilt), PlatformLayout = true };
 

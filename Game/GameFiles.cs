@@ -2,7 +2,7 @@ using GBX.NET;
 using GBX.NET.Engines.MwFoundations;
 using GBX.NET.Engines.Plug;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // the extracted game data: loads prefabs, remembers what's missing
 public sealed class GameFiles(string stadiumDir)

@@ -2,7 +2,7 @@ using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.Game;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // which clips the game shows: matching sides connect (no free clips), vertical clips need a pillar below,
 // full free clips replace deletable ones

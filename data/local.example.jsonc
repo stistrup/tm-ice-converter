@@ -1,4 +1,4 @@
-// the GUI's setup writes local.jsonc in the user folder from this (%LOCALAPPDATA%\TmIceConverter, ~/.local/share/TmIceConverter)
+// the GUI's setup writes local.jsonc in the user folder from this (%LOCALAPPDATA%\TmSurfaceEditor, ~/.local/share/TmSurfaceEditor)
 {
   "paths": {
     // Documents/Trackmania
@@ -9,7 +9,7 @@
     "game": "",
     // only needed on Linux
     "importerWinePrefix": "~/.local/share/tm-ice-wine",
-    // optional: caches and built pieces (default: the user's local app data, TmIceConverter)
+    // optional: caches and built pieces (default: the user's local app data, TmSurfaceEditor)
     "cache": "",
     // optional: where conversion runs and each map's settings are kept (default: settings/ in the user folder)
     "settings": ""

@@ -1,5 +1,5 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { cancelConvert, dismissConvert, fetchConvertJob, startConvert, type ConvertJob, type ConvertRequest } from '../api'
 import { useMapStore } from './map'
 
@@ -10,7 +10,7 @@ export const useConvertStore = defineStore('convert', () => {
   const inDialog = ref(false)
   let timer: ReturnType<typeof setTimeout> | undefined
 
-  async function poll() {
+  const poll = async () => {
     clearTimeout(timer)
     let now: ConvertJob | null
     try {
@@ -25,27 +25,34 @@ export const useConvertStore = defineStore('convert', () => {
     if (now?.state === 'running') timer = setTimeout(poll, 400)
   }
 
-  async function start(map: string, request: ConvertRequest) {
+  const start = async (map: string, request: ConvertRequest) => {
     job.value = await startConvert(map, request)
     inDialog.value = true
     void poll()
   }
 
-  async function cancel() {
+  const cancel = async () => {
     if (job.value?.state !== 'running') return
     await cancelConvert(job.value.id).catch(() => undefined)
     void poll()
   }
 
   // a finished one let go
-  async function dismiss() {
+  const dismiss = async () => {
     const id = job.value?.id
     job.value = null
     inDialog.value = false
     if (id) await dismissConvert(id).catch(() => undefined)
   }
 
-  return { job, inDialog, poll, start, cancel, dismiss }
+  const percent = computed(() => Math.round(job.value?.state === 'done' ? 100 : (job.value?.progress.percent ?? 0)))
+  const stepNow = computed(() => {
+    const p = job.value?.progress
+    if (!p || p.step < 0 || p.step >= p.stepNames.length) return p?.detail ?? 'Starting'
+    return `${p.stepNames[p.step]}${p.total ? ` ${p.done}/${p.total}` : ''}`
+  })
+
+  return { job, inDialog, percent, stepNow, poll, start, cancel, dismiss }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useConvertStore, import.meta.hot))

@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 public static partial class MapNames
 {

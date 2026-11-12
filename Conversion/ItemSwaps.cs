@@ -1,9 +1,9 @@
 using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.Game;
-using static TmIceConverter.Counts;
+using static TmSurfaceEditor.Counts;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 internal static class ItemSwaps
 {
@@ -14,16 +14,16 @@ internal static class ItemSwaps
         foreach (var item in run.Map.GetAnchoredObjects())
         {
             if (item.ItemModel is not { Author: "Nadeo" } model) continue;
-            if (run.Translations.Untouched(model.Id)) { Bump(run.Report.Untouched, model.Id); continue; }
+            if (run.DataRules.Untouched(model.Id)) { Bump(run.Report.Untouched, model.Id); continue; }
             var p = item.AbsolutePositionInMap;
             var at = new Vector3(p.X, p.Y, p.Z);
-            var picked = run.Rules.ChoiceAt(model.Id, at) ?? (run.Rules.Presets ? null : "keep");
+            var picked = run.Rules.ChoiceAt(model.Id, at) ?? (run.Rules.RulesOn ? null : "keep");
             if (picked == "remove" || picked is null && run.Rules.RemovesItem(model.Id, at)) { removed.Add(item); Bump(run.Report.RemovedByList, model.Id); }
             else if (picked == "keep" || picked is null && run.Rules.KeepsItem(model.Id)) Bump(run.Report.KeptByList, model.Id);
             else if (SwapTree(run, item, model, picked, snow)) { }
             else if (run.Items.ForItem(model.Id) is { } copy) PlaceCopy(run, item, model, copy, icedAt);
             else if (run.Items.Failures.ContainsKey(model.Id)) Bump(run.Report.ItemsNotConverted, model.Id);
-            else if (snow.Under(at) && FlushWithIce(run, item, snow))
+            else if (snow.Under(at) && FlushWithSurface(run, item, snow))
             {
                 item.AbsolutePositionInMap = p with { Y = p.Y - FlushSink };
                 Bump(run.Report.Sunk, model.Id);
@@ -40,9 +40,9 @@ internal static class ItemSwaps
             => table.TryGetValue($"{run.Map.Collection}:{model.Id}", out to!) || table.TryGetValue(model.Id, out to!);
         var (trees, frozen) = (run.Rules.Options.ConvertTrees || picked == "frozen", picked == "frozen");
         var to = "";
-        var always = trees && Find(run.Translations.Items, out to);
+        var always = trees && Find(run.DataRules.Items, out to);
         var p = item.AbsolutePositionInMap;
-        if (!((always || trees && Find(run.Translations.ItemsOnSnow, out to)) && VariantSwap(run, item, to) is var (target, variant)
+        if (!((always || trees && Find(run.DataRules.ItemsOnCover, out to)) && VariantSwap(run, item, to) is var (target, variant)
             && (always || frozen || snow.Touches(new Vector3(p.X, p.Y, p.Z), TreeHeight(target))))) return false;
         item.ItemModel = model with { Id = target, Collection = new Id(26) }; // Stadium2020
         item.Flags = (short)(item.Flags & ~VariantBits | variant << 8);
@@ -60,12 +60,12 @@ internal static class ItemSwaps
         if (stacked > 0) item.AbsolutePositionInMap = p with { Y = p.Y + 0.01f * stacked };
         item.ItemModel = copy.Ident;
         run.Report.UsedItems.Add(copy);
-        Bump(run.Report.IcedItems, model.Id);
+        Bump(run.Report.ThemedItems, model.Id);
     }
 
     // a tree on snow: what it freezes to, "<Env>:<Item>" first
-    public static string? SnowSwap(ConversionRun run, string id)
-        => new[] { run.Translations.Items, run.Translations.ItemsOnSnow }.SelectMany(t => new[] { t.GetValueOrDefault($"{run.Map.Collection}:{id}"), t.GetValueOrDefault(id) })
+    public static string? CoverSwap(ConversionRun run, string id)
+        => new[] { run.DataRules.Items, run.DataRules.ItemsOnCover }.SelectMany(t => new[] { t.GetValueOrDefault($"{run.Map.Collection}:{id}"), t.GetValueOrDefault(id) })
             .FirstOrDefault(t => t is not null);
 
     // placed item's variant index in its variant list
@@ -78,8 +78,8 @@ internal static class ItemSwaps
         var index = (item.Flags & VariantBits) >> 8;
         if (index >= from.Count) return null;
         var own = from[index];
-        if (run.Translations.Items.TryGetValue($"{run.Map.Collection}:{own}", out var t) || run.Translations.Items.TryGetValue(own, out t)
-            || run.Translations.ItemsOnSnow.TryGetValue($"{run.Map.Collection}:{own}", out t) || run.Translations.ItemsOnSnow.TryGetValue(own, out t))
+        if (run.DataRules.Items.TryGetValue($"{run.Map.Collection}:{own}", out var t) || run.DataRules.Items.TryGetValue(own, out t)
+            || run.DataRules.ItemsOnCover.TryGetValue($"{run.Map.Collection}:{own}", out t) || run.DataRules.ItemsOnCover.TryGetValue(own, out t))
             return (t, 0);
         if (!own.EndsWith(".Prefab") || run.Shapes.ItemVariants(to) is not { } into) return null;
         var cluster = into.FindIndex(v => v.EndsWith(".Prefab") && ClusterLetter(v) == ClusterLetter(own));
@@ -103,7 +103,7 @@ internal static class ItemSwaps
     // flat top flush with ice flickers: sink it
     private const float FlushSink = 0.02f;
 
-    private static bool FlushWithIce(ConversionRun run, CGameCtnAnchoredObject item, CoverSurfaces snow)
+    private static bool FlushWithSurface(ConversionRun run, CGameCtnAnchoredObject item, CoverSurfaces snow)
     {
         var id = item.ItemModel.Id;
         var key = $"{run.Shapes.Environment}:{id}";

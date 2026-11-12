@@ -6,7 +6,7 @@ using GBX.NET.Engines.MwFoundations;
 using GBX.NET.Engines.Plug;
 using GBX.NET.Serialization.Chunking;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 public sealed record BuiltBlock(Ident Ident, string FilePath);
 

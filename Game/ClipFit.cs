@@ -1,7 +1,7 @@
 using System.Numerics;
 using GBX.NET.Engines.Game;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // how the game turns a clip isn't in the data: fit its mesh to the block
 internal sealed class ClipFit(string stadiumDir)

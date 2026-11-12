@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // Bit = unit * 6 + side; Probe lands in the facing cell
 public sealed record ClipSide(int Bit, Vector3 Probe)

@@ -9,16 +9,14 @@ const steps = computed(() => setup.status?.steps ?? [])
 const editable = new Set(['game', 'trackmania', 'openplanet', 'blender'])
 const marks = { ok: '✓', todo: '•', wait: '–', running: '…' }
 
-function others(step: SetupStep) {
-  return (step.found ?? []).filter((f) => f !== step.path)
-}
+const others = (step: SetupStep) => (step.found ?? []).filter((f) => f !== step.path)
 
-function save(step: SetupStep, event: Event) {
+const save = (step: SetupStep, event: Event) => {
   const value = (event.target as HTMLInputElement).value.trim()
   if (value && value !== step.path) void setup.setPath(step.id, value)
 }
 
-function act(step: SetupStep) {
+const act = (step: SetupStep) => {
   void setup.act(step.id === 'extract' && step.state === 'running' ? 'extract-stop' : (step.actionId ?? step.id))
 }
 </script>
@@ -26,7 +24,7 @@ function act(step: SetupStep) {
 <template>
   <div :class="$style.page">
     <div :class="$style.panel">
-      <header :class="$style.header">Ice Converter setup</header>
+      <header :class="$style.header">Surface Editor setup</header>
       <p v-if="setup.lost" :class="$style.error">The converter isn't responding; start it again</p>
       <p v-else-if="setup.error" :class="$style.error">{{ setup.error }}</p>
       <ol :class="$style.steps">

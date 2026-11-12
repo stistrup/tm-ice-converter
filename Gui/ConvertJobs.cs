@@ -1,4 +1,4 @@
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // the GUI's conversion: one at a time in the background; the page polls it and finds it again after a reload
 internal sealed class ConvertJobs(ConvertCommand convert, ConversionPreview preview)

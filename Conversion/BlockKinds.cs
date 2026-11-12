@@ -1,8 +1,8 @@
 using GBX.NET;
 using GBX.NET.Engines.Game;
-using static TmIceConverter.BlockFlags;
+using static TmSurfaceEditor.BlockFlags;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // what a block is, for the rules
 internal static class BlockKinds

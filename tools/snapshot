@@ -8,7 +8,7 @@ maps=$1 dir=$2
 rm -rf "$dir/now"
 mkdir -p "$dir/now"
 dotnet build "$root" -c Release -v q --nologo >/dev/null
-dotnet "$root/bin/Release/net10.0/TmIceConverter.dll" convert "$maps" --folder "$(readlink -f "$dir")/now" --fake-author-time --me-as-author --rebuild-blocks > "$dir/now.log" 2>&1
+dotnet "$root/bin/Release/net10.0/TmSurfaceEditor.dll" convert "$maps" --folder "$(readlink -f "$dir")/now" --fake-author-time --me-as-author --rebuild-blocks > "$dir/now.log" 2>&1
 hashes=$(cd -- "$dir/now" && sha256sum -- * | sort -k2)
 if [ ! -f "$dir/baseline.sha" ]; then
     printf '%s\n' "$hashes" > "$dir/baseline.sha"

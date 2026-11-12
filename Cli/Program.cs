@@ -1,11 +1,12 @@
 using GBX.NET;
 using GBX.NET.LZO;
 using GBX.NET.ZLib;
-using TmIceConverter;
+using TmSurfaceEditor;
 
 Gbx.LZO = new Lzo();
 Gbx.ZLib = new ZLib();
 
+Paths.MoveOldUserData();
 var dataDir = FindDataDir();
 Paths.LocalExample = Path.Combine(dataDir, "local.example.jsonc");
 Paths.Data = dataDir;
@@ -20,6 +21,10 @@ switch (args)
         return new GuiCommand(dataDir).Run(rest);
     case ["convert", .. var rest]:
         return new ConvertCommand(dataDir).Run(rest);
+    case ["mapdiff", .. var rest]:
+        return MapDiff.Run(rest);
+    case ["picks", .. var rest]:
+        return PicksCommand.Run(dataDir, rest);
     case ["runs", .. var rest]:
         return new RunsCommand().Runs(rest);
     case ["settings", .. var rest]:
@@ -54,6 +59,10 @@ switch (args)
                   The conversions of this map and which settings a convert would use now.
               settings <map.Gbx> [saved | seed | <run id>]
                   Print settings as JSON (default: what a convert would use); fields that don't read are listed.
+              picks <map.Gbx> [settings file] --out <file>
+                  Run the map's rules once and write what they do as conversion targets alone ("rules": false).
+              mapdiff <a.Gbx> <b.Gbx> | <map.Gbx> --dups
+                  Blocks and items one map has and the other hasn't (or their order); --dups lists blocks sharing name and cell.
               scan [folder]...
                   Add block names from maps to data/known-blocks.txt (native ice blocks are used once seen there or extracted).
               make-item <BlockName>
@@ -63,7 +72,7 @@ switch (args)
               view <map.Gbx> [-o <out dir>] [--no-render]
                   Build a textured Blender scene of a map (.blend to fly around in) and render a few views.
               inspect <map.Gbx | view dir> [-o <out dir>]
-                  Open a map's scene in Blender with the Ice inspector (sidebar, Tool tab): what each block/item is, marks with notes
+                  Open a map's scene in Blender with the inspector (sidebar, Tool tab): what each block/item is, marks with notes
                   (saved to marks.json in the view dir), filter by name. A map is rebuilt first; a view dir opens as is.
 
               clipcheck <map.Gbx | folder>... [-v <kind>]
@@ -83,7 +92,7 @@ switch (args)
 static string FindDataDir()
 {
     for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
-        if (File.Exists(Path.Combine(dir.FullName, "TmIceConverter.csproj")))
+        if (File.Exists(Path.Combine(dir.FullName, "TmSurfaceEditor.csproj")))
             return Path.Combine(dir.FullName, "data");
     return Path.Combine(AppContext.BaseDirectory, "data");
 }

@@ -1,7 +1,7 @@
 using System.Numerics;
 using GBX.NET.Engines.Plug;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // the road's side faces under its borders
 internal sealed class Lips

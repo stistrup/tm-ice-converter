@@ -2,7 +2,7 @@ using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.Plug;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // raw vertex data and material names out of the game's mesh nodes
 internal static class MeshData

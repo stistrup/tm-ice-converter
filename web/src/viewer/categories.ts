@@ -14,7 +14,7 @@ export const categoryLabels: Record<Category, string> = {
 
 const terrainNames = /^(Dirt|Water|DecoLake|DecoTerrain|Land|Beach|Sea)/
 
-export function categoryOf(info: InstanceInfo): Category {
+export const categoryOf = (info: InstanceInfo): Category => {
   if (info.units || info.placeholder) {
     return info.units && terrainNames.test(info.name) ? 'terrain' : 'missing'
   }

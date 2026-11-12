@@ -4,36 +4,32 @@ import { useMapStore } from '../stores/map'
 import { usePreviewStore } from '../stores/preview'
 import { displayName, infoRows } from '../viewer/names'
 import { outcomeLabel } from '../viewer/outcomes'
-import ManualConvert from './ManualConvert.vue'
+import TargetChoice from './TargetChoice.vue'
 import PiecePicture from './PiecePicture.vue'
 
 const store = useMapStore()
 const preview = usePreviewStore()
 
-
 const info = computed(() => (store.selected === null ? null : store.infos[store.selected]))
 
 const becomes = computed(() => {
   const decision = store.selected === null ? undefined : preview.decisions?.[store.selected]
-  return decision && { label: outcomeLabel(decision.outcome) + (decision.picked ? ' (manual)' : ''), rule: decision.rule }
+  return decision && { label: outcomeLabel(decision.outcome) + (decision.picked ? ' (target)' : ''), rule: decision.rule }
 })
 
-
 // instances come first in store.infos; boxes and cones have no pieces
-const mesh = computed(() => {
+const materials = computed(() => {
   const manifest = store.scene?.manifest
   if (!manifest || store.selected === null || store.selected >= manifest.instances.length) return null
   const { pieces } = manifest.meshes[manifest.instances[store.selected].mesh]
-  return {
-    materials: [...new Set(pieces.map((piece) => manifest.materials[piece.material].name))].sort(),
-  }
+  return [...new Set(pieces.map((piece) => manifest.materials[piece.material].name))].sort()
 })
 
 // everything about the piece, one line each, behind the (i) by its name
 const details = computed(() => {
   if (!info.value) return ''
   const lines = infoRows(info.value).map((row) => `${row.label}: ${row.value}`)
-  if (mesh.value) lines.push('', 'Materials:', ...mesh.value.materials.map((m) => `  ${m}`))
+  if (materials.value) lines.push('', 'Materials:', ...materials.value.map((m) => `  ${m}`))
   return lines.join('\n')
 })
 </script>
@@ -51,14 +47,10 @@ const details = computed(() => {
         <span :class="$style.info" :title="details" aria-label="Properties">i</span>
       </h2>
       <dl v-if="becomes" :class="$style.properties">
-        <template v-if="becomes">
-          <dt :title="becomes.rule ? `decided by rule ${becomes.rule}` : undefined" :class="{ [$style.hinted]: becomes.rule }">
-            Becomes
-          </dt>
-          <dd>{{ becomes.label }}</dd>
-        </template>
+        <dt :title="becomes.rule ? `decided by rule ${becomes.rule}` : undefined" :class="{ [$style.hinted]: becomes.rule }">Becomes</dt>
+        <dd>{{ becomes.label }}</dd>
       </dl>
-      <ManualConvert :class="$style.manual" />
+      <TargetChoice :class="$style.manual" />
     </div>
   </aside>
 </template>

@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 internal sealed partial class SurfaceParents(HashSet<string> knownBlocks, BlockCatalog shapes)
 {

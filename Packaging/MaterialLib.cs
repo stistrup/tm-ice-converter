@@ -2,7 +2,7 @@ using System.Text.RegularExpressions;
 using GBX.NET;
 using GBX.NET.Engines.Plug;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // NadeoImporterMaterialLib.txt and the game's own materials
 internal static class MaterialLib

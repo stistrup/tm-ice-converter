@@ -1,9 +1,9 @@
 using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.Game;
-using static TmIceConverter.BlockFlags;
+using static TmSurfaceEditor.BlockFlags;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // converted surfaces, to tell if an item is on ice
 internal sealed class CoverSurfaces
@@ -50,10 +50,10 @@ internal sealed class CoverSurfaces
     public bool Touches(Vector3 root, float height)
     {
         var hs = Heights(root).ToList();
-        return hs.Any(h => h >= root.Y - ReachBelow && h <= root.Y + OnIce) && !hs.Any(h => h > root.Y + OnIce && h <= root.Y + height);
+        return hs.Any(h => h >= root.Y - ReachBelow && h <= root.Y + OnSurface) && !hs.Any(h => h > root.Y + OnSurface && h <= root.Y + height);
     }
 
-    private const float OnIce = 0.5f;
+    private const float OnSurface = 0.5f;
 
     public bool Flush(Vector3 p) => Heights(p).Any(h => MathF.Abs(h - p.Y) <= 0.02f);
 

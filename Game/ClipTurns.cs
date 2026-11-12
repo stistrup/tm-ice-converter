@@ -3,7 +3,7 @@ using System.Text;
 using GBX.NET;
 using GBX.NET.Engines.Game;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // how the game turns a block type's top/bottom clips (per clip slot), in quarter turns on top of the block's direction;
 // learned from the clips the game baked into maps

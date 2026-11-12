@@ -1,10 +1,10 @@
 using System.Text.RegularExpressions;
 using GBX.NET;
 using GBX.NET.Engines.Game;
-using static TmIceConverter.BlockFlags;
-using static TmIceConverter.Counts;
+using static TmSurfaceEditor.BlockFlags;
+using static TmSurfaceEditor.Counts;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 internal delegate bool BlockRule(CGameCtnBlock block, ConversionRun run);
 
@@ -13,12 +13,13 @@ internal static partial class BlockRules
 {
     private static readonly BlockRule[] Rules =
     [
-        CoverRules.UnderSnowedGameplay,
+        CoverRules.UnderCoveredGameplay,
+        // only sets a pillar in a snowed column into the air, picked or not
+        CoverRules.PillarOnCover,
         Picked,
         Gates.EngineOff,
         AlreadyThemed,
         OnKeepList,
-        CoverRules.PillarOnSnow,
         Pillar,
         CoverRules.TerrainCell,
         TerrainStays,
@@ -43,6 +44,13 @@ internal static partial class BlockRules
     public static readonly HashSet<string> SceneryRules =
         [nameof(Pillar), nameof(Concrete), nameof(WallsOnly), nameof(NoItemWanted), nameof(DecoSceneryOff), nameof(CoverRules.DecoInTerrain), nameof(CoverOverTwin)];
 
+    // for PresetApply
+    public static readonly HashSet<string> TopsRules = [nameof(NoItemWanted), nameof(Concrete), nameof(WallsOnly), nameof(Pillar), nameof(AlreadyThemed)];
+    public static readonly HashSet<string> CoverColumnRules = [nameof(CoverRules.TerrainCell), nameof(CoverRules.DecoInTerrain)];
+    public const string CoverOverTwinRule = nameof(CoverOverTwin);
+    public const string SwapTableRule = nameof(SwapTable);
+    public const string CustomBlockRule = nameof(CustomBlock);
+
     public static void Decide(CGameCtnBlock block, ConversionRun run)
     {
         foreach (var rule in Rules)
@@ -53,38 +61,58 @@ internal static partial class BlockRules
             }
     }
 
-    // chosen per piece ("pieces" in the map's settings, the GUI); snow goes through the snowTerrain areas, plain renames and lets the rules go on
+    // each pick goes the way its rule would; snow goes through the snow columns, plain renames and lets the rules go on
     private static bool Picked(CGameCtnBlock block, ConversionRun run)
     {
-        switch (run.Rules.PieceChoice(block))
+        var choice = run.Rules.PieceChoice(block);
+        // picks only: engine-off renames first, as the rules do
+        if (!run.Rules.RulesOn && !block.Name.StartsWith("Gate")) Gates.EngineOff(block, run);
+        switch (choice)
         {
             case "keep":
                 Bump(run.Report.KeptByList, block.Name);
                 return true;
             case "custom":
-                return BuildCustom(block, run) || AsItem(block, run);
+                return BuildCustom(block, run) || SkinRules.OnGround(block, run) || AsItem(block, run);
             case "item":
                 return AsItem(block, run);
             case "skin":
-                SkinRules.Skin(block, run, block.IsGround ? ItemKind.None : ItemKind.Skin);
+                SkinRules.Skin(block, run, run.InTerrain(block) ? ItemKind.InTerrain : block.IsGround ? ItemKind.None : ItemKind.Skin);
                 return true;
             case "tops":
-                TopsOnly(block, run);
+                if (!AlreadyThemed(block, run)) TopsOnly(block, run);
                 return true;
-            case "snow" when CoverRules.PickedSnow(block, run):
+            case "twin":
+                return NativeTwin(block, run) || Kept(block, run);
+            case "table":
+                return SwapTable(block, run) || Kept(block, run);
+            case "twincover":
+                return CoverOverTwin(block, run, always: true) || Kept(block, run);
+            case "gate":
+                return Gates.EffectOnGate(block, run, always: true) || Kept(block, run);
+            case "remove" when block.Name.StartsWith("Gate"):
+                run.EngineOffGates.Add(block);
+                Bump(run.Report.EngineOff, (block.Name, ""));
+                return true;
+            case "snow" when CoverRules.PickedCover(block, run):
                 return true;
             case "plain" when Gates.PlainOf(block.Name, run) is { } plain:
                 block.Name = plain;
                 return false;
             // presets off: only a picked snow column changes an unpicked block
-            case null when !run.Rules.Presets:
+            case null when !run.Rules.RulesOn:
                 if (CoverRules.TerrainCell(block, run) || CoverRules.DecoInTerrain(block, run)) return true;
-                CoverRules.PillarOnSnow(block, run);
                 Bump(run.Report.KeptByList, block.Name);
                 return true;
             default:
                 return false;
         }
+    }
+
+    private static bool Kept(CGameCtnBlock block, ConversionRun run)
+    {
+        Bump(run.Report.KeptByList, block.Name);
+        return true;
     }
 
     private static bool AlreadyThemed(CGameCtnBlock block, ConversionRun run)
@@ -140,7 +168,7 @@ internal static partial class BlockRules
     private static bool IgnoredPrefix(CGameCtnBlock block, ConversionRun run) => run.Rules.IgnorePrefixes.Any(block.Name.StartsWith);
 
     private static bool Available(string name, ConversionRun run)
-        => run.KnownBlocks.Contains(name) && run.Translations.IsAvailable(name, run.Collection) && run.Shapes.EnvironmentHas(name) != false;
+        => run.KnownBlocks.Contains(name) && run.DataRules.IsAvailable(name, run.Collection) && run.Shapes.EnvironmentHas(name) != false;
 
     private static bool NativeTwin(CGameCtnBlock block, ConversionRun run)
     {
@@ -190,10 +218,13 @@ internal static partial class BlockRules
     }
 
     // only a block keeps the ground away; grass grows through a skin on deco, not on ice
-    private static bool CoverOverTwin(CGameCtnBlock block, ConversionRun run)
+    private static bool CoverOverTwin(CGameCtnBlock block, ConversionRun run) => CoverOverTwin(block, run, always: false);
+
+    // always: picked, whatever the option says
+    private static bool CoverOverTwin(CGameCtnBlock block, ConversionRun run, bool always)
     {
         var name = block.Name;
-        if (!(block.IsGround || run.InTerrain(block)) || !BlockNames.IsWholeOnGround(name, run.Collection) || !run.Rules.Options.SnowOnGroundDeco) return false;
+        if (!(block.IsGround || run.InTerrain(block)) || !BlockNames.IsWholeOnGround(name, run.Collection) || !(always || run.Rules.Options.SnowOnGroundDeco)) return false;
         if (run.Items.Theme.BlockWord is not { } word) return false;
         var twin = "Platform" + word + name["DecoPlatform".Length..];
         if (!Available(twin, run) || !ItemPlacer.Place(run, block, run.Variant(block), run.Clips(block), ItemKind.OverTwin)) return false;

@@ -1,10 +1,10 @@
 using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.Game;
-using static TmIceConverter.BlockFlags;
-using static TmIceConverter.Counts;
+using static TmSurfaceEditor.BlockFlags;
+using static TmSurfaceEditor.Counts;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // engine-off blocks and effects moved onto gates
 internal static class Gates
@@ -51,9 +51,12 @@ internal static class Gates
     }
 
     // keep for the effect, ice around the pad
-    public static bool EffectOnGate(CGameCtnBlock block, ConversionRun run)
+    public static bool EffectOnGate(CGameCtnBlock block, ConversionRun run) => EffectOnGate(block, run, always: false);
+
+    // always: picked, whatever the option says
+    public static bool EffectOnGate(CGameCtnBlock block, ConversionRun run, bool always)
     {
-        if (!run.Rules.Options.EffectsToGate || GateEffect(block.Name) is not { } effect || block.IsFree || !GateOn(run, block, effect, run.Variant(block), run.Clips(block))) return false;
+        if (!(always || run.Rules.Options.EffectsToGate) || GateEffect(block.Name) is not { } effect || block.IsFree || !GateOn(run, block, effect, run.Variant(block), run.Clips(block))) return false;
         run.Replaced.Add(block);
         return true;
     }

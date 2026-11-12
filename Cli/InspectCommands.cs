@@ -1,8 +1,8 @@
 using GBX.NET;
 using GBX.NET.Engines.Game;
-using static TmIceConverter.CliArgs;
+using static TmSurfaceEditor.CliArgs;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // show, view, inspect, clipcheck
 internal sealed class InspectCommands(string dataDir)

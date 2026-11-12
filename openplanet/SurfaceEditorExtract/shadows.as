@@ -61,7 +61,7 @@ void RunShadows()
     string folder = S_ShadowFolder.Trim();
     string dir = IO::FromUserGameFolder("Maps/" + folder);
     if (folder.Length == 0 || !IO::FolderExists(dir)) {
-        UI::ShowNotification("Ice Converter", "Pick a folder in the plugin settings (Shadow folder) first");
+        UI::ShowNotification("Surface Editor", "Pick a folder in the plugin settings (Shadow folder) first");
         g_running = false;
         return;
     }
@@ -82,7 +82,7 @@ void RunShadows()
     }
     BackToMenu();
     print("SHADOWS DONE computed=" + done + " skipped=" + skipped + " failed=" + failed);
-    UI::ShowNotification("Ice Converter", "Shadows: " + done + " computed, " + skipped + " skipped, " + failed + " failed");
+    UI::ShowNotification("Surface Editor", "Shadows: " + done + " computed, " + skipped + " skipped, " + failed + " failed");
     g_running = false;
 }
 

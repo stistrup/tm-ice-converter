@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 internal sealed record ItemMeshResult(List<MeshPiece> Pieces, string? Waypoint, BlockCatalog Catalog, string? Error = null);
 
@@ -9,34 +9,32 @@ internal sealed class ItemMesh(Theme theme, HashSet<string> missing)
 {
     public const string NothingToCover = "nothing to cover";
 
-    private const float TopOfIceMinArea = 256;
+    private const float TopOfTwinMinArea = 256;
     // m; was 0.3 with the whole bank in snow
     private const float CoverUnderWater = 0.1f;
     // m above flat ground where the snow stops up a slope
     private const float CoverLip = 0.3f;
 
-    // each step skips what isn't its kind; null: nothing to cover
+    // a step skips blocks it doesn't apply to; null: nothing to cover
     private delegate List<MeshPiece>? Step(List<MeshPiece> pieces, ItemJob job);
 
-    // the order is the logic
-    private Step[] Steps =>
-    [
-        WithIcedTops,
-        WithoutFoot,
-        WithoutLayerMasks,
-        CoverTerrain,
-        WithPads,
-        WithoutKeptNativeFaces,
-        TerrainOrRest,
-        CoverGround,
-        WithNativeLinks,
-    ];
+    // each kind's steps, in order. Two families: surfaces (skins, tops, plain items) and ground bodies, which differ in one step
+    private Step[] PipelineFor(ItemKind kind) => kind switch
+    {
+        ItemKind.GroundBody or ItemKind.TerrainFaces => [WithoutLayerMasks, WithPads, TerrainOrRest, WithNativeLinks],
+        ItemKind.StackedBody => [WithoutLayerMasks, WithPads, WithoutKeptNativeFaces, WithNativeLinks],
+        ItemKind.CoveredTerrain => [WithoutLayerMasks, CoverTerrain, WithPads, TerrainOrRest, WithNativeLinks],
+        ItemKind.CoveredGround => [WithoutLayerMasks, WithPads, TerrainOrRest, CoverGround, WithNativeLinks],
+        // a body only on the ground
+        ItemKind.TopsBody or ItemKind.TopOfTwinBody => [WithThemedTops, WithoutLayerMasks, WithPads, TerrainOrRest, WithNativeLinks],
+        _ => [WithoutFoot, WithPads, WithNativeLinks],
+    };
 
     public ItemMeshResult Make(ItemRequest r)
     {
         var job = ItemJob.For(r, theme);
         var pieces = Drawn(job);
-        foreach (var step in Steps)
+        foreach (var step in PipelineFor(job.Kind))
         {
             if (step(pieces, job) is not { } next) return Stop(job, NothingToCover);
             pieces = next;
@@ -57,7 +55,7 @@ internal sealed class ItemMesh(Theme theme, HashSet<string> missing)
     {
         if (pieces.Count == 0 && job.Catalog.Missing.Count > 0) return "its prefab isn't extracted yet";
         if (pieces.Count == 0) return job.Recipe.Top || job.Recipe.Skin && job.Gameplay ? NothingToCover : "no geometry found";
-        if (job.Kind == ItemKind.TopOfTwin && VisibleArea(pieces) < TopOfIceMinArea) return NothingToCover;
+        if (job.Kind == ItemKind.TopOfTwin && VisibleArea(pieces) < TopOfTwinMinArea) return NothingToCover;
         return null;
     }
 
@@ -68,13 +66,12 @@ internal sealed class ItemMesh(Theme theme, HashSet<string> missing)
     private static float VisibleArea(List<MeshPiece> pieces) => pieces.Where(p => p.Visible).Sum(PieceOps.Area);
 
     // wall faces up iced as placed, the rest as sides; null: too little faces up
-    private List<MeshPiece>? WithIcedTops(List<MeshPiece> pieces, ItemJob job)
+    private List<MeshPiece>? WithThemedTops(List<MeshPiece> pieces, ItemJob job)
     {
-        if (!job.Recipe.TopsBody) return pieces;
         var topFiles = new GameFiles(Paths.ExtractedStadium);
-        var iced = ItemExporters.IcedTops(job, topFiles).Export(job.Parts);
+        var iced = ItemExporters.ThemedTops(job, topFiles).Export(job.Parts);
         var area = VisibleArea(iced);
-        if (area == 0 || job.Kind == ItemKind.TopOfTwinBody && area < TopOfIceMinArea) return null;
+        if (area == 0 || job.Kind == ItemKind.TopOfTwinBody && area < TopOfTwinMinArea) return null;
         lock (missing) missing.UnionWith(topFiles.Missing);
         var sides = ItemExporters.Sides(job).Export(job.Parts);
         return [.. pieces, .. sides.Select(p => p with { Name = p.Name + "_side" }), .. iced.Select(p => p with { Name = p.Name + "_top" })];
@@ -83,7 +80,7 @@ internal sealed class ItemMesh(Theme theme, HashSet<string> missing)
     private static List<MeshPiece> WithoutFoot(List<MeshPiece> pieces, ItemJob job)
     {
         var r = job.Request;
-        if (r.Style.TerrainSnow || !ItemRecipe.OnTerrain(r.Block, r.Ground, r.Kind)) return pieces;
+        if (r.Style.TerrainCover || !ItemRecipe.OnTerrain(r.Block, r.Ground, r.Kind)) return pieces;
         return PieceOps.WithoutFoot(pieces, job.Theme);
     }
 
@@ -97,8 +94,7 @@ internal sealed class ItemMesh(Theme theme, HashSet<string> missing)
     // shores down to the water, the rest its ground (flat ground, a hill's or cliff's foot); drives as it looks
     private static List<MeshPiece> CoverTerrain(List<MeshPiece> pieces, ItemJob job)
     {
-        if (job.Kind != ItemKind.CoveredTerrain) return pieces;
-        var (keep, cover) = (job.Request.SnowKeep, job.Theme.Cover);
+        var (keep, cover) = (job.Request.CoverKeep, job.Theme.Cover);
         pieces = TerrainFaces.AsTerrainBelow(pieces, job.Environment);
         if (WaterLine(pieces) is { } line) return PieceOps.CoverAboveCollision(PieceOps.CoverAbove(pieces, line, cover, keep), line, cover, keep);
         // the ground in snow, up to the lip where it climbs; none on top yet
@@ -117,14 +113,13 @@ internal sealed class ItemMesh(Theme theme, HashSet<string> missing)
     // the kept native block under it draws these
     private static List<MeshPiece> WithoutKeptNativeFaces(List<MeshPiece> pieces, ItemJob job)
     {
-        if (!job.Recipe.Stacked) return pieces;
         return pieces.Where(p => !job.IsTerrainFace(p) && !p.Material.StartsWith("Deco")).ToList();
     }
 
     // terrain shaders light by position over the whole lightmap, the road's part too: visible terrain goes to its own item
     private static List<MeshPiece>? TerrainOrRest(List<MeshPiece> pieces, ItemJob job)
     {
-        if (job.Recipe.Stacked || !job.Recipe.OnTerrainBody) return pieces;
+        if (!job.Recipe.OnTerrainBody) return pieces;
         var terrainItem = job.Recipe.TerrainFaces;
         pieces = pieces.Where(p => !p.Visible || job.IsTerrainFace(p) == terrainItem).ToList();
         pieces = TerrainFaces.AsTerrainBelow(pieces, job.Environment);
@@ -136,7 +131,6 @@ internal sealed class ItemMesh(Theme theme, HashSet<string> missing)
     // a ground body holding water (a lake): its terrain above the water in snow, like a shore; rocks and the rest stay
     private static List<MeshPiece> CoverGround(List<MeshPiece> pieces, ItemJob job)
     {
-        if (job.Kind != ItemKind.CoveredGround) return pieces;
         // the kept native gate draws its curtain
         pieces = pieces.Where(p => !p.Material.Contains("TriggerFX")).ToList();
         if (WaterLine(pieces) is not { } line) return pieces;

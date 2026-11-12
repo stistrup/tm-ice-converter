@@ -1,8 +1,8 @@
 using System.Text;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
-// the .report.md next to a converted map
+// .report.md, kept with its run
 internal static class ReportWriter
 {
     public static string Format(string source, ConversionReport report, IReadOnlyDictionary<string, string> itemFailures)
@@ -56,19 +56,19 @@ internal static class ReportWriter
             "The block's visible terrain sits in an item beside its custom block: in the block, its light darkened the road after shadows.");
         Below(sb, "Scenery kept native", report.SceneryKept, Rows(report.SceneryKept, sorted: true),
             "convertScenery is off: deco blocks, pillars, concrete and walls stay as they are.");
-        if (report.SnowTerrain.Count > 0)
+        if (report.CoveredTerrain.Count > 0)
         {
-            sb.AppendLine($"\n## Terrain in snow ({report.SnowTerrain.Values.Sum()})\n");
+            sb.AppendLine($"\n## Terrain in snow ({report.CoveredTerrain.Values.Sum()})\n");
             sb.AppendLine("From the map's snowTerrain areas; cells under a ground block stay, water stays.\n");
             if (report.FilledCells > 0) sb.AppendLine($"fillEmptyWithSnow: {report.FilledCells} empty cells got the flat terrain block, counted below.\n");
-            foreach (var row in Rows(report.SnowTerrain, sorted: true)) sb.AppendLine(row);
+            foreach (var row in Rows(report.CoveredTerrain, sorted: true)) sb.AppendLine(row);
         }
         Below(sb, "Native kept under the custom block, for its vegetation/terrain", report.KeptUnder, Rows(report.KeptUnder, sorted: true),
             "The custom block is a ghost over the native one; its ice is drawn up to 1 cm higher (collision unchanged).");
         Trees(sb, report);
         Below(sb, "Engine-off blocks", report.EngineOff, report.EngineOff.Select(kv => $"- {kv.Key.From} x{kv.Value}: {(kv.Key.To == "" ? "removed" : kv.Key.To)}"),
             "Options engineOffToReset / engineOffToPlain: the ones you drive on became the block shown (reset or plain), the gates were removed.");
-        Below(sb, "Items iced", report.IcedItems, Rows(report.IcedItems, sorted: true),
+        Below(sb, "Items iced", report.ThemedItems, Rows(report.ThemedItems, sorted: true),
             "Placed items with a driving surface (inflatable tubes and mats, ramps), now ice copies built from their own meshes.");
         Below(sb, "Items left as they were", report.ItemsNotConverted, report.ItemsNotConverted.Select(kv => $"- {kv.Key} x{kv.Value}: {FirstLine(itemFailures[kv.Key])}"));
         Below(sb, "Never converted", report.Untouched, Rows(report.Untouched));
@@ -97,7 +97,7 @@ internal static class ReportWriter
             "Only walls, nothing to ice: the native wall stone stays (an item would be plain concrete).");
         Below(sb, "Walls and concrete, tops iced in a custom block", report.TopsInBlock, Rows(report.TopsInBlock),
             "A custom block of the native one: its wall material is ice where it faces up as placed, the rest as before.");
-        Below(sb, "Walls and concrete, tops iced", report.TopsIced, Rows(report.TopsIced),
+        Below(sb, "Walls and concrete, tops iced", report.TopsThemed, Rows(report.TopsThemed),
             "Kept native (walls, concrete, structure decks, pillar tops, flipped platforms); an ice skin covers their wall material where it faces up (tops, slopes, curves).");
         Below(sb, "Concrete, kept", report.Concrete, Rows(report.Concrete),
             "White deco blocks show concrete; with no native ice version in this environment they stay as they are.");

@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // Trackmania space: Y up, metres
 public sealed record MeshPiece(

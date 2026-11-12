@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // a placed custom block's name -> the item it was built from; Archetype = the native block the game draws its clips from
 internal sealed partial record CustomBlockMesh(string Item, string Source, int Variant, int Mobil = 0)
@@ -9,15 +9,14 @@ internal sealed partial record CustomBlockMesh(string Item, string Source, int V
     // ice raised over the same native block, which stays placed under it
     public bool Stacked { get; init; }
     // CoverBlocks' terrain and gameplay ground: on DecoPlatformBase, whose clips the game doesn't show there (none in game shots); the source's clips aren't drawn either
-    public bool Snow { get; init; }
+    public bool Cover { get; init; }
 
-    private const string Prefix = Paths.ItemFolder + "\\";
     private const string Suffix = ".Block.Gbx_CustomBlock";
 
     public static CustomBlockMesh? Parse(string blockName)
     {
-        if (!blockName.StartsWith(Prefix) || !blockName.EndsWith(Suffix)) return null;
-        var item = BlockExtras().Replace(blockName[Prefix.Length..^Suffix.Length], "");
+        if (!Paths.IsOurs(blockName) || !blockName.EndsWith(Suffix)) return null;
+        var item = BlockExtras().Replace(blockName[(blockName.IndexOf('\\') + 1)..^Suffix.Length], "");
         var theme = Theme.Default;
         if (item.IndexOf(theme.NameTag) <= 0) return null;
         var source = ItemRecipe.SourceBlock(item, theme);
@@ -26,7 +25,7 @@ internal sealed partial record CustomBlockMesh(string Item, string Source, int V
         var mesh = variant.Success
             ? new CustomBlockMesh(item, source, int.Parse(variant.Groups[1].Value), int.Parse(variant.Groups[2].Value))
             : new CustomBlockMesh(item, source, 0);
-        return mesh with { Archetype = on.Success ? on.Groups[1].Value : mesh.Source, Stacked = blockName.Contains("_lift1"), Snow = SnowBlock().IsMatch(blockName) };
+        return mesh with { Archetype = on.Success ? on.Groups[1].Value : mesh.Source, Stacked = blockName.Contains("_lift1"), Cover = CoverBlock().IsMatch(blockName) };
     }
 
     // see ItemBuilder.BlockFor and CoverBlocks
@@ -34,7 +33,7 @@ internal sealed partial record CustomBlockMesh(string Item, string Source, int V
     private static partial Regex BlockExtras();
 
     [GeneratedRegex(@"_(snowland|snowhollow|snowground)\.Block\.Gbx_CustomBlock$")]
-    private static partial Regex SnowBlock();
+    private static partial Regex CoverBlock();
 
     [GeneratedRegex(@"_on_([^_.]+)")]
     private static partial Regex OnArchetype();

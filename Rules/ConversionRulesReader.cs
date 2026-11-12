@@ -1,14 +1,14 @@
 using System.Text.Json;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
-// swaps.jsonc and a map's own settings part -> Translations
-internal static class TranslationsReader
+// swaps.jsonc and a map's own settings part -> ConversionRules
+internal static class ConversionRulesReader
 {
-    public static Translations FromFiles(params string[] paths)
+    public static ConversionRules FromFiles(params string[] paths)
     {
         var options = new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true };
-        var result = new Translations();
+        var result = new ConversionRules();
         foreach (var path in paths)
         {
             using var doc = JsonDocument.Parse(File.ReadAllText(path), options);
@@ -17,7 +17,7 @@ internal static class TranslationsReader
             result.IgnorePrefixes.AddRange(part.IgnorePrefixes);
             foreach (var (k, v) in part.UnavailableIn) result.UnavailableIn[k] = v;
             foreach (var (k, v) in part.Items) result.Items[k] = v;
-            foreach (var (k, v) in part.ItemsOnSnow) result.ItemsOnSnow[k] = v;
+            foreach (var (k, v) in part.ItemsOnCover) result.ItemsOnCover[k] = v;
             result.UntouchedItems.AddRange(part.UntouchedItems);
             result.Settings.AddRange(part.Settings);
             result.Keep.UnionWith(part.Keep);
@@ -28,9 +28,9 @@ internal static class TranslationsReader
     }
 
     // problems null: the first bad field throws (data files); else each bad field or entry is skipped and noted
-    public static Translations Parse(JsonElement root, List<string>? problems = null)
+    public static ConversionRules Parse(JsonElement root, List<string>? problems = null)
     {
-        var result = new Translations();
+        var result = new ConversionRules();
         void Read(string what, Action read)
         {
             if (problems is null) { read(); return; }
@@ -48,7 +48,7 @@ internal static class TranslationsReader
         if (root.ValueKind != JsonValueKind.Object) throw new FormatException("settings must be an object");
 
         if (root.TryGetProperty("name", out var newName)) Read("name", () => result.Name = Text(newName));
-        if (root.TryGetProperty("presets", out var presets)) Read("presets", () => result.Presets = presets.GetBoolean());
+        if (root.TryGetProperty("rules", out var rulesOn)) Read("rules", () => result.RulesOn = rulesOn.GetBoolean());
 
         if (root.TryGetProperty("options", out var options))
             Read("options", () =>
@@ -67,17 +67,17 @@ internal static class TranslationsReader
                 Read(key, () =>
                 {
                     foreach (var entry in Array(list))
-                        Read($"{key} entry", () => set.Add(normal ? Translations.NormalizeKeep(Text(entry)) : Text(entry).Trim()));
+                        Read($"{key} entry", () => set.Add(normal ? ConversionRules.NormalizeKeep(Text(entry)) : Text(entry).Trim()));
                 });
         if (root.TryGetProperty("pieces", out var pieces))
             Read("pieces", () =>
             {
                 foreach (var piece in Object(pieces))
-                    Read($"piece {piece.Name}", () => result.Pieces[Translations.NormalizeKeep(piece.Name)] = PieceChoice(piece.Value));
+                    Read($"piece {piece.Name}", () => result.Pieces[ConversionRules.NormalizeKeep(piece.Name)] = PieceChoice(piece.Value));
             });
         if (root.TryGetProperty("skinLiftCm", out var lift)) Read("skinLiftCm", () => result.SkinLift = lift.GetSingle() / 100);
         if (root.TryGetProperty("skinEdgeDeg", out var edge)) Read("skinEdgeDeg", () => result.SkinEdge = edge.GetSingle());
-        foreach (var (key, areas) in new[] { ("snowTerrain", result.SnowTerrain), ("skinned", result.Skinned) })
+        foreach (var (key, areas) in new[] { ("snowTerrain", result.CoverAreas), ("skinned", result.Skinned) })
             if (root.TryGetProperty(key, out var list))
                 Read(key, () =>
                 {
@@ -103,7 +103,7 @@ internal static class TranslationsReader
                     result.UnavailableIn[env.Name] = Array(env.Value).Select(Text).ToList();
             });
 
-        foreach (var (name, table) in new[] { ("items", result.Items), ("itemsOnSnow", result.ItemsOnSnow) })
+        foreach (var (name, table) in new[] { ("items", result.Items), ("itemsOnSnow", result.ItemsOnCover) })
             if (root.TryGetProperty(name, out var itemTable))
                 Read(name, () =>
                 {
@@ -120,11 +120,10 @@ internal static class TranslationsReader
         return result;
     }
 
-    // snowbottom: older saves, read as snow
     private static string PieceChoice(JsonElement value)
     {
-        if (value.ValueKind != JsonValueKind.String || !Translations.PieceChoices.Contains(value.GetString())) throw new FormatException($"unknown choice {value}");
-        return value.GetString() is "snowbottom" ? "snow" : value.GetString()!;
+        if (value.ValueKind != JsonValueKind.String || !ConversionRules.PieceChoices.Contains(value.GetString())) throw new FormatException($"unknown choice {value}");
+        return value.GetString()!;
     }
 
     private static string ItemTarget(JsonProperty entry)

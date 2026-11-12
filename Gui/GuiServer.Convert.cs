@@ -2,7 +2,7 @@ using System.Text.Json.Nodes;
 using GBX.NET;
 using GBX.NET.Engines.Game;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // conversions and the author they can carry
 internal sealed partial class GuiServer

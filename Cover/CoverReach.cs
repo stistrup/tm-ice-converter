@@ -1,7 +1,7 @@
 using System.Numerics;
 using GBX.NET.Engines.Game;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // snow terrain keeps the patches that join snow across cell edges, traced out from cells snowed all over; a stretch of cells joined nowhere keeps all
 internal static class CoverReach
@@ -23,7 +23,7 @@ internal static class CoverReach
 
     public static void Run(ConversionRun run)
     {
-        if (run.Snowed.Count == 0) return;
+        if (run.Covered.Count == 0) return;
         var found = Find(run);
         var joins = Joins(run, found);
         var root = Stretches(found.ByCell.Keys);
@@ -35,7 +35,7 @@ internal static class CoverReach
             var joined = own.Where(joins.ContainsKey).ToList();
             if (joined.Count == own.Count || !reached.Contains(root(at))) continue;
             var keep = joined.SelectMany(p => joins[p]).Select(w => Vector3.Transform(new Vector3(w.X, 0, w.Y), toLocal)).Select(l => new Vector2(l.X, l.Z)).ToList();
-            if (run.Items.SnowTerrainFor(block.Name, variant, mobil, run.Map.Collection!.Value, run.Snow.UnderDeco.Contains(at), keep) is { } limited)
+            if (run.Items.CoverTerrainFor(block.Name, variant, mobil, run.Map.Collection!.Value, run.Cover.UnderDeco.Contains(at), keep) is { } limited)
                 run.Customs[block] = limited;
         }
     }
@@ -44,7 +44,7 @@ internal static class CoverReach
     {
         var found = new Found();
         var cover = run.Items.Theme.Cover;
-        foreach (var (block, variant, mobil) in run.Snowed)
+        foreach (var (block, variant, mobil) in run.Covered)
         {
             var at = (block.Coord.X, block.Coord.Z);
             if (run.Shapes.Units(block.Name, true, variant) is not { } units
@@ -77,8 +77,8 @@ internal static class CoverReach
     private static Dictionary<int, List<Vector2>> Joins(ConversionRun run, Found found)
     {
         var (cells, patches) = (found.Cells, found.Patches);
-        var snowed = run.Snowed.Select(s => (s.Block.Coord.X, s.Block.Coord.Z)).ToHashSet();
-        bool Whole((int X, int Z) c) => found.Whole.Contains(c) || !snowed.Contains(c) && CoverRules.SnowsCell(run, c.X, c.Z);
+        var snowed = run.Covered.Select(s => (s.Block.Coord.X, s.Block.Coord.Z)).ToHashSet();
+        bool Whole((int X, int Z) c) => found.Whole.Contains(c) || !snowed.Contains(c) && CoverRules.CoversCell(run, c.X, c.Z);
         var joins = new Dictionary<int, List<Vector2>>();
         var queue = new Queue<int>();
         void Join(int patch, Vector2 at)

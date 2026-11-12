@@ -14,7 +14,7 @@ const setup = useSetupStore()
 const started = ref(false)
 
 // the maps need the folders: only after setup
-function start() {
+const start = () => {
   if (started.value) return
   started.value = true
   void store.loadMaps()
@@ -23,7 +23,7 @@ function start() {
   startLiveLink()
 }
 
-function leaveSetup() {
+const leaveSetup = () => {
   setup.close()
   start()
 }

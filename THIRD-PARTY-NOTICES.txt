@@ -1,4 +1,4 @@
-TmIceConverter includes the following third-party software.
+TmSurfaceEditor includes the following third-party software.
 
 GPL-3.0-or-later (full text in LICENSE)
 ---------------------------------------

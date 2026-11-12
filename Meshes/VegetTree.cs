@@ -4,7 +4,7 @@ using GBX.NET;
 using GBX.NET.Engines.Plug;
 using GBX.NET.Serialization;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 public enum VegetKind { Bark = 0, Leaf = 1, Blend = 2 }
 

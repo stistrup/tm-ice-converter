@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // lets a terminal see and steer the open page: state in, commands and screenshots out over SSE
 internal sealed class LiveLink

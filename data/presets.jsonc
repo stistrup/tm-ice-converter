@@ -1,0 +1,12 @@
+// what a preset touches (piece kinds, as the preview groups them) and how: the rules with these options, or one pick for all.
+// Applied once: what it did becomes each piece's pick. The material is chosen apart (only the theme in use for now).
+[
+  { "name": "Roads: custom blocks", "kinds": ["roads", "waypoints", "special", "specialground", "reactor", "reactorground"], "options": { "customBlocks": true, "customWaypoints": true, "skinsOnly": false, "skinWaypoints": false } },
+  { "name": "Roads: skins", "kinds": ["roads", "waypoints", "special", "specialground", "reactor", "reactorground"], "options": { "skinsOnly": true, "skinWaypoints": true } },
+  { "name": "Roads: items", "kinds": ["roads", "waypoints", "special", "specialground", "reactor", "reactorground"], "options": { "customBlocks": false, "customWaypoints": false, "skinsOnly": false, "skinWaypoints": false } },
+  { "name": "Scenery: tops", "kinds": ["deco", "decononsnow"], "options": { "convertScenery": true } },
+  { "name": "Scenery: snow", "kinds": ["deco"], "pick": "snow" },
+  { "name": "Terrain: snow", "kinds": ["terrain", "shore"], "pick": "snow" },
+  { "name": "Trees: frozen", "kinds": ["items"], "options": { "convertTrees": true } },
+  { "name": "Original", "kinds": ["roads", "waypoints", "special", "specialground", "reactor", "reactorground", "deco", "decononsnow", "terrain", "shore", "items"], "pick": "keep" }
+]

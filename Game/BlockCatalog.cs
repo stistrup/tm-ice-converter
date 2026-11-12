@@ -6,7 +6,7 @@ using GBX.NET.Engines.Game;
 using GBX.NET.Engines.GameData;
 using GBX.NET.Engines.Meta;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // what the game's data says about blocks and items, per environment; clips and items in the other parts
 public sealed partial class BlockCatalog

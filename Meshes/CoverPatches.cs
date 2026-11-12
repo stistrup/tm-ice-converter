@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // connected snow on a terrain cell, and where each patch meets the cell's edge
 internal static class CoverPatches
@@ -82,7 +82,7 @@ internal static class CoverPatches
             var count = white.Indices.Length / 3;
             var snowy = Enumerable.Range(0, count).ToLookup(t => !onEdge.Contains(patch[start + t]) || kept.Contains(patch[start + t]));
             int[] Of(bool k) => snowy[k].SelectMany(t => white.Indices[(3 * t)..(3 * t + 3)]).ToArray();
-            if (Of(true) is { Length: > 0 } inSnow) yield return white with { Material = snow, Name = from.Name + "_snow", Indices = inSnow };
+            if (Of(true) is { Length: > 0 } inCover) yield return white with { Material = snow, Name = from.Name + "_snow", Indices = inCover };
             if (Of(false) is { Length: > 0 } ground) yield return white with { Indices = ground };
             start += count;
         }

@@ -1,7 +1,7 @@
 using GBX.NET.Engines.Game;
-using static TmIceConverter.Counts;
+using static TmSurfaceEditor.Counts;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // native blocks under ice skins: smaller, and one look throughout
 internal static class SkinRules

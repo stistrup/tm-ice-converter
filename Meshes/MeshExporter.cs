@@ -5,7 +5,7 @@ using GBX.NET.Engines.GameData;
 using GBX.NET.Engines.Meta;
 using GBX.NET.Engines.Plug;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // prefabs from the extraction -> mesh pieces
 public sealed class MeshExporter(GameFiles files, IReadOnlyDictionary<string, string> materialMap)

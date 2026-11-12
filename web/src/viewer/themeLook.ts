@@ -7,7 +7,7 @@ export const lookPrefix: Record<string, string> = { custom: '', twin: '', item: 
 export const wallMaterials = new Set(['TrackWall', 'TrackWallClips', 'Structure'])
 
 // as ItemMaterials reads data/themes/ice/materials.jsonc: "<block pattern>|name" wins for its blocks, then prefix + name, then the name
-export function iceMaterialName(swaps: PreviewResult['swaps'], name: string, block: string, prefix: string): string | undefined {
+export const themeMaterialName = (swaps: PreviewResult['swaps'], name: string, block: string, prefix: string): string | undefined => {
   for (const [key, to] of Object.entries(swaps)) {
     const bar = key.indexOf('|')
     if (bar < 0 || key.slice(bar + 1) !== name) continue

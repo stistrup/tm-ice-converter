@@ -12,7 +12,7 @@ const inverse = new Matrix4()
 const linear = new Matrix3()
 
 // Möller–Trumbore against the module's origin and direction
-function hitTriangle(p: ArrayLike<number>, a: number, b: number, c: number, limit: number): number {
+const hitTriangle = (p: ArrayLike<number>, a: number, b: number, c: number, limit: number): number => {
   const e1x = p[b] - p[a]
   const e1y = p[b + 1] - p[a + 1]
   const e1z = p[b + 2] - p[a + 2]

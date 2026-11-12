@@ -2,7 +2,7 @@ using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.Plug;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // the game's terrain shaders and materials
 internal static class TerrainFaces

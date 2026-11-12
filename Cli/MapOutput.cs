@@ -5,7 +5,7 @@ using GBX.NET;
 using GBX.NET.Engines.Game;
 using TmEssentials;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // what a converted map needs before it's a valid file of its own
 internal static class MapOutput

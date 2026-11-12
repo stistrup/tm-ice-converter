@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // next to each item's pieces: what built it, so unchanged items aren't built again
 internal sealed class ItemStamps(string dataDir, Theme theme)

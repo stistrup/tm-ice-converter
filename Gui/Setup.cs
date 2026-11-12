@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Text.RegularExpressions;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // the GUI's first-run checklist: folders, tools, Openplanet, the plugin and the one-time extract
 internal sealed partial class Setup(string dataDir)
@@ -14,7 +14,7 @@ internal sealed partial class Setup(string dataDir)
 
     public sealed record Status(List<Step> Steps, bool Ready, bool GameRunning);
 
-    private string PluginSource => System.IO.Path.GetFullPath(System.IO.Path.Combine(dataDir, "..", "openplanet", "IceConverterExtract"));
+    private string PluginSource => System.IO.Path.GetFullPath(System.IO.Path.Combine(dataDir, "..", "openplanet", "SurfaceEditorExtract"));
 
     public Status Check()
     {
@@ -54,6 +54,8 @@ internal sealed partial class Setup(string dataDir)
                 break;
             case "plugin":
                 var target = Paths.ExtractPlugin;
+                // its state (extract progress, cut list) comes along; two loaded copies would both answer
+                if (!Directory.Exists(target) && Directory.Exists(Paths.OldExtractPlugin)) Directory.Move(Paths.OldExtractPlugin, target);
                 Directory.CreateDirectory(target);
                 foreach (var file in Directory.GetFiles(PluginSource)) File.Copy(file, System.IO.Path.Combine(target, System.IO.Path.GetFileName(file)), true);
                 break;
@@ -145,7 +147,7 @@ internal sealed partial class Setup(string dataDir)
         var source = Directory.GetFiles(PluginSource);
         var missing = source.Count(f => System.IO.Path.Combine(Paths.ExtractPlugin, System.IO.Path.GetFileName(f)) is var t
             && !(File.Exists(t) && File.ReadAllBytes(t).AsSpan().SequenceEqual(File.ReadAllBytes(f))));
-        var fresh = !Directory.Exists(Paths.ExtractPlugin);
+        var fresh = !Directory.Exists(Paths.ExtractPlugin) && !Directory.Exists(Paths.OldExtractPlugin);
         if (missing > 0) return new Step("plugin", title, "todo", fresh ? "Not installed" : "Out of date", Action: fresh ? "Install" : "Update");
         return new Step("plugin", title, "ok", "Installed in Openplanet's Plugins");
     }

@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // a conversion's progress in the terminal: one live line at the bottom, other output above it; plain step lines when redirected
 internal sealed class ConsoleProgress : IDisposable

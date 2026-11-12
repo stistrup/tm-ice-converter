@@ -3,7 +3,7 @@ using GBX.NET;
 using GBX.NET.Engines.Game;
 using GBX.NET.Engines.GameData;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // clip slots and how shaped clips turn
 public sealed partial class BlockCatalog

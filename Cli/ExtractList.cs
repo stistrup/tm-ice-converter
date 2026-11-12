@@ -1,4 +1,4 @@
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // files the extract plugin still has to fetch from the game
 internal static class ExtractList

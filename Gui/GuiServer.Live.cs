@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // the open page: its state, screenshots, picks, commands to it
 internal sealed partial class GuiServer

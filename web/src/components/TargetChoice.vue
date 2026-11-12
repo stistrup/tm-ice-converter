@@ -45,11 +45,11 @@ const groups = computed(() => {
   })
 })
 
-function choose(keys: string[], choice: string) {
+const choose = (keys: string[], choice: string) => {
   history.change(() => preview.pick(keys, choice))
 }
 
-function deselect(indices: number[]) {
+const deselect = (indices: number[]) => {
   const out = new Set(indices)
   history.change(() => (store.selection = store.selection.filter((i) => !out.has(i))))
 }
@@ -65,7 +65,7 @@ function deselect(indices: number[]) {
           <button type="button" :class="$style.deselect" @click="deselect(group.indices)">Deselect</button>
         </span>
         <div :class="$style.radios" role="radiogroup" :aria-label="group.label">
-          <label v-for="choice in group.choices" :key="choice.value" :class="$style.radio">
+          <label v-for="choice in group.choices" :key="choice.value" :class="$style.radio" :title="choice.description">
             <input
               type="radio"
               :name="`pick-${group.kind}`"

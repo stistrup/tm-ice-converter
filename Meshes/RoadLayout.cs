@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // texture layouts: platform tiles, plain cover, ice streaks along roads
 internal static class RoadLayout

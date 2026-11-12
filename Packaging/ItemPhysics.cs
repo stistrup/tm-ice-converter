@@ -2,7 +2,7 @@ using GBX.NET;
 using GBX.NET.Engines.GameData;
 using GBX.NET.Engines.Plug;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // the importer leaves all collision at surface 0: write the real ones
 public static class ItemPhysics

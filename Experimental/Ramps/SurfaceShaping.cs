@@ -2,18 +2,18 @@ using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.Plug;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // ice raised to meet what's next to it or under it
 internal static class SurfaceShaping
 {
-    private const float IceLift = 0.01f;
+    private const float SurfaceLift = 0.01f;
 
     // coplanar with the native ice/dirt it covers: raise the ice and what lies on it, easing to zero where it meets the block edge so neighbours line up
     public static void LiftSurface(CPlugStaticObjectModel model, float sizeX, float sizeZ)
     {
         var mesh = model.Mesh!;
-        var streams = IceStreams(mesh);
+        var streams = SurfaceStreams(mesh);
         if (streams.Count == 0) return;
         var all = streams.SelectMany(p => p).ToList();
         const float touch = 0.05f;
@@ -28,11 +28,11 @@ internal static class SurfaceShaping
                 if (streams.Contains(positions) || surface?.Rests(positions[i]) == true)
                 {
                     var d = sides.Where(s => s.On).Select(s => s.Dist(positions[i])).DefaultIfEmpty(16).Min();
-                    positions[i] = positions[i] with { Y = positions[i].Y + IceLift * MathF.Sin(MathF.PI / 2 * Math.Clamp(d / 16, 0, 1)) };
+                    positions[i] = positions[i] with { Y = positions[i].Y + SurfaceLift * MathF.Sin(MathF.PI / 2 * Math.Clamp(d / 16, 0, 1)) };
                 }
     }
 
-    private static HashSet<Vec3[]> IceStreams(CPlugSolid2Model mesh) => (mesh.ShadedGeoms ?? [])
+    private static HashSet<Vec3[]> SurfaceStreams(CPlugSolid2Model mesh) => (mesh.ShadedGeoms ?? [])
         .Where(g => mesh.CustomMaterials?[g.MaterialIndex].MaterialUserInst?.Link?.Contains("PlatformIce") == true)
         .Select(g => mesh.Visuals?[g.VisualIndex]).OfType<CPlugVisualIndexedTriangles>()
         .Select(v => v.VertexStreams?.FirstOrDefault()?.Positions).OfType<Vec3[]>().ToHashSet();
@@ -53,7 +53,7 @@ internal static class SurfaceShaping
         }
         var mesh = model.Mesh!;
         var surface = ThemeSurface.Of(model);
-        var ice = IceStreams(mesh);
+        var ice = SurfaceStreams(mesh);
         foreach (var positions in AllStreams(mesh))
             for (int i = 0; i < positions.Length; i++)
                 if (Lift(positions[i].X, positions[i].Z) is var lift and > 0 && (ice.Contains(positions) || surface?.Rests(positions[i]) == true))

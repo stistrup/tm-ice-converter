@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 public sealed record Translation(
     string? To, // null = keep
@@ -11,21 +11,21 @@ public sealed record Translation(
     byte? Variant = null,
     byte? SubVariant = null);
 
-public sealed class Translations
+public sealed class ConversionRules
 {
     public Dictionary<string, Translation> Blocks { get; } = [];
     public List<string> IgnorePrefixes { get; } = [];
     public Dictionary<string, List<string>> UnavailableIn { get; } = [];
     public Dictionary<string, string> Items { get; } = [];
 
-    public Dictionary<string, string> ItemsOnSnow { get; } = [];
+    public Dictionary<string, string> ItemsOnCover { get; } = [];
 
     // global only, no pick or map setting changes them
     public List<string> UntouchedItems { get; } = [];
 
     public bool Untouched(string itemId) => UntouchedItems.Any(p => Matches(itemId, p));
 
-    public Dictionary<string, Translations> Maps { get; } = [];
+    public Dictionary<string, ConversionRules> Maps { get; } = [];
 
     public string? Name { get; internal set; }
 
@@ -34,15 +34,20 @@ public sealed class Translations
     // per piece: "Name x,y,z" (grid cell) or "Name x, y, z" (free block, item) -> keep | custom | item | skin | snow | tops | plain | remove | frozen
     public Dictionary<string, string> Pieces { get; } = [];
 
-    // snowbottom: older saves, read as snow
-    public static readonly string[] PieceChoices = ["keep", "custom", "item", "skin", "snow", "snowbottom", "tops", "plain", "remove", "frozen", "flip", "snowflip"];
+    // copy, sink: items, as their rules do
+    public static readonly string[] PieceChoices = ["keep", "custom", "item", "skin", "snow", "tops", "twin", "twincover", "table", "gate", "copy", "sink", "plain", "remove", "frozen", "flip", "snowflip"];
 
-    // off: only the pieces picked by hand convert; options, areas and map-wide passes stay out
-    public bool Presets { get; internal set; } = true;
+    // off ("rules": false): only pieces with a pick convert; the snow and skin areas stay out, map-wide options still run
+    public bool RulesOn { get; internal set; } = true;
 
+    // grid blocks sharing a cell and name, by their own keys (PieceKeys); set per map before anything moves them
+    public Dictionary<GBX.NET.Engines.Game.CGameCtnBlock, string> AmbiguousKeys { get; set; } = new(ReferenceEqualityComparer.Instance);
+
+    // a shared block's own key first, then the cell's
     public string? PieceChoice(GBX.NET.Engines.Game.CGameCtnBlock block)
         => block.IsFree
             ? block.AbsolutePositionInMap is { } p ? ChoiceAt(block.Name, new System.Numerics.Vector3(p.X, p.Y, p.Z)) : null
+            : AmbiguousKeys.TryGetValue(block, out var own) && Pieces.TryGetValue(NormalizeKeep(own), out var picked) ? picked
             : Pieces.GetValueOrDefault(KeepKey(block.Name, block.Coord.X, block.Coord.Y, block.Coord.Z));
 
     public string? ChoiceAt(string id, System.Numerics.Vector3 at) => Pieces.FirstOrDefault(kv => IsAt(kv.Key, id, at) == true).Value;
@@ -60,11 +65,11 @@ public sealed class Translations
     public HashSet<string> RemoveItems { get; } = [];
 
     // terrain cell areas (x0, z0, x1, z1) that become snow
-    public List<(int X0, int Z0, int X1, int Z1)> SnowTerrain { get; } = [];
+    public List<(int X0, int Z0, int X1, int Z1)> CoverAreas { get; } = [];
 
     // columns snowed by the terrain options (CoverFill)
-    public HashSet<(int X, int Z)> SnowCells { get; } = [];
-    public bool SnowsTerrainAt(int x, int z) => SnowCells.Contains((x, z)) || SnowTerrain.Any(a => x >= a.X0 && x <= a.X1 && z >= a.Z0 && z <= a.Z1);
+    public HashSet<(int X, int Z)> CoverCells { get; } = [];
+    public bool CoversTerrainAt(int x, int z) => CoverCells.Contains((x, z)) || CoverAreas.Any(a => x >= a.X0 && x <= a.X1 && z >= a.Z0 && z <= a.Z1);
 
     // skin height over the native surface, metres; null = the code default
     public float? SkinLift { get; internal set; }
@@ -92,19 +97,19 @@ public sealed class Translations
     internal static string NormalizeKeep(string entry) => Regex.Replace(entry.Trim(), @"\s*,\s*", ",");
 
     // the global rules with one map's own (MapSettings.Read)
-    public Translations For(string mapName, Translations? own = null)
+    public ConversionRules For(string mapName, ConversionRules? own = null)
     {
-        own ??= new Translations();
-        var result = new Translations { Name = own.Name, Presets = own.Presets };
+        own ??= new ConversionRules();
+        var result = new ConversionRules { Name = own.Name, RulesOn = own.RulesOn };
         result.Options = Settings.Concat(own.Settings).Aggregate(new ConvertOptions(), (o, s) => o.With(s.Name, s.Value));
         result.IgnorePrefixes.AddRange(IgnorePrefixes.Concat(own.IgnorePrefixes));
         foreach (var (k, v) in Blocks.Concat(own.Blocks)) result.Blocks[k] = v;
         result.Keep.UnionWith(Keep.Concat(own.Keep));
         result.KeepItems.UnionWith(KeepItems.Concat(own.KeepItems));
         result.RemoveItems.UnionWith(RemoveItems.Concat(own.RemoveItems));
-        if (own.Presets)
+        if (own.RulesOn)
         {
-            result.SnowTerrain.AddRange(own.SnowTerrain);
+            result.CoverAreas.AddRange(own.CoverAreas);
             result.Skinned.AddRange(own.Skinned);
         }
         result.SkinLift = own.SkinLift;
@@ -112,14 +117,14 @@ public sealed class Translations
         foreach (var (k, v) in own.Pieces) result.Pieces[NormalizeKeep(k)] = v;
         // snow picked on a grid piece: its column is a snowTerrain area
         foreach (var (k, v) in result.Pieces)
-            if (v is "snow" or "snowflip" && Regex.Match(k, @"^\S+ (-?\d+),-?\d+,(-?\d+)$") is { Success: true } m)
+            if (v is "snow" or "snowflip" && Regex.Match(k, @"^\S+ (-?\d+),-?\d+,(-?\d+)(\s|$)") is { Success: true } m)
             {
                 var (x, z) = (int.Parse(m.Groups[1].Value), int.Parse(m.Groups[2].Value));
-                result.SnowTerrain.Add((x, z, x, z));
+                result.CoverAreas.Add((x, z, x, z));
             }
         foreach (var (k, v) in UnavailableIn) result.UnavailableIn[k] = v;
         foreach (var (k, v) in Items) result.Items[k] = v;
-        foreach (var (k, v) in ItemsOnSnow) result.ItemsOnSnow[k] = v;
+        foreach (var (k, v) in ItemsOnCover) result.ItemsOnCover[k] = v;
         return result;
     }
 
@@ -128,8 +133,8 @@ public sealed class Translations
             || collection != "Stadium2020" && UnavailableIn.TryGetValue("*", out var everywhere) && everywhere.Any(block.StartsWith));
 
     // "From": "To" | null | { "to", "rotate", "offset", "variant" }
-    public static Translations Load(string dataDir) => TranslationsReader.FromFiles(Path.Combine(dataDir, "swaps.jsonc"));
+    public static ConversionRules Load(string dataDir) => ConversionRulesReader.FromFiles(Path.Combine(dataDir, "swaps.jsonc"));
 
     // one map's own part, field by field: what doesn't read goes to problems and is left out
-    public static Translations ReadMap(JsonElement root, List<string> problems) => TranslationsReader.Parse(root, problems);
+    public static ConversionRules ReadMap(JsonElement root, List<string> problems) => ConversionRulesReader.Parse(root, problems);
 }

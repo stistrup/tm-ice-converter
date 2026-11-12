@@ -12,7 +12,7 @@ export const useSetupStore = defineStore('setup', () => {
   let misses = 0
   let timer: ReturnType<typeof setTimeout> | undefined
 
-  async function load() {
+  const load = async () => {
     clearTimeout(timer)
     try {
       status.value = await fetchSetup()
@@ -26,7 +26,7 @@ export const useSetupStore = defineStore('setup', () => {
     if (shown.value) timer = setTimeout(load, 2000)
   }
 
-  async function run(change: () => Promise<SetupStatus>) {
+  const run = async (change: () => Promise<SetupStatus>) => {
     error.value = ''
     try {
       status.value = await change()
@@ -38,12 +38,12 @@ export const useSetupStore = defineStore('setup', () => {
   const setPath = (name: string, value: string) => run(() => setSetupPath(name, value))
   const act = (id: string) => run(() => setupAction(id))
 
-  function open() {
+  const open = () => {
     shown.value = true
     void load()
   }
 
-  function close() {
+  const close = () => {
     shown.value = false
     clearTimeout(timer)
   }

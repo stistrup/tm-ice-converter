@@ -1,6 +1,6 @@
 using GBX.NET;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 public sealed record BuiltItem(Ident Ident, string FilePath, (int X, int Z) Size)
 {

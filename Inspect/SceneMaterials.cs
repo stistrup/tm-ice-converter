@@ -2,7 +2,7 @@ using System.Text.Json;
 using GBX.NET;
 using GBX.NET.Engines.Plug;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // game material files -> scene materials, keyed by game-data path; vistas restyle Stadium's
 internal sealed class SceneMaterials(BlockCatalog shapes)

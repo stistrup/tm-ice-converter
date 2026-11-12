@@ -5,8 +5,14 @@ import {
   fetchMapState,
   fetchPreview,
   fetchPreviewScene,
+  applyPreset as postPreset,
+  editSettings,
+  redoSettings,
+  revertSettings,
   saveSettings,
+  undoSettings,
   type BuildStatus,
+  type DocumentState,
   type MapSettings,
   type MapState,
   type PreviewDecision,
@@ -14,29 +20,26 @@ import {
   type PreviewResult,
   type SceneManifest,
 } from '../api'
+import { remembered } from '../storage'
 import { useMapStore } from './map'
 
 const OPEN_KEY = 'preview-open'
 
-function readOpen(): boolean {
-  try {
-    return localStorage.getItem(OPEN_KEY) !== 'false'
-  } catch {
-    return true
-  }
-}
-
 const clone = (settings: MapSettings): MapSettings => JSON.parse(JSON.stringify(settings))
 
-// the open map's settings (saved for the map as they change) and the converter's decisions with them; nothing is built
+// the open map's settings (a mirror of its working copy in the backend) and the converter's decisions with them; nothing is built
 export const usePreviewStore = defineStore('preview', () => {
   const map = useMapStore()
   // the panel is always there; folding only hides it
-  const open = ref(readOpen())
+  const open = remembered(OPEN_KEY, true)
   // where the map's settings stand: saved or defaults
   const state = ref<MapState | null>(null)
   // what the menu edits and the preview runs with, shaped like settings/maps/<uid>.json
   const working = ref<MapSettings>({})
+  // the working copy against the saved settings
+  const dirty = ref(false)
+  const canUndo = ref(false)
+  const canRedo = ref(false)
   const result = shallowRef<PreviewResult | null>(null)
   const loading = ref(false)
   const error = ref('')
@@ -56,16 +59,11 @@ export const usePreviewStore = defineStore('preview', () => {
   const picks = computed<Record<string, string>>(() => {
     const pieces = working.value.pieces
     if (!pieces || typeof pieces !== 'object') return {}
-    // snowbottom: older saves, now plain snow
-    return Object.fromEntries(
-      Object.entries(pieces)
-        .filter((e): e is [string, string] => typeof e[1] === 'string')
-        .map(([key, value]) => [key, value === 'snowbottom' ? 'snow' : value]),
-    )
+    return Object.fromEntries(Object.entries(pieces).filter((e): e is [string, string] => typeof e[1] === 'string'))
   })
 
   // the working settings as they are, or (after builds) what the shown result came from
-  async function run(settings: MapSettings = working.value) {
+  const run = async (settings: MapSettings = working.value) => {
     const current = map.currentMap
     if (!current) return
     const id = ++runId
@@ -89,7 +87,7 @@ export const usePreviewStore = defineStore('preview', () => {
 
   // missing pieces build in the background; when they're in, the same preview runs again and shows them for real
   const building = ref<BuildStatus | null>(null)
-  async function followBuilds(id: number) {
+  const followBuilds = async (id: number) => {
     for (;;) {
       await new Promise((resolve) => setTimeout(resolve, 1000))
       if (id !== runId || !result.value) return
@@ -107,30 +105,36 @@ export const usePreviewStore = defineStore('preview', () => {
     }
   }
 
-  // saved only while the settings differ from the defaults
-  let saved = ''
-  let saveTimer: ReturnType<typeof setTimeout> | undefined
-  function scheduleSave() {
+  // the backend keeps the working copy; calls go one after another, each answer says where it stands
+  let queue: Promise<unknown> = Promise.resolve()
+  const documentCall = (call: (map: string) => Promise<DocumentState>, adopt: boolean) => {
     const current = map.currentMap
-    const seed = state.value?.seed
-    if (!current || !seed) return
-    clearTimeout(saveTimer)
-    saveTimer = setTimeout(async () => {
-      const json = JSON.stringify(working.value)
-      if (json === saved) return
-      const same = json === JSON.stringify(seed)
+    if (!current) return Promise.resolve()
+    const next = queue.then(async () => {
       try {
-        await saveSettings(current.path, same ? null : working.value)
-        saved = json
+        const answer = await call(current.path)
+        if (map.currentMap !== current) return
+        dirty.value = answer.dirty
+        canUndo.value = answer.canUndo
+        canRedo.value = answer.canRedo
+        if (adopt) working.value = clone(answer.settings)
       } catch (e) {
-        error.value = `Settings not saved: ${e instanceof Error ? e.message : String(e)}`
+        error.value = `Settings not kept: ${e instanceof Error ? e.message : String(e)}`
       }
-    }, 400)
+    })
+    queue = next
+    return next
   }
 
-  watch(working, scheduleSave, { deep: true })
+  // the settings as they are now: one undoable step
+  const commit = () => documentCall((path) => editSettings(path, clone(working.value)), false)
+  const undo = () => documentCall(undoSettings, true)
+  const redo = () => documentCall(redoSettings, true)
+  const save = () => documentCall(saveSettings, false)
+  const revert = () => documentCall(revertSettings, true)
+  const applyPreset = (name: string, only: string[] | null) => documentCall((path) => postPreset(path, name, only), true)
 
-  async function loadState() {
+  const loadState = async () => {
     const current = map.currentMap
     state.value = null
     if (!current) return
@@ -138,23 +142,25 @@ export const usePreviewStore = defineStore('preview', () => {
       const loaded = await fetchMapState(current.path)
       if (map.currentMap !== current) return
       state.value = loaded
-      saved = JSON.stringify(loaded.settings)
       working.value = clone(loaded.settings)
+      dirty.value = loaded.dirty
+      canUndo.value = loaded.canUndo
+      canRedo.value = loaded.canRedo
     } catch (e) {
       error.value = e instanceof Error ? e.message : String(e)
     }
   }
 
   // folding only hides the panel; the preview stays drawn
-  function show() {
+  const show = () => {
     open.value = true
   }
 
-  function close() {
+  const close = () => {
     open.value = false
   }
 
-  function clear() {
+  const clear = () => {
     runId++
     loading.value = false
     result.value = null
@@ -163,19 +169,11 @@ export const usePreviewStore = defineStore('preview', () => {
     ranWith.value = ''
   }
 
-  watch(open, (value) => {
-    try {
-      localStorage.setItem(OPEN_KEY, String(value))
-    } catch {
-      // only a convenience
-    }
-  })
-
   watch(
     () => map.currentMap,
     () => {
-      clearTimeout(saveTimer)
       working.value = {}
+      dirty.value = canUndo.value = canRedo.value = false
       error.value = ''
       clear()
       void loadState()
@@ -185,7 +183,7 @@ export const usePreviewStore = defineStore('preview', () => {
 
   const defaultOf = (name: string) => options.value.find((o) => o.name === name)?.mapValue ?? false
 
-  function optionIn(settings: MapSettings | undefined, name: string): boolean {
+  const optionIn = (settings: MapSettings | undefined, name: string): boolean => {
     const value = settings?.options?.[name]
     return typeof value === 'boolean' ? value : defaultOf(name)
   }
@@ -194,7 +192,7 @@ export const usePreviewStore = defineStore('preview', () => {
   const valueOf = (name: string) => optionIn(working.value, name)
 
   // a default is left out, so the settings only say what's special about the map
-  function set(name: string, value: boolean) {
+  const set = (name: string, value: boolean) => {
     const own = { ...(working.value.options ?? {}) }
     if (value === defaultOf(name)) delete own[name]
     else own[name] = value
@@ -203,11 +201,11 @@ export const usePreviewStore = defineStore('preview', () => {
   }
 
   // off: only the pieces picked by hand convert
-  const presets = computed(() => working.value.presets !== false)
+  const rulesOn = computed(() => working.value.rules !== false)
 
-  function setPresets(on: boolean) {
-    const { presets: _, ...rest } = working.value
-    working.value = on ? rest : { ...rest, presets: false }
+  const setRules = (on: boolean) => {
+    const { rules: _, ...rest } = working.value
+    working.value = on ? rest : { ...rest, rules: false }
   }
 
   const stale = computed(() => JSON.stringify(working.value) !== ranWith.value)
@@ -231,7 +229,7 @@ export const usePreviewStore = defineStore('preview', () => {
   )
 
   // "" = back to the rules; the preview follows right away
-  function pick(keys: string[], choice: string) {
+  const pick = (keys: string[], choice: string) => {
     const pieces: Record<string, unknown> = { ...(working.value.pieces ?? {}) }
     for (const key of keys) {
       if (choice) pieces[key] = choice
@@ -253,6 +251,15 @@ export const usePreviewStore = defineStore('preview', () => {
   return {
     state,
     working,
+    dirty,
+    canUndo,
+    canRedo,
+    commit,
+    undo,
+    redo,
+    save,
+    revert,
+    applyPreset,
     picks,
     pick,
     building,
@@ -270,8 +277,8 @@ export const usePreviewStore = defineStore('preview', () => {
     show,
     close,
     set,
-    presets,
-    setPresets,
+    rulesOn,
+    setRules,
     valueOf,
   }
 })

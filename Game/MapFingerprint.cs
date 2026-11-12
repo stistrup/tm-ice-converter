@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using GBX.NET.Engines.Game;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // what's placed, not how it's lit: a game save with shadows keeps it, though it gives the map a new UID
 public static class MapFingerprint

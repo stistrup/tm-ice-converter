@@ -1,4 +1,4 @@
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // from local.jsonc in the user folder
 public static class Paths
@@ -18,7 +18,9 @@ public static class Paths
         => collection is null or "Stadium2020" ? null
             : Path.Combine(Path.GetDirectoryName(extractedStadium)!, collection, "GameCtnBlockInfo") is var dir && Directory.Exists(dir) ? dir : null;
 
-    public static string ExtractPlugin => Path.Combine(Openplanet, "Plugins", "IceConverterExtract");
+    public static string ExtractPlugin => Path.Combine(Openplanet, "Plugins", "SurfaceEditorExtract");
+    // before the rename to Surface Editor
+    public static string OldExtractPlugin => Path.Combine(Openplanet, "Plugins", "IceConverterExtract");
 
     public static string DropFolder => Path.Combine(Maps, "To Ice");
     public static string OutFolder => Path.Combine(Maps, "ICE in progress");
@@ -29,7 +31,14 @@ public static class Paths
             ? relative.Replace('\\', '/') : Path.GetFullPath(path);
 
     // everything of the user's (config, saved settings, cache): out of the app folder, so an update replaces the app and keeps these
-    public static string UserData => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TmIceConverter");
+    public static string UserData => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TmSurfaceEditor");
+    private static string OldUserData => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "TmIceConverter");
+
+    // once, from before the rename: settings, cache and runs come along
+    public static void MoveOldUserData()
+    {
+        if (!Directory.Exists(UserData) && Directory.Exists(OldUserData)) Directory.Move(OldUserData, UserData);
+    }
 
     public static string LocalSettings { get; set; } = Path.Combine(UserData, "local.jsonc");
 
@@ -38,7 +47,7 @@ public static class Paths
     // the shipped data folder (set at start)
     public static string Data { get; set; } = "data";
 
-    // conversion runs and each map's settings (RunLog); "settings" in local.jsonc, else in the user folder
+    // conversion runs and each map's settings (SettingsStore); "settings" in local.jsonc, else in the user folder
     public static string SettingsStore => Local.Paths?.GetValueOrDefault("settings") is { Length: > 0 }
         ? Local.Folder("settings") : Path.Combine(UserData, "settings");
 
@@ -107,7 +116,12 @@ public static class Paths
     private sealed record Author(string Login, string Nickname, string Zone);
 
     // our folder under Items and Blocks; item idents start with it
-    public const string ItemFolder = "IceConverter";
+    public const string ItemFolder = "SurfaceEditor";
+    public const string ItemAuthor = "SurfaceEditor";
+    // maps converted before the rename carry these
+    private const string OldItemFolder = "IceConverter";
+
+    public static bool IsOurs(string id) => id.StartsWith(ItemFolder + "\\") || id.StartsWith(OldItemFolder + "\\");
 
     public static string Items => Path.Combine(TrackmaniaUser, "Items", ItemFolder);
     // the importer's input only; it reads nothing outside Work

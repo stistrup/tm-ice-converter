@@ -2,13 +2,13 @@ using System.Net.Http.Headers;
 using System.Reflection;
 using System.Text.Json;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // this build's version (<Version> in the csproj) and the newest release on GitHub, asked once per start
 internal static class AppVersion
 {
-    public const string Releases = "https://github.com/stistrup/tm-ice-converter/releases";
-    private const string LatestApi = "https://api.github.com/repos/stistrup/tm-ice-converter/releases/latest";
+    public const string Releases = "https://github.com/stistrup/tm-surface-editor/releases";
+    private const string LatestApi = "https://api.github.com/repos/stistrup/tm-surface-editor/releases/latest";
 
     public sealed record Info(string Current, string? Latest, string? Url, bool Newer);
 
@@ -30,7 +30,7 @@ internal static class AppVersion
         try
         {
             using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-            http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("TmIceConverter", Current));
+            http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("TmSurfaceEditor", Current));
             http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
             using var doc = JsonDocument.Parse(await http.GetStringAsync(LatestApi));
             return doc.RootElement.GetProperty("tag_name").GetString() is { } tag ? (tag, doc.RootElement.GetProperty("html_url").GetString() ?? Releases) : null;

@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // what roads turn into and what covers the ground: data/themes/<name>/
 public sealed class Theme

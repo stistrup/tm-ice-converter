@@ -1,35 +1,36 @@
 using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.Game;
-using static TmIceConverter.Counts;
+using static TmSurfaceEditor.Counts;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
-public sealed class MapConverter(HashSet<string> knownBlocks, Translations translations, BlockCatalog shapes, ItemBuilder items)
+public sealed class MapConverter(HashSet<string> knownBlocks, ConversionRules dataRules, BlockCatalog shapes, ItemBuilder items)
 {
     // kept across maps: slow to work out
     private readonly SurfaceParents surfaceParents = new(knownBlocks, shapes);
     private readonly Dictionary<string, List<(Vector3 A, Vector3 B, Vector3 C)>> flatTops = [];
 
     // own: the map's settings (MapSettings.Read); null: the defaults
-    public ConversionReport Convert(CGameCtnChallenge map, Translations? own = null) => Run(map, own).Report;
+    public ConversionReport Convert(CGameCtnChallenge map, ConversionRules? own = null) => Run(map, own).Report;
 
-    internal ConversionRun Run(CGameCtnChallenge map, Translations? own = null)
+    internal ConversionRun Run(CGameCtnChallenge map, ConversionRules? own = null)
     {
         var collection = map.Collection?.ToString() ?? "Stadium2020";
-        var rules = translations.For(map.MapName, own);
+        var rules = dataRules.For(map.MapName, own);
+        rules.AmbiguousKeys = PieceKeys.Ambiguous(map);
         shapes.Environment = items.Environment = collection;
         items.Style = new ItemStyle(rules.Options.SnowOnZoneSides, rules.Options.SnowOnGroundDeco, rules.SkinLift ?? ItemStyle.DefaultSkinLift, rules.SkinEdge ?? ItemStyle.DefaultSkinEdge);
         Flips.Run(map, shapes, rules);
         CoverFill.ByKind(map, collection, shapes, rules);
         var filled = rules.Options.FillEmptyWithSnow ? CoverFill.Run(map, collection, shapes, rules) : 0;
-        var run = new ConversionRun(map, collection, rules, translations, knownBlocks, shapes, items, surfaceParents, flatTops);
+        var run = new ConversionRun(map, collection, rules, dataRules, knownBlocks, shapes, items, surfaceParents, flatTops);
 
         run.Report.FilledCells = filled;
         foreach (var block in map.GetBlocks()) BlockRules.Decide(block, run);
         Neighbours.Keep(run);
         CoverReach.Run(run);
-        if (rules.Presets && rules.Options.RampToSkins) RampPass.Run(run);
+        if (rules.Options.RampToSkins) RampPass.Run(run);
 
         // these read the native names
         var snow = new CoverSurfaces(map, run.Replaced.Concat(run.Customs.Keys), run.Renamed, run.Skinned, shapes, items.Theme, rules.Options.SnowOnZoneSides);
@@ -38,11 +39,10 @@ public sealed class MapConverter(HashSet<string> knownBlocks, Translations trans
         RenameCustomBlocks(run);
 
         foreach (var block in run.Replaced.Concat(run.EngineOffGates)) map.RemoveBlock(block);
-        if (rules.Presets) Gates.RemoveEngineOffItems(run);
+        Gates.RemoveEngineOffItems(run);
         ItemSwaps.Run(run, snow);
         // after the swaps: the stand-ins stand on terrain, not ice
         foreach (var (block, name, models) in trees) Trees.Plant(run, block, name, models);
-        if (!rules.Presets) return run;
         MatchPlatformColour(run);
         if (rules.Options.RemoveForcedCameras) RemoveForcedCameras(run);
         return run;

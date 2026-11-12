@@ -1,4 +1,4 @@
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 public enum Source { Table, Rule }
 
@@ -24,7 +24,7 @@ public sealed class ConversionReport
     public Dictionary<(string Block, string Reason), int> ItemReasons { get; } = [];
     public Dictionary<string, int> Concrete { get; } = [];
     public Dictionary<string, int> Walls { get; } = [];
-    public Dictionary<string, int> TopsIced { get; } = [];
+    public Dictionary<string, int> TopsThemed { get; } = [];
     public Dictionary<string, int> TopsInBlock { get; } = [];
     public List<string> CameraClipsRemoved { get; } = [];
     public Dictionary<(string From, string To), int> EngineOff { get; } = []; // "" = removed
@@ -33,12 +33,12 @@ public sealed class ConversionReport
     public Dictionary<string, int> TreesMissing { get; } = [];
     public Dictionary<string, int> TreesInWater { get; } = [];
     public Dictionary<string, int> KeptUnder { get; } = [];
-    public Dictionary<string, int> SnowTerrain { get; } = [];
+    public Dictionary<string, int> CoveredTerrain { get; } = [];
     public int FilledCells { get; set; }
     public Dictionary<string, int> SceneryKept { get; } = [];
     public Dictionary<string, int> TerrainItems { get; } = [];
     public Dictionary<string, int> Ramped { get; } = [];
-    public Dictionary<string, int> IcedItems { get; } = [];
+    public Dictionary<string, int> ThemedItems { get; } = [];
     public Dictionary<string, int> ItemsNotConverted { get; } = [];
     public int FreeBlockOffsetsSkipped { get; set; }
 

@@ -2,7 +2,7 @@ using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.Game;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // compares the resolver's free clips with the clips the game baked into the map (name + facing cell)
 public static class ClipCheck

@@ -62,14 +62,12 @@ export interface SceneManifest {
   skipped: Record<string, number>
 }
 
-async function check(response: Response): Promise<Response> {
+const check = async (response: Response): Promise<Response> => {
   if (!response.ok) throw new Error(await response.text())
   return response
 }
 
-export async function fetchMaps(): Promise<MapEntry[]> {
-  return (await check(await fetch('/api/maps'))).json()
-}
+export const fetchMaps = async (): Promise<MapEntry[]> => (await check(await fetch('/api/maps'))).json()
 
 // folders under Maps ("/" separated) and where a conversion goes by default
 export interface FolderList {
@@ -84,13 +82,9 @@ export interface Author {
   zone: string
 }
 
-export async function fetchAuthor(): Promise<Author | null> {
-  return (await check(await fetch('/api/author'))).json()
-}
+export const fetchAuthor = async (): Promise<Author | null> => (await check(await fetch('/api/author'))).json()
 
-export async function saveAuthor(author: Author): Promise<Author | null> {
-  return (await check(await fetch('/api/author', { method: 'POST', body: JSON.stringify(author) }))).json()
-}
+export const saveAuthor = async (author: Author): Promise<Author | null> => (await check(await fetch('/api/author', { method: 'POST', body: JSON.stringify(author) }))).json()
 
 // maps: several at once, each with its default name and its own settings; else the map started with, by name and settings
 export interface ConvertRequest {
@@ -111,6 +105,8 @@ export interface ConvertOutcome {
   output: string
   name: string
   runId: string
+  // full path, in the user folder
+  report: string
   from: string
   summary: string
   problems: string[]
@@ -146,50 +142,42 @@ export interface ConvertJob {
 }
 
 // starts it in the background
-export async function startConvert(map: string, request: ConvertRequest): Promise<ConvertJob> {
+export const startConvert = async (map: string, request: ConvertRequest): Promise<ConvertJob> => {
   const query = new URLSearchParams(map ? { map } : {})
   return (await check(await fetch(`/api/convert?${query}`, { method: 'POST', body: JSON.stringify(request) }))).json()
 }
 
 // the running or last finished one; null when there's none
-export async function fetchConvertJob(): Promise<ConvertJob | null> {
-  return (await check(await fetch('/api/convert'))).json()
-}
+export const fetchConvertJob = async (): Promise<ConvertJob | null> => (await check(await fetch('/api/convert'))).json()
 
 // stops at the next map or step
-export async function cancelConvert(id: string): Promise<void> {
+export const cancelConvert = async (id: string): Promise<void> => {
   await check(await fetch(`/api/convert-cancel?${new URLSearchParams({ id })}`, { method: 'POST', body: '' }))
 }
 
-export async function dismissConvert(id: string): Promise<void> {
+export const dismissConvert = async (id: string): Promise<void> => {
   await check(await fetch(`/api/convert-dismiss?${new URLSearchParams({ id })}`, { method: 'POST', body: '' }))
 }
 
 // what a conversion names the map by default (a name from its settings included)
-export async function fetchOutputName(map: string): Promise<string> {
-  return (await check(await fetch(`/api/output-name?${new URLSearchParams({ map })}`))).json()
-}
+export const fetchOutputName = async (map: string): Promise<string> => (await check(await fetch(`/api/output-name?${new URLSearchParams({ map })}`))).json()
 
 // whether <folder>/<name>.Map.Gbx is already there under Maps
-export async function targetExists(folder: string, name: string): Promise<boolean> {
-  return (await check(await fetch(`/api/exists?${new URLSearchParams({ folder, name })}`))).json()
-}
+export const targetExists = async (folder: string, name: string): Promise<boolean> => (await check(await fetch(`/api/exists?${new URLSearchParams({ folder, name })}`))).json()
 
-export async function fetchFolders(): Promise<FolderList> {
-  return (await check(await fetch('/api/folders'))).json()
-}
+export const fetchFolders = async (): Promise<FolderList> => (await check(await fetch('/api/folders'))).json()
 
-export async function fetchScene(map: string, rebuild: boolean): Promise<SceneManifest> {
+export const fetchScene = async (map: string, rebuild: boolean): Promise<SceneManifest> => {
   const query = new URLSearchParams({ map })
   if (rebuild) query.set('rebuild', '1')
   return (await check(await fetch(`/api/scene?${query}`))).json()
 }
 
-export async function fetchGeometry(
+export const fetchGeometry = async (
   map: string,
   total: number,
   onProgress: (fraction: number) => void,
-): Promise<ArrayBuffer> {
+): Promise<ArrayBuffer> => {
   const response = await check(await fetch(`/api/geometry?${new URLSearchParams({ map })}`))
   const bytes = new Uint8Array(total)
   const reader = response.body!.getReader()
@@ -204,28 +192,37 @@ export async function fetchGeometry(
   return bytes.buffer
 }
 
-export function textureUrl(path: string): string {
-  return `/api/texture?${new URLSearchParams({ path })}`
-}
+export const textureUrl = (path: string): string => `/api/texture?${new URLSearchParams({ path })}`
 
 export interface PreviewOption {
   name: string
   value: boolean
   // the converter's default (ConvertOptions)
   mapValue: boolean
+  // map: a map-wide job; piece: how pieces convert (what presets set); look: the material's look
+  category: 'map' | 'piece' | 'look'
   description: string
 }
 
 // one map's settings (settings/maps/<uid>.json); fields the page doesn't know are kept as they are
 export type MapSettings = Record<string, unknown> & {
   options?: Record<string, unknown>
+  // conversion targets by piece key
   pieces?: Record<string, unknown>
+  // false: only pieces with a conversion target convert
+  rules?: boolean
 }
 
-// what a map opens with: the settings a convert would use now, and where they came from
-export interface MapState {
+// where the map's edits stand: the working copy against the saved settings, and its history
+export interface DocumentState {
   settings: MapSettings
-  // "defaults" or "saved …"
+  dirty: boolean
+  canUndo: boolean
+  canRedo: boolean
+}
+
+export interface MapState extends DocumentState {
+  // "defaults", "saved …" or "working copy …, not saved"
   from: string
   // no settings of its own (empty)
   seed: MapSettings
@@ -244,9 +241,11 @@ export interface PreviewDecision {
   picked: string | null
 }
 
+// data/picks.jsonc
 export interface PieceChoice {
   value: string
   label: string
+  description: string
 }
 
 export interface PreviewResult {
@@ -274,21 +273,37 @@ export interface PreviewResult {
   stalePicks: string[]
 }
 
-export async function fetchPreview(map: string, settings: MapSettings): Promise<PreviewResult> {
+export const fetchPreview = async (map: string, settings: MapSettings): Promise<PreviewResult> => {
   const query = new URLSearchParams({ map })
   return (await check(await fetch(`/api/preview?${query}`, { method: 'POST', body: JSON.stringify({ settings }) }))).json()
 }
 
-export async function fetchMapState(map: string): Promise<MapState> {
-  return (await check(await fetch(`/api/settings?${new URLSearchParams({ map })}`))).json()
+export const fetchMapState = async (map: string): Promise<MapState> => (await check(await fetch(`/api/settings?${new URLSearchParams({ map })}`))).json()
+
+// the working copy, kept in the backend: edit is one undoable step
+const documentCall = async (path: string, map: string, body?: unknown): Promise<DocumentState> => {
+  const init: RequestInit = { method: 'POST', body: body === undefined ? '' : JSON.stringify(body) }
+  return (await check(await fetch(`/api/${path}?${new URLSearchParams({ map })}`, init))).json()
 }
 
-// null: back to the defaults
-export async function saveSettings(map: string, settings: MapSettings | null): Promise<void> {
-  await check(await fetch(`/api/save-settings?${new URLSearchParams({ map })}`, { method: 'POST', body: JSON.stringify({ settings }) }))
+export const editSettings = (map: string, settings: MapSettings) => documentCall('edit', map, { settings })
+export const undoSettings = (map: string) => documentCall('undo', map)
+export const redoSettings = (map: string) => documentCall('redo', map)
+export const saveSettings = (map: string) => documentCall('save-settings', map)
+export const revertSettings = (map: string) => documentCall('revert', map)
+
+// data/presets.jsonc; kinds as the preview groups pieces
+export interface Preset {
+  name: string
+  kinds: string[]
 }
 
-export async function fetchPreviewScene(id: string): Promise<{ manifest: SceneManifest; geometry: ArrayBuffer }> {
+export const fetchPresets = async (): Promise<Preset[]> => (await check(await fetch('/api/presets'))).json()
+
+// one undo step; only: these keys, null: the whole map
+export const applyPreset = (map: string, preset: string, only: string[] | null) => documentCall('apply-preset', map, { preset, only })
+
+export const fetchPreviewScene = async (id: string): Promise<{ manifest: SceneManifest; geometry: ArrayBuffer }> => {
   const [manifest, geometry] = await Promise.all([
     check(await fetch(`/api/preview-scene?id=${id}`)).then((r) => r.json()),
     check(await fetch(`/api/preview-scene?id=${id}&part=geometry`)).then((r) => r.arrayBuffer()),
@@ -303,9 +318,7 @@ export interface BuildStatus {
   builds: number
 }
 
-export async function fetchBuildStatus(): Promise<BuildStatus> {
-  return (await check(await fetch('/api/preview-build'))).json()
-}
+export const fetchBuildStatus = async (): Promise<BuildStatus> => (await check(await fetch('/api/preview-build'))).json()
 
 // this build and the newest release; latest null when GitHub didn't answer
 export interface VersionInfo {
@@ -315,9 +328,7 @@ export interface VersionInfo {
   newer: boolean
 }
 
-export async function fetchVersion(): Promise<VersionInfo> {
-  return (await check(await fetch('/api/version'))).json()
-}
+export const fetchVersion = async (): Promise<VersionInfo> => (await check(await fetch('/api/version'))).json()
 
 // first-run checklist
 export interface SetupStep {
@@ -345,15 +356,11 @@ export interface SetupStatus {
   gameRunning: boolean
 }
 
-export async function fetchSetup(): Promise<SetupStatus> {
-  return (await check(await fetch('/api/setup'))).json()
-}
+export const fetchSetup = async (): Promise<SetupStatus> => (await check(await fetch('/api/setup'))).json()
 
-export async function setSetupPath(name: string, value: string): Promise<SetupStatus> {
+export const setSetupPath = async (name: string, value: string): Promise<SetupStatus> => {
   const query = new URLSearchParams({ name })
   return (await check(await fetch(`/api/setup-path?${query}`, { method: 'POST', body: JSON.stringify(value) }))).json()
 }
 
-export async function setupAction(id: string): Promise<SetupStatus> {
-  return (await check(await fetch(`/api/setup-action?${new URLSearchParams({ id })}`, { method: 'POST', body: '' }))).json()
-}
+export const setupAction = async (id: string): Promise<SetupStatus> => (await check(await fetch(`/api/setup-action?${new URLSearchParams({ id })}`, { method: 'POST', body: '' }))).json()

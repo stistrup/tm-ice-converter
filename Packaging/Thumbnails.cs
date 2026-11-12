@@ -6,7 +6,7 @@ using SixLabors.ImageSharp.Formats.Webp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // editor tile: the native piece's thumbnail with an ice cube
 // parked, not built: needs a cube image of our own at data/ice-cube.png, ImageSharp, Paths.DataDir and a call from MapOutput.Embed.

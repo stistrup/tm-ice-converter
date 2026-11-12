@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // pieces -> FBX (Blender) -> item (NadeoImporter), then the fixes the importer can't do
 internal static class Importer
@@ -29,7 +29,7 @@ internal static class Importer
             </MeshParams>
             """);
         File.WriteAllText(Path.Combine(Paths.Work, name + ".Item.xml"), $"""
-            <Item Type="StaticObject" Collection="Stadium" AuthorName="IceConverter">
+            <Item Type="StaticObject" Collection="Stadium" AuthorName="{Paths.ItemAuthor}">
               <MeshParamsLink File="Mesh/{name}.MeshParams.xml"/>{(waypoint is null ? "" : $"\n  <Waypoint Type=\"{waypoint}\"/>")}
               <GridSnap HStep="32" VStep="8"/>
               <Levitation VStep="8" GhostMode="false"/>

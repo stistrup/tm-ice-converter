@@ -2,7 +2,7 @@ using System.Numerics;
 using GBX.NET;
 using GBX.NET.Engines.GameData;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // custom blocks around built items
 public sealed partial class ItemBuilder

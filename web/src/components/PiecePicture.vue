@@ -10,7 +10,7 @@ const canvas = ref<HTMLCanvasElement>()
 const hasMesh = ref(false)
 let preview = null as PiecePreview | null
 
-function update() {
+const update = () => {
   const parts = store.selected === null ? null : (store.view?.partsOf(store.selected) ?? null)
   hasMesh.value = parts !== null
   preview?.show(parts)

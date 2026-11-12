@@ -1,7 +1,7 @@
 using System.Numerics;
 using System.Text.RegularExpressions;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 public enum ItemKind
 {
@@ -32,7 +32,7 @@ public enum ItemKind
 }
 
 // per-map look of items; part of the item's name where it changes the mesh
-public sealed record ItemStyle(bool ZoneSides = false, bool TerrainSnow = true, float SkinLift = ItemStyle.DefaultSkinLift, float SkinEdge = ItemStyle.DefaultSkinEdge)
+public sealed record ItemStyle(bool ZoneSides = false, bool TerrainCover = true, float SkinLift = ItemStyle.DefaultSkinLift, float SkinEdge = ItemStyle.DefaultSkinEdge)
 {
     public const float DefaultSkinLift = 0.02f;
 
@@ -40,7 +40,7 @@ public sealed record ItemStyle(bool ZoneSides = false, bool TerrainSnow = true, 
     public const float DefaultSkinEdge = 90;
 }
 
-public sealed record ItemRequest(string Block, bool Ground, int Variant, int Mobil, IReadOnlySet<int> Clips, ItemKind Kind, Vector2 Tilt, string? Environment, ItemStyle Style, IReadOnlyList<Vector2>? SnowKeep = null);
+public sealed record ItemRequest(string Block, bool Ground, int Variant, int Mobil, IReadOnlySet<int> Clips, ItemKind Kind, Vector2 Tilt, string? Environment, ItemStyle Style, IReadOnlyList<Vector2>? CoverKeep = null);
 
 // what a kind of item takes from its block
 internal sealed record ItemRecipe(ItemKind Kind, bool Top, bool TopsBody, bool Body, bool Skin, bool OnTerrainBody, bool ZoneSides)
@@ -82,10 +82,10 @@ internal sealed record ItemRecipe(ItemKind Kind, bool Top, bool TopsBody, bool B
             theme.ItemPrefix + r.Block + theme.NameTag,
             catalog.DefinedIn(r.Block) is { } env ? "_" + env : "",
             KindSuffix(r, catalog),
-            !r.Style.TerrainSnow && OnTerrain(r.Block, r.Ground, r.Kind) ? "_bare" : "",
+            !r.Style.TerrainCover && OnTerrain(r.Block, r.Ground, r.Kind) ? "_bare" : "",
             TiltKey(r.Tilt),
             r.Variant == 0 && r.Mobil == 0 ? "" : $"_v{r.Variant}m{r.Mobil}",
-            r.SnowKeep is null ? "" : "_n" + KeepKey(r.SnowKeep),
+            r.CoverKeep is null ? "" : "_n" + KeepKey(r.CoverKeep),
             "_" + ClipKey.OfSet(r.Clips),
         ];
         var name = string.Concat(parts);

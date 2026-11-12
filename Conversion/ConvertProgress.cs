@@ -1,4 +1,4 @@
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // a conversion's steps as it runs: the terminal draws them, the GUI polls them
 public sealed class ConvertProgress

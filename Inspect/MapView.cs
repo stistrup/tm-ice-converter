@@ -6,7 +6,7 @@ using GBX.NET;
 using GBX.NET.Engines.Game;
 using GBX.NET.Engines.Plug;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // map -> scene for tools/view_map.py
 public sealed class MapView(BlockCatalog shapes)
@@ -160,7 +160,7 @@ public sealed class MapView(BlockCatalog shapes)
     {
         if (AddCustomBlock(block.Name, place, info))
         {
-            if (CustomBlockMesh.Parse(block.Name) is not { Snow: true }) AddClipsOf(meshName, ground, variant, mobil, place, clips, info);
+            if (CustomBlockMesh.Parse(block.Name) is not { Cover: true }) AddClipsOf(meshName, ground, variant, mobil, place, clips, info);
             return;
         }
         if (shapes.IsTerrain(meshName)) info["tags"] = info.TryGetValue("tags", out var t) ? $"{t}, terrain" : "terrain";
@@ -234,7 +234,7 @@ public sealed class MapView(BlockCatalog shapes)
     private IReadOnlySet<CGameCtnBlock>? onlyBlocks;
 
     private CGameCtnChallenge? map;
-    // the map's embedded items and blocks by name (IceConverter\X.Item.gbx), unpacked once into the cache
+    // the map's embedded items and blocks by name (SurfaceEditor\X.Item.gbx), unpacked once into the cache
     private Dictionary<string, string>? embedded;
 
     private List<ScenePiece>? EmbeddedPieces(string name)
@@ -281,10 +281,10 @@ public sealed class MapView(BlockCatalog shapes)
             var p = item.AbsolutePositionInMap;
             var place = Placement.Of(item);
             var variant = (item.Flags & 0x1F00) >> 8;
-            var key = "item:" + id + (variant > 0 && !id.StartsWith(Paths.ItemFolder + "\\") ? $"#{variant}" : "");
+            var key = "item:" + id + (variant > 0 && !Paths.IsOurs(id) ? $"#{variant}" : "");
             string? waypoint = null;
             var info = new Dictionary<string, object> { ["kind"] = "item", ["item"] = itemIndex, ["name"] = id, ["position"] = new[] { p.X, p.Y, p.Z }, ["color"] = (int)item.Color };
-            if (id.StartsWith(Paths.ItemFolder + "\\"))
+            if (Paths.IsOurs(id))
             {
                 var name = id[(id.LastIndexOf('\\') + 1)..^".Item.gbx".Length];
                 if (!meshes.ContainsKey(key))
@@ -321,7 +321,7 @@ public sealed class MapView(BlockCatalog shapes)
         }
     }
 
-    // ours: IceConverter blocks and items; their materials are the importer's, the vista doesn't restyle them
+    // ours: our blocks and items; their materials are the importer's, the vista doesn't restyle them
     private List<ScenePiece> Pieces(IEnumerable<MeshPiece> pieces, MaterialModifier? modifier, bool ours = false)
         => pieces.Where(p => p.Visible && !p.Name.StartsWith("_socket_") && !p.Name.StartsWith("_trigger_"))
             .Select(p => new ScenePiece(materials.Key(p.Material, modifier, ours), p.Positions, p.Normals, p.Uv0, p.Indices, p.Colors))

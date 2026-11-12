@@ -60,7 +60,7 @@ void DumpFile(CSystemFidFile@ fid, const string &in path)
     uint size = DiskSize(path);
     if (size > 0) g_dumpCut++; else g_dumpFailed++;
     // written at once: a crash later must not lose the list
-    IO::File f(IO::FromDataFolder("Plugins/IceConverterExtract/dump-cut.txt"), IO::FileMode::Append);
+    IO::File f(IO::FromDataFolder("Plugins/SurfaceEditorExtract/dump-cut.txt"), IO::FileMode::Append);
     f.WriteLine(path + " bytesize=" + fid.ByteSize + " disk=" + size);
     f.Close();
 }
@@ -87,7 +87,7 @@ void RunDumpAll()
     g_dumpExcludedCount = 0; g_dumpHooked = 0;
     g_dumpUnavailable.RemoveRange(0, g_dumpUnavailable.Length);
     g_dumpDone = 0; g_dumpSkipped = 0; g_dumpCut = 0; g_dumpFailed = 0;
-    string cutList = IO::FromDataFolder("Plugins/IceConverterExtract/dump-cut.txt");
+    string cutList = IO::FromDataFolder("Plugins/SurfaceEditorExtract/dump-cut.txt");
     if (IO::FileExists(cutList)) IO::Delete(cutList);
     g_dumpEmptyFolders.RemoveRange(0, g_dumpEmptyFolders.Length);
     g_dumpFollow.RemoveRange(0, g_dumpFollow.Length);
@@ -96,7 +96,7 @@ void RunDumpAll()
     g_stillMissing.RemoveRange(0, g_stillMissing.Length);
     auto root = Fids::GetGameFolder("GameData");
     if (root is null) {
-        UI::ShowNotification("Ice Converter", "No GameData folder");
+        UI::ShowNotification("Surface Editor", "No GameData folder");
         g_running = false;
         return;
     }
@@ -120,7 +120,7 @@ void RunDumpAll()
     g_dumpPhase = "Fetching tree models";
     if (!g_dumpStop) HookTreeModels();
 
-    IO::File f(IO::FromDataFolder("Plugins/IceConverterExtract/dump-log.txt"), IO::FileMode::Write);
+    IO::File f(IO::FromDataFolder("Plugins/SurfaceEditorExtract/dump-log.txt"), IO::FileMode::Write);
     string summary = (g_dumpStop ? "STOPPED" : "DONE") + " extracted=" + g_dumpDone + " already=" + g_dumpSkipped + " excluded=" + g_dumpExcludedCount
         + " byReference=" + g_byTable + " unavailableReferences=" + g_stillMissing.Length
         + " listedUnavailable=" + g_dumpUnavailable.Length + " treesHooked=" + g_dumpHooked + " cut=" + g_dumpCut + " failed=" + g_dumpFailed + " emptyFolders=" + g_dumpEmptyFolders.Length + " seconds=" + ((Time::Now - start) / 1000);
@@ -130,7 +130,7 @@ void RunDumpAll()
     for (uint i = 0; i < g_dumpUnavailable.Length; i++) f.WriteLine("listed unavailable " + g_dumpUnavailable[i]);
     f.Close();
     print(summary + " (dump-log.txt, cut files in dump-cut.txt)");
-    UI::ShowNotification("Ice Converter", summary);
+    UI::ShowNotification("Surface Editor", summary);
     g_running = false;
     WriteDumpProgress(g_dumpStop ? "stopped" : "done");
 }
@@ -157,7 +157,7 @@ void Main()
     }
 }
 
-string PluginFile(const string &in name) { return IO::FromDataFolder("Plugins/IceConverterExtract/" + name); }
+string PluginFile(const string &in name) { return IO::FromDataFolder("Plugins/SurfaceEditorExtract/" + name); }
 
 string g_dumpPhase = "";
 uint g_dumpTotal = 0;
@@ -190,7 +190,7 @@ void DumpProgress()
     while (g_running) {
         WriteDumpProgress("running");
         if (Time::Now - notified > 15000) {
-            UI::ShowNotification("Ice Converter", g_dumpPhase + ": " + g_dumpDone + " new, " + g_dumpSkipped + " already there", 4000);
+            UI::ShowNotification("Surface Editor", g_dumpPhase + ": " + g_dumpDone + " new, " + g_dumpSkipped + " already there", 4000);
             notified = Time::Now;
         }
         sleep(1000);

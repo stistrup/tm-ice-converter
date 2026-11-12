@@ -2,19 +2,19 @@ using System.Text.RegularExpressions;
 using GBX.NET;
 using GBX.NET.Engines.Game;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // terrain options: empty cells (the game's flat ground, not in the map) get the flat terrain block; shores and cliffs snow by kind
 internal static class CoverFill
 {
-    public static int Run(CGameCtnChallenge map, string collection, BlockCatalog shapes, Translations rules)
+    public static int Run(CGameCtnChallenge map, string collection, BlockCatalog shapes, ConversionRules rules)
     {
         if (FlatBlock(collection) is not { } flat) return 0;
         var size = map.Size;
         var grid = map.GetBlocks().Where(b => !b.IsFree).ToList();
         var resolver = new ClipResolver(shapes);
         var placed = resolver.OfAll(grid);
-        // pillars stand on the ground, CoverRules.PillarOnSnow lifts them
+        // pillars stand on the ground, CoverRules.PillarOnCover lifts them
         var owned = placed.Where((_, i) => grid[i].IsGround && !grid[i].IsPillar && !shapes.IsPillarBlock(grid[i].Name))
             .SelectMany(resolver.UnitCells).Select(c => (c.X, c.Z)).ToHashSet();
         var y = GroundY(collection);
@@ -24,21 +24,21 @@ internal static class CoverFill
             {
                 if (owned.Contains((x, z))) continue;
                 map.PlaceBlock(flat, new Int3(x, y, z), Direction.North, true, 0, 0);
-                rules.SnowCells.Add((x, z));
+                rules.CoverCells.Add((x, z));
                 filled++;
             }
         return filled;
     }
 
     // snowOnWaterHills / snowOnCliffs, ground level only: those terrain columns snow as if picked
-    public static void ByKind(CGameCtnChallenge map, string collection, BlockCatalog shapes, Translations rules)
+    public static void ByKind(CGameCtnChallenge map, string collection, BlockCatalog shapes, ConversionRules rules)
     {
         var (shores, cliffs) = (rules.Options.SnowOnWaterHills, rules.Options.SnowOnCliffs);
         if (!shores && !cliffs) return;
         var ground = GroundY(collection);
         foreach (var b in map.GetBlocks())
             if (!b.IsFree && shapes.IsTerrain(b.Name) && (shores && CoverRules.IsShore(b.Name) && b.Coord.Y < ground || cliffs && b.Name.Contains("Cliff") && b.Coord.Y <= ground))
-                rules.SnowCells.Add((b.Coord.X, b.Coord.Z));
+                rules.CoverCells.Add((b.Coord.X, b.Coord.Z));
     }
 
     // grid Y of the flat ground; ground-level water lies one below

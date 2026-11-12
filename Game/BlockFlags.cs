@@ -1,6 +1,6 @@
 using GBX.NET.Engines.Game;
 
-namespace TmIceConverter;
+namespace TmSurfaceEditor;
 
 // bits 0-5 mobil row (GBX.NET Variant), 6-11 mobil entry (SubVariant), 21-26 block info variant
 internal static class BlockFlags
