@@ -128,14 +128,17 @@ internal sealed class ItemMesh(Theme theme, HashSet<string> missing)
         return pieces.Count == 0 ? null : pieces;
     }
 
-    // a ground body holding water (a lake): its terrain above the water in snow, like a shore; rocks and the rest stay
+    // a ground body's terrain faces as terrain snow: above the water if it holds some (a lake), else at the foot; rocks and the rest stay
     private static List<MeshPiece> CoverGround(List<MeshPiece> pieces, ItemJob job)
     {
         // the kept native gate draws its curtain
         pieces = pieces.Where(p => !p.Material.Contains("TriggerFX")).ToList();
-        if (WaterLine(pieces) is not { } line) return pieces;
-        var terrain = pieces.Where(job.IsTerrainFace).ToList();
-        return [.. PieceOps.CoverAboveCollision(PieceOps.CoverAbove(terrain, line, job.Theme.Cover), line, job.Theme.Cover), .. pieces.Where(p => !job.IsTerrainFace(p))];
+        pieces = TerrainFaces.AsTerrainBelow(pieces, job.Environment);
+        var (terrain, cover) = (pieces.Where(job.IsTerrainFace).ToList(), job.Theme.Cover);
+        List<MeshPiece> covered = WaterLine(pieces) is { } line
+            ? PieceOps.CoverAboveCollision(PieceOps.CoverAbove(terrain, line, cover), line, cover)
+            : PieceOps.CoverFoot(PieceOps.CoverFoot(terrain, CoverLip, cover), CoverLip, cover, true);
+        return [.. covered, .. pieces.Where(p => !job.IsTerrainFace(p))];
     }
 
     private static List<MeshPiece> WithNativeLinks(List<MeshPiece> pieces, ItemJob job)

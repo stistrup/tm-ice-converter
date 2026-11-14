@@ -11,7 +11,7 @@ internal sealed record ItemMaterials(Dictionary<string, string> Map, HashSet<str
         ApplyBlockPatterns(map, r.Block);
         if (recipe.Body && r.Kind != ItemKind.CoveredGround) RemoveUncoveredDeco(map, theme, r.Block, recipe.ZoneSides);
         // terrain snow: the cut decides, not the map
-        if (recipe.OnTerrainBody || r.Kind == ItemKind.CoveredTerrain) Remove(map, m => TerrainFaces.IsTerrain(m, environment));
+        if (recipe.OnTerrainBody || r.Kind is ItemKind.CoveredTerrain or ItemKind.CoveredGround) Remove(map, m => TerrainFaces.IsTerrain(m, environment));
         // snow bodies keep their water surface (shores, lakes); elsewhere water under ice is left out
         if (r.Kind is ItemKind.CoveredTerrain or ItemKind.CoveredGround) map["Water"] = "native";
         var native = TakeNative(map);
