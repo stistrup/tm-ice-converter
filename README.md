@@ -28,7 +28,7 @@ To update, just replace everything in old app folder (wherever you put it). Your
 ## Use
 
 Hopefully the UI is somewhat self-explanatory. If not, sorry stuff changes so much and can't be bothered to keep this up to date and will wait until UX stuff settles.
-Safe to click around, test conversions etc, this app does not modify any original item, map or file. The only things that touch the game are installing the Openplanet plugin to extract game files and turning on dev mode in Openplanet. And of course it creates maps, blocks and items.
+Safe to click around, test conversions etc, this app does not modify any original item, map or file. The only things that touch the game are installing the Openplanet plugin to extract game files and turning on dev mode in Openplanet (not without asking). And of course it creates maps, blocks and items.
 
 The converted items end up in `Documents/Trackmania/Items/SurfaceEditor/` and working files in `Documents/Trackmania/Work/Items/SurfaceEditor/` that nadeo importer needs, extracted files in `OpenplanetNext/Extract/`, and converted maps in `Documents/Trackmania/Maps/` as new files. Other maps, items etc are never touch. 
 
