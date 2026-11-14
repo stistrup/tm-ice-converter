@@ -68,7 +68,7 @@ internal static class Pads
     public static string? PadGameplayOf(string block)
     {
         if (BlockNames.Effect(block) is not { } effect) return null;
-        var path = Path.Combine(Paths.ExtractedStadium, "Media", "Modifier", effect, "CollisionRoadIce.Material.Gbx");
+        var path = GameFiles.OnDisk(Path.Combine(Paths.ExtractedStadium, "Media", "Modifier", effect, "CollisionRoadIce.Material.Gbx"));
         return File.Exists(path) && Gbx.ParseNode<GBX.NET.Engines.Plug.CPlugMaterial>(path) is { GameplayId: { } g } ? g.ToString() : null;
     }
 

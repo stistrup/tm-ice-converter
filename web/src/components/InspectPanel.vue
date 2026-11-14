@@ -6,11 +6,13 @@ import { displayName, infoRows } from '../viewer/names'
 import { outcomeLabel } from '../viewer/outcomes'
 import TargetChoice from './TargetChoice.vue'
 import PiecePicture from './PiecePicture.vue'
+import FoldSection from './FoldSection.vue'
 
 const store = useMapStore()
 const preview = usePreviewStore()
 
 const info = computed(() => (store.selected === null ? null : store.infos[store.selected]))
+const single = computed(() => store.selection.length <= 1)
 
 const becomes = computed(() => {
   const decision = store.selected === null ? undefined : preview.decisions?.[store.selected]
@@ -35,49 +37,30 @@ const details = computed(() => {
 </script>
 
 <template>
-  <aside v-if="info" :class="$style.panel">
-    <header :class="$style.header">
-      <span>Properties</span>
+  <FoldSection v-if="info" id="selection" title="Selection">
+    <template #side>
       <span :class="$style.count">{{ store.selection.length }} selected</span>
-    </header>
-    <PiecePicture />
-    <div :class="$style.body">
-      <h2 :class="$style.title">
-        {{ displayName(info) }}
-        <span :class="$style.info" :title="details" aria-label="Properties">i</span>
-      </h2>
-      <dl v-if="becomes" :class="$style.properties">
-        <dt :title="becomes.rule ? `decided by rule ${becomes.rule}` : undefined" :class="{ [$style.hinted]: becomes.rule }">Becomes</dt>
-        <dd>{{ becomes.label }}</dd>
-      </dl>
-      <TargetChoice :class="$style.manual" />
+    </template>
+    <PiecePicture v-if="single" />
+    <div :class="{ [$style.below]: single }">
+      <template v-if="single">
+        <h2 :class="$style.title">
+          {{ displayName(info) }}
+          <span :class="$style.info" :title="details" aria-label="Properties">i</span>
+        </h2>
+        <dl v-if="becomes" :class="$style.properties">
+          <dt :title="becomes.rule ? `decided by rule ${becomes.rule}` : undefined" :class="{ [$style.hinted]: becomes.rule }">Becomes</dt>
+          <dd>{{ becomes.label }}</dd>
+        </dl>
+      </template>
+      <TargetChoice :class="{ [$style.manual]: single }" />
     </div>
-  </aside>
+  </FoldSection>
 </template>
 
 <style module>
-.panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--panel);
-}
-
-.header {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  height: 24px;
-  padding: 0 8px;
-  color: var(--strong);
-  background: var(--header);
-}
-
-.body {
-  min-height: 0;
-  padding: 8px;
-  overflow-y: auto;
+.below {
+  margin-top: 8px;
 }
 
 .manual {

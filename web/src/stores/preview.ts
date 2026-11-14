@@ -24,10 +24,8 @@ import {
   type PreviewResult,
   type SceneManifest,
 } from '../api'
-import { remembered } from '../storage'
 import { useMapStore } from './map'
 
-const OPEN_KEY = 'preview-open'
 
 const clone = (settings: MapSettings): MapSettings => JSON.parse(JSON.stringify(settings))
 
@@ -35,7 +33,6 @@ const clone = (settings: MapSettings): MapSettings => JSON.parse(JSON.stringify(
 export const usePreviewStore = defineStore('preview', () => {
   const map = useMapStore()
   // the panel is always there; folding only hides it
-  const open = remembered(OPEN_KEY, true)
   // where the map's settings stand: saved or defaults
   const state = ref<MapState | null>(null)
   // what the menu edits and the preview runs with, shaped like settings/maps/<uid>.json
@@ -183,15 +180,6 @@ export const usePreviewStore = defineStore('preview', () => {
     }
   }
 
-  // folding only hides the panel; the preview stays drawn
-  const show = () => {
-    open.value = true
-  }
-
-  const close = () => {
-    open.value = false
-  }
-
   const clear = () => {
     runId++
     loading.value = false
@@ -296,7 +284,6 @@ export const usePreviewStore = defineStore('preview', () => {
     changed,
     lookVersion,
     showOriginal,
-    open,
     options,
     result,
     loading,
@@ -304,8 +291,6 @@ export const usePreviewStore = defineStore('preview', () => {
     stale,
     decisions,
     run,
-    show,
-    close,
     set,
     valueOf,
   }

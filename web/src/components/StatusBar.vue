@@ -1,31 +1,55 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { fetchVersion, type VersionInfo } from '../api'
+import { useHistoryStore } from '../stores/history'
 import { useMapStore } from '../stores/map'
 import { useSetupStore } from '../stores/setup'
+import { displayName } from '../viewer/names'
+import FloatingPanel from './FloatingPanel.vue'
 
 const store = useMapStore()
 const setup = useSetupStore()
+const history = useHistoryStore()
 const manifest = computed(() => store.scene?.manifest)
-const noMesh = computed(() => Object.values(manifest.value?.skipped ?? {}).reduce((sum, count) => sum + count, 0))
 const version = ref<VersionInfo | null>(null)
 onMounted(async () => {
   version.value = await fetchVersion().catch(() => null)
 })
-const noMeshList = computed(() =>
-  Object.entries(manifest.value?.skipped ?? {})
-    .sort((a, b) => b[1] - a[1])
-    .map(([what, count]) => `${count}× ${what}`)
-    .join('\n'),
-)
+// boxes and cones, numbered after the instances as MapScene does
+const missing = computed(() => {
+  const m = manifest.value
+  if (!m) return []
+  const start = m.instances.length
+  return [...m.placeholders, ...m.boxes]
+    .map((p, i) => ({ index: start + i, name: displayName(p.info), cell: Array.isArray(p.info.cell) ? p.info.cell.join(', ') : '', kind: i < m.placeholders.length ? 'cone' : 'box' }))
+    .sort((a, b) => a.name.localeCompare(b.name))
+})
+const missingOpen = ref(false)
+const missingButton = ref<HTMLElement>()
+// as a click in the view: one undo step
+const select = (index: number) => history.change(() => (store.selected = index))
+
+const hover = (index: number | null) => {
+  store.view?.showHover(index)
+  if (index !== null) store.view?.focus(index)
+}
+watch(missingOpen, (now) => now || hover(null))
+watch(manifest, () => (missingOpen.value = false))
 </script>
 
 <template>
   <footer :class="$style.bar">
     <span v-if="manifest">{{ store.currentMap ? store.currentMap.path.replace(/\.Map\.Gbx$/i, '') : manifest.map }}</span>
-    <span v-if="noMesh" :class="$style.warn" :title="`Drawn as boxes or cones:\n${noMeshList}`">
-      {{ noMesh }} without mesh
-    </span>
+    <button v-if="missing.length" ref="missingButton" type="button" :class="$style.missing" @click="missingOpen = !missingOpen">
+      {{ missing.length }} without mesh
+    </button>
+    <FloatingPanel v-model="missingOpen" :anchor="missingButton" :title="`Without mesh, drawn as boxes or cones: ${missing.length}`">
+      <li v-for="piece in missing" :key="piece.index" @mouseenter="hover(piece.index)" @mouseleave="hover(null)" @click="select(piece.index)">
+        <span :class="$style.grow">{{ piece.name }}</span>
+        <span>{{ piece.cell }}</span>
+        <span>{{ piece.kind }}</span>
+      </li>
+    </FloatingPanel>
     <span
       v-if="manifest?.notExtracted.length"
       :class="$style.warn"
@@ -60,6 +84,11 @@ const noMeshList = computed(() =>
   color: var(--warn);
 }
 
+.grow {
+  composes: grow from '../ui.module.css';
+  color: var(--text);
+}
+
 .help {
   margin-left: auto;
 }
@@ -74,6 +103,18 @@ const noMeshList = computed(() =>
 
 .setup:hover {
   color: var(--strong);
+}
+
+.missing {
+  padding: 0 4px;
+  color: var(--warn);
+  cursor: default;
+  background: none;
+  border: 0;
+}
+
+.missing:hover {
+  text-decoration: underline;
 }
 
 .link {

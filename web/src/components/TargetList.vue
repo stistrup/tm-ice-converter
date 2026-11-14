@@ -1,15 +1,17 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useHistoryStore } from '../stores/history'
 import { useMapStore } from '../stores/map'
 import { usePreviewStore } from '../stores/preview'
 import { normalKey } from '../api'
+import FloatingPanel from './FloatingPanel.vue'
 
 const store = useMapStore()
 const preview = usePreviewStore()
 const history = useHistoryStore()
 
 const open = ref(false)
+const button = ref<HTMLElement>()
 
 // index null: not on this map
 const picks = computed(() => {
@@ -27,6 +29,11 @@ const picks = computed(() => {
   })
 })
 
+// as a click in the view: one undo step
+const select = (index: number | null) => {
+  if (index !== null) history.change(() => (store.selected = index))
+}
+
 const hover = (index: number | null) => {
   store.view?.showHover(index)
   if (index !== null) store.view?.focus(index)
@@ -36,59 +43,34 @@ const remove = (key: string) => {
   hover(null)
   history.change(() => preview.pick([key], ''))
 }
+
+watch(open, (now) => now || hover(null))
+watch(() => picks.value.length, (n) => n || (open.value = false))
 </script>
 
 <template>
-  <div :class="$style.picks">
-    <button type="button" :class="$style.fold" :aria-expanded="open" :disabled="!picks.length" @click="open = !open">
-      <span>Conversion targets: {{ picks.length }}</span>
-      <span v-if="picks.length" :class="[$style.chevron, { [$style.up]: open }]" />
-    </button>
-    <ul v-if="open && picks.length" :class="$style.list">
-      <li
-        v-for="pick in picks"
-        :key="pick.key"
-        :class="[$style.pick, { [$style.gone]: pick.index === null }]"
-        :title="pick.index === null ? `${pick.key}: not on this map` : pick.key"
-        @mouseenter="hover(pick.index)"
-        @mouseleave="hover(null)"
-      >
-        <span :class="$style.grow">{{ pick.name }}</span>
-        <span :class="$style.choice">{{ pick.label }}</span>
-        <button type="button" :class="$style.textButton" @click="remove(pick.key)">Remove</button>
-      </li>
-    </ul>
-  </div>
+  <button ref="button" type="button" :class="$style.fold" :aria-expanded="open" :disabled="!picks.length" @click="open = !open">
+    <span>Conversion targets: {{ picks.length }}</span>
+    <span v-if="picks.length" :class="[$style.chevron, { [$style.up]: open }]" />
+  </button>
+  <FloatingPanel v-model="open" :anchor="button" :title="`Conversion targets: ${picks.length}`">
+    <li
+      v-for="pick in picks"
+      :key="pick.key"
+      :class="{ [$style.gone]: pick.index === null }"
+      :title="pick.index === null ? `${pick.key}: not on this map` : pick.key"
+      @mouseenter="hover(pick.index)"
+      @click="select(pick.index)"
+      @mouseleave="hover(null)"
+    >
+      <span :class="$style.grow">{{ pick.name }}</span>
+      <span :class="$style.choice">{{ pick.label }}</span>
+      <button type="button" :class="$style.remove" @click.stop="remove(pick.key)">Remove</button>
+    </li>
+  </FloatingPanel>
 </template>
 
 <style module>
-.picks {
-  margin-top: 8px;
-}
-
-.list {
-  display: grid;
-  max-height: 220px;
-  margin: 2px 0 0;
-  padding: 0;
-  overflow-y: auto;
-  list-style: none;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-}
-
-.pick {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  min-height: 20px;
-  padding: 0 2px 0 6px;
-}
-
-.pick:hover {
-  background: var(--field);
-}
-
 .gone {
   opacity: 0.5;
 }
@@ -114,7 +96,18 @@ const remove = (key: string) => {
   composes: grow from '../ui.module.css';
 }
 
-.textButton {
-  composes: textButton from '../ui.module.css';
+.remove {
+  flex: none;
+  height: 18px;
+  padding: 0 6px;
+  color: var(--accent);
+  cursor: default;
+  background: none;
+  border: 0;
+  border-radius: 2px;
+}
+
+.remove:hover {
+  color: #ff3b30;
 }
 </style>

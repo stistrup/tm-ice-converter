@@ -34,7 +34,7 @@ internal static class TerrainFaces
 
     public static string? ShaderOf(string material, string? environment)
     {
-        var path = Path.Combine(Path.GetDirectoryName(Paths.ExtractedStadium)!, environment ?? "Stadium", "Media", "Material", material + ".Material.Gbx");
+        var path = GameFiles.OnDisk(Path.Combine(Path.GetDirectoryName(Paths.ExtractedStadium)!, environment ?? "Stadium", "Media", "Material", material + ".Material.Gbx"));
         lock (terrainMaterials)
         {
             if (shaders.TryGetValue(path, out var known)) return known;

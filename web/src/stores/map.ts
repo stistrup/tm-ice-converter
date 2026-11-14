@@ -84,6 +84,12 @@ export const useMapStore = defineStore('map', () => {
 
   watch(selection, (value) => rememberView({ selection: value }))
   const mapsShown = remembered(SHOWN_KEY, true)
+  // bumped to make the maps panel open on the current map
+  const revealed = ref(0)
+  const revealMap = () => {
+    mapsShown.value = true
+    revealed.value++
+  }
 
 
   let loadId = 0
@@ -179,6 +185,8 @@ export const useMapStore = defineStore('map', () => {
     paint,
     hidden,
     mapsShown,
+    revealed,
+    revealMap,
     infos,
     categoryCounts,
     view,

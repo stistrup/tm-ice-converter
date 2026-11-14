@@ -4,6 +4,7 @@ import { useMapStore } from '../stores/map'
 import { MapScene } from '../viewer/MapScene'
 import { previewDraw, waitingDraw } from '../viewer/previewDraw'
 import ConvertMenu from './ConvertMenu.vue'
+import PreviewBar from './PreviewBar.vue'
 import ConvertDialog from './ConvertDialog.vue'
 import InspectPanel from './InspectPanel.vue'
 import { displayName } from '../viewer/names'
@@ -145,20 +146,24 @@ onBeforeUnmount(() => {
       >
         {{ hoverName }}
       </div>
+      <button v-if="store.currentMap" type="button" :class="$style.mapTitle" :title="store.currentMap.path" @click="store.revealMap()">{{ store.currentMap.name }}</button>
       <div v-if="store.scene" :class="$style.topLeft">
-        <button type="button" :class="$style.home" title="Whole map (Home)" aria-label="Whole map" @click="store.view?.frameAll()">
-          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-            <path d="M2 7.5 8 2l6 5.5M3.5 6.5V14h3.5v-4h2v4h3.5V6.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
-          </svg>
-        </button>
         <div v-if="busy" :class="$style.busy" role="status">
           <span :class="$style.spinner" aria-hidden="true" />
           {{ busy }}
         </div>
       </div>
+      <div v-if="store.scene" :class="$style.topRight">
+        <button type="button" :class="$style.home" title="Whole map (Home)" aria-label="Whole map" @click="store.view?.frameAll()">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path d="M2 7.5 8 2l6 5.5M3.5 6.5V14h3.5v-4h2v4h3.5V6.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+          </svg>
+        </button>
+      </div>
       <div v-if="store.scene" :class="$style.right">
+        <PreviewBar :class="$style.section" />
         <ConvertMenu :class="$style.section" />
-        <InspectPanel :class="$style.section" />
+        <InspectPanel :class="[$style.section, $style.apart]" />
       </div>
       <div v-if="store.scene || converting.job || store.chosenMaps.size" :class="$style.convert">
         <ConvertDialog />
@@ -169,6 +174,7 @@ onBeforeUnmount(() => {
 
 <style module>
 .viewport {
+  --panel-width: 290px;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -211,7 +217,7 @@ onBeforeUnmount(() => {
   z-index: 1;
   display: flex;
   flex-direction: column;
-  width: 290px;
+  width: var(--panel-width);
   /* room for the convert button below */
   max-height: calc(100% - 46px);
   overflow-y: auto;
@@ -225,8 +231,8 @@ onBeforeUnmount(() => {
   flex: none;
 }
 
-/* a dark gap: each panel its own field */
-.section + .section {
+/* a dark gap: the selection its own field */
+.apart {
   margin-top: 6px;
 }
 
@@ -238,14 +244,47 @@ onBeforeUnmount(() => {
 }
 
 /* home, then the preview at work, right of the floating maps panel */
+/* the open map, beside the maps panel's header */
+.mapTitle {
+  position: absolute;
+  top: 0;
+  left: var(--side-width, 0px);
+  z-index: 1;
+  max-width: calc(100% - var(--side-width, 0px) - var(--panel-width) - 50px);
+  height: 24px;
+  padding: 0 10px;
+  overflow: hidden;
+  line-height: 24px;
+  color: var(--strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  cursor: default;
+  background: var(--header);
+  border: 0;
+  border-right: 1px solid var(--line);
+}
+
+.mapTitle:hover {
+  color: var(--text);
+}
+
 .topLeft {
   position: absolute;
-  top: 10px;
+  top: 34px;
   left: calc(var(--side-width, 0px) + 10px);
   z-index: 1;
   display: flex;
   gap: 6px;
   align-items: center;
+}
+
+/* left of the panels */
+.topRight {
+  position: absolute;
+  top: 10px;
+  right: calc(var(--panel-width) + 10px);
+  z-index: 1;
 }
 
 .home {

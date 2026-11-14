@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import type { MapEntry } from '../api'
 import { readJson, writeJson } from '../storage'
 import { useMapStore } from '../stores/map'
@@ -30,15 +30,29 @@ watch(
   { deep: true },
 )
 
+const treeBox = ref<HTMLElement>()
+
+const openFoldersOf = (map: MapEntry | null) => {
+  let path = ''
+  for (const part of map?.folder.split(/[\\/]/).filter(Boolean) ?? []) {
+    path += `/${part}`
+    openFolders.value.add(path)
+  }
+}
+
 // a reopened map's row has to be visible
+watch(() => store.currentMap, openFoldersOf)
+
+// the title over the view asks for the current map: folders open, search cleared if it hides it, row scrolled to
 watch(
-  () => store.currentMap,
-  (map) => {
-    let path = ''
-    for (const part of map?.folder.split(/[\\/]/).filter(Boolean) ?? []) {
-      path += `/${part}`
-      openFolders.value.add(path)
-    }
+  () => store.revealed,
+  async () => {
+    const map = store.currentMap
+    if (!map) return
+    openFoldersOf(map)
+    if (needle.value && !`${map.folder} ${map.name}`.toLowerCase().includes(needle.value)) search.value = ''
+    await nextTick()
+    treeBox.value?.querySelector(`[data-map="${CSS.escape(map.path)}"]`)?.scrollIntoView({ block: 'center' })
   },
 )
 
@@ -121,7 +135,7 @@ const indent = (depth: number) => ({ paddingLeft: `${6 + depth * 12}px` })
       </div>
     </div>
     <p v-if="shown && store.mapsError" :class="$style.error">{{ store.mapsError }}</p>
-    <div v-if="shown" :class="$style.tree">
+    <div v-if="shown" ref="treeBox" :class="$style.tree">
       <template v-for="row in rows" :key="row.key">
         <div
           v-if="row.kind === 'folder'"
@@ -144,6 +158,7 @@ const indent = (depth: number) => ({ paddingLeft: `${6 + depth * 12}px` })
         </div>
         <div
           v-else
+          :data-map="row.map.path"
           :class="[$style.row, { [$style.current]: row.map.path === store.currentMap?.path }]"
           :style="indent(row.depth)"
         >

@@ -30,7 +30,7 @@ internal sealed class SceneMaterials(BlockCatalog shapes)
         string? path = null;
         // linked to the game's own material after import
         if (name.StartsWith(MaterialLib.NativePrefix) && MaterialLib.NativeLink(name[MaterialLib.NativePrefix.Length..], shapes.Environment) is { } link
-            && Path.Combine(Path.GetDirectoryName(Paths.ExtractedStadium)!, link.Replace('\\', '/') + ".Material.Gbx") is var native && File.Exists(native))
+            && Path.Combine(Path.GetDirectoryName(Paths.ExtractedStadium)!, link.Replace('\\', '/') + ".Material.Gbx") is var linked && GameFiles.OnDisk(linked) is var native && File.Exists(native))
         {
             // terrain All (Cliff, Dirt…) drawn as the terrain shader, like native terrain pieces
             if (ShaderOf(native) is { } terrain && terrain.Contains("_Ids")) return Key(terrain, modifier, ours);
@@ -52,7 +52,7 @@ internal sealed class SceneMaterials(BlockCatalog shapes)
     {
         if (All.ContainsKey(name)) return name;
         var hash = name.LastIndexOf('#');
-        var material = VegetTree.Read(Path.Combine(GameData, name[MeshExporter.VegetPrefix.Length..hash])).Materials[int.Parse(name[(hash + 1)..])];
+        var material = VegetTree.Read(GameFiles.OnDisk(Path.Combine(GameData, name[MeshExporter.VegetPrefix.Length..hash]))).Materials[int.Parse(name[(hash + 1)..])];
         var textures = new List<SceneTexture>();
         foreach (var (role, image) in new[] { "D", "N", "R" }.Zip(material.Images))
         {
@@ -164,7 +164,7 @@ internal sealed class SceneMaterials(BlockCatalog shapes)
     {
         var dir = Path.GetDirectoryName(fromFile)!;
         for (int i = 0; i < ancestorLevel; i++) dir = Path.GetDirectoryName(dir)!;
-        return Path.GetFullPath(Path.Combine(dir, refPath.Replace('\\', '/')));
+        return GameFiles.OnDisk(Path.GetFullPath(Path.Combine(dir, refPath.Replace('\\', '/'))));
     }
 
     private static string Stem(string path) => Path.GetFileName(path).Split('.')[0];

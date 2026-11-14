@@ -60,7 +60,7 @@ public sealed partial class BlockCatalog
         if (!environmentBlocks.TryGetValue(dir, out var names))
         {
             names = Directory.EnumerateFiles(dir, "*.ED*.Gbx", SearchOption.AllDirectories)
-                .Select(f => Path.GetFileName(f).Split('.')[0]).ToHashSet();
+                .Select(f => Path.GetFileName(f).Split('.')[0]).ToHashSet(StringComparer.OrdinalIgnoreCase);
             var inventory = Path.Combine(dir, "BlockInfoInventory.gbx.json");
             if (File.Exists(inventory))
                 names.UnionWith(Regex.Matches(File.ReadAllText(inventory), @"""Name""\s*:\s*""([^""]+)""").Select(m => m.Groups[1].Value));
@@ -78,7 +78,7 @@ public sealed partial class BlockCatalog
             var infoPath = blockName.Contains('\\') ? null
                 : new[] { Paths.EnvironmentBlockInfos(stadiumDir, environment), Path.Combine(stadiumDir, "GameCtnBlockInfo") }
                     .OfType<string>().Where(Directory.Exists)
-                    .SelectMany(d => Directory.EnumerateFiles(d, blockName + ".ED*.Gbx", SearchOption.AllDirectories)).FirstOrDefault();
+                    .SelectMany(d => Directory.EnumerateFiles(d, blockName + ".ED*.Gbx", new EnumerationOptions { RecurseSubdirectories = true, MatchCasing = MatchCasing.CaseInsensitive })).FirstOrDefault();
             var info = infoPath is null ? null : Gbx.ParseNode(infoPath) as CGameCtnBlockInfo;
             // GBX.NET leaves missing refs null
             if (infoPath is not null && Gbx.ParseHeader(infoPath).RefTable is { } refs)

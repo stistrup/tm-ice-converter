@@ -4,12 +4,12 @@ using GBX.NET.Engines.Game;
 
 namespace TmSurfaceEditor;
 
-// terrain options: empty cells (the game's flat ground, not in the map) get the flat terrain block; shores and cliffs snow by kind
+// terrain options: empty cells (the environment's default zone, not in the map) get the flat terrain block, unless that zone is water; shores and cliffs snow by kind
 internal static class CoverFill
 {
     public static int Run(CGameCtnChallenge map, string collection, BlockCatalog shapes, ConversionRules rules)
     {
-        if (FlatBlock(collection) is not { } flat) return 0;
+        if (DefaultZones.IsWater(DefaultZones.Of(collection)) || FlatBlock(collection) is not { } flat) return 0;
         var size = map.Size;
         var grid = map.GetBlocks().Where(b => !b.IsFree).ToList();
         var resolver = new ClipResolver(shapes);

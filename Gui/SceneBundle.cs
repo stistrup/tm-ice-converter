@@ -11,7 +11,7 @@ namespace TmSurfaceEditor;
 internal static class SceneBundle
 {
     // bump when the output changes
-    private const int Format = 45;
+    private const int Format = 47;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -65,7 +65,7 @@ internal static class SceneBundle
             .Select(group => WritePiece(geometry, materialIndex[group.Key], group.ToList()))
             .ToList())).ToList();
 
-        return new Manifest(scene.Map, scene.Environment, DefaultZone(scene.Environment), geometry.Length, notExtracted, materials, meshes,
+        return new Manifest(scene.Map, scene.Environment, DefaultZones.Of(scene.Environment), geometry.Length, notExtracted, materials, meshes,
             scene.Instances.Select(i => new ManifestInstance(meshIndex[i.Mesh], i.M, i.Info)).ToList(),
             scene.Placeholders, scene.Boxes, scene.Skipped);
     }
@@ -91,22 +91,6 @@ internal static class SceneBundle
         if (colors)
             foreach (var p in pieces) Put(stream, p.Colors ?? Enumerable.Repeat(1f, p.Positions.Length / 3 * 4).ToArray());
         return new ManifestPiece(material, offset, vertices, indexCount, colors);
-    }
-
-    private static readonly Dictionary<string, string?> defaultZones = [];
-
-    private static string? DefaultZone(string? environment)
-    {
-        if (environment is null) return null;
-        lock (defaultZones)
-        {
-            if (defaultZones.TryGetValue(environment, out var known)) return known;
-            var file = Path.Combine(Path.GetDirectoryName(Paths.ExtractedStadium)!, "Collections", environment + ".Collection.Gbx");
-            string? zone = null;
-            try { if (File.Exists(file)) zone = Gbx.ParseNode<CGameCtnCollection>(file, new GbxReadSettings { IgnoreExceptionsInBody = true }).DefaultZoneId; }
-            catch (Exception e) { Console.Error.WriteLine($"default zone of {environment}: {e.Message}"); }
-            return defaultZones[environment] = zone;
-        }
     }
 
     private static void Put<T>(Stream stream, T[] values) where T : struct => stream.Write(MemoryMarshal.AsBytes(values.AsSpan()));

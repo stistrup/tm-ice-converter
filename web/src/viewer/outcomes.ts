@@ -19,8 +19,9 @@ export const outcomeLabel = (outcome: string) => outcomes[outcome]?.label ?? out
 const optionLabels: Record<string, string> = {
   convertTrees: 'Convert trees on converted blocks',
   fillEmptyWithSnow: 'Fill empty cells',
-  snowOnWaterHills: 'Snow on ground level water hills',
-  snowOnCliffs: 'Snow on ground level dirt cliffs',
+  snowOnZoneSides: 'Open-zone sides',
+  snowOnWaterHills: 'Ground level water hills',
+  snowOnCliffs: 'Ground level dirt cliffs',
 }
 
 // convertScenery -> Convert scenery

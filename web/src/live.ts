@@ -76,10 +76,8 @@ export const startLiveLink = () => {
       await fetch(`/api/answer?id=${command.id}`, { method: 'POST', body: JSON.stringify(answer) })
     } else if (command.type === 'preview') {
       const preview = usePreviewStore()
-      if (!command.open) preview.close()
-      else {
+      if (command.open) {
         for (const [name, value] of Object.entries(command.set ?? {})) preview.set(name, value)
-        preview.show()
         void preview.run()
       }
     } else if (command.type === 'shown') {

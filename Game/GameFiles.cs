@@ -30,6 +30,7 @@ public sealed class GameFiles(string stadiumDir)
 
     private T? Load<T>(string path) where T : CMwNod, new()
     {
+        path = OnDisk(path);
         if (cache.TryGetValue(path, out var cached)) return cached as T;
         T? node = null;
         if (!File.Exists(path))
@@ -50,6 +51,30 @@ public sealed class GameFiles(string stadiumDir)
     {
         var dir = Path.GetDirectoryName(fromFile)!;
         for (int i = 0; i < ancestorLevel; i++) dir = Path.GetDirectoryName(dir)!;
-        return Path.GetFullPath(Path.Combine(dir, refPath.Replace('\\', '/')));
+        return OnDisk(Path.GetFullPath(Path.Combine(dir, refPath.Replace('\\', '/'))));
+    }
+
+    private static readonly Dictionary<string, string> onDisk = [];
+
+    // the game's names ignore case, a Linux disk doesn't (DecoHillSlope2Curve2Out is extracted as …2curve2Out): the real path, or the path as given
+    public static string OnDisk(string path)
+    {
+        if (File.Exists(path) || Directory.Exists(path)) return path;
+        lock (onDisk)
+        {
+            if (onDisk.TryGetValue(path, out var known)) return known;
+            var found = Path.GetPathRoot(path) ?? "";
+            foreach (var part in path[found.Length..].Split('/', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var exact = Path.Combine(found, part);
+                if (File.Exists(exact) || Directory.Exists(exact)) { found = exact; continue; }
+                var match = Directory.Exists(found)
+                    ? Directory.EnumerateFileSystemEntries(found).FirstOrDefault(e => string.Equals(Path.GetFileName(e), part, StringComparison.OrdinalIgnoreCase))
+                    : null;
+                if (match is null) return onDisk[path] = path;
+                found = match;
+            }
+            return onDisk[path] = found;
+        }
     }
 }

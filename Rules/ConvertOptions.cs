@@ -14,7 +14,7 @@ public sealed record ConvertOptions(
     bool EffectsToGate = false,
     [property: Category("map"), Description("Engine-off blocks become plain blocks, engine-off gates are removed; wins over engine-off to reset")]
     bool EngineOffToPlain = false,
-    [property: Category("look"), Description("Snow on open-zone sides, inside custom blocks and skins only; roads swapped to the game's own ice roads keep their grass")]
+    [property: Category("look"), Description("Open-zone sides convert too, inside custom blocks and skins only; roads swapped to the game's own ice roads keep their grass")]
     bool SnowOnZoneSides = false,
     [property: Category("piece"), Description("Deco platforms on or in the ground: native ice with a snow skin")]
     bool SnowOnGroundDeco = false,
@@ -26,11 +26,11 @@ public sealed record ConvertOptions(
     bool ConvertTrees = false,
     [property: Category("piece"), Description("Deco blocks, pillars, concrete and walls get snow")]
     bool ConvertScenery = false,
-    [property: Category("map"), Description("Empty cells, the game's flat ground, become snow too")]
+    [property: Category("map"), Description("Empty cells, the game's flat ground, get converted too")]
     bool FillEmptyWithSnow = false,
-    [property: Category("map"), Description("Shores (water hills) at ground level get snow above the water line; raised lakes stay")]
+    [property: Category("map"), Description("Shores (water hills) at ground level get converted above the water line; raised lakes stay")]
     bool SnowOnWaterHills = false,
-    [property: Category("map"), Description("Cliffs standing on the ground get snow at their foot; cliffs on terraces stay")]
+    [property: Category("map"), Description("Cliffs standing on the ground get converted at their foot; cliffs on terraces stay")]
     bool SnowOnCliffs = false,
     [property: Category("piece"), Description("Native blocks keep their place under an ice skin instead of becoming custom blocks: smaller maps, one ice look")]
     bool SkinsOnly = false,

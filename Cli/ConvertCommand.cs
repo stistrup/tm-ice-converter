@@ -195,7 +195,7 @@ internal sealed class ConvertCommand(string dataDir)
 
     internal static HashSet<string> KnownBlocks(string dataDir)
     {
-        var names = File.ReadAllLines(Path.Combine(dataDir, "known-blocks.txt")).ToHashSet();
+        var names = File.ReadAllLines(Path.Combine(dataDir, "known-blocks.txt")).ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var blockInfos in Paths.BlockInfoDirs(Paths.ExtractedStadium))
             names.UnionWith(Directory.EnumerateFiles(blockInfos, "*.Gbx", SearchOption.AllDirectories).Select(f => Path.GetFileName(f).Split('.')[0]));
         return names;

@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { useHistoryStore } from '../stores/history'
 import { usePreviewStore } from '../stores/preview'
-import { grouped, optionGroups, terrainOptions, type OptionGroup } from '../viewer/optionGroups'
+import { coverMaterials, coverOptions, grouped, optionGroups, terrainOptions, type OptionGroup } from '../viewer/optionGroups'
 import { optionLabel } from '../viewer/outcomes'
 
 const preview = usePreviewStore()
 const history = useHistoryStore()
 
-const terrainOpen = ref(false)
 const terrain = computed(() => preview.options.filter((o) => terrainOptions.includes(o.name)))
+const checkboxes = computed(() => [
+  ...preview.options.filter((o) => !grouped.has(o.name) && o.category !== 'piece'),
+  ...terrain.value,
+])
 
 const choose = (group: OptionGroup, index: number) => {
   const choice = group.choices[index]
@@ -33,22 +36,19 @@ const toggle = (name: string, event: Event) => history.change(() => preview.set(
         <option v-for="(choice, i) in group.choices" :key="choice.label" :value="i">{{ choice.label }}</option>
       </select>
     </label>
-    <label v-for="option in preview.options.filter((o) => !grouped.has(o.name) && o.category !== 'piece')" :key="option.name" :class="$style.option">
-      <input type="checkbox" :checked="preview.valueOf(option.name)" @change="toggle(option.name, $event)" />
-      <span>{{ optionLabel(option.name) }}</span>
-      <span v-if="option.description" :class="$style.info" :title="option.description" aria-label="What it does">i</span>
-    </label>
-    <button v-if="terrain.length" type="button" :class="$style.fold" :aria-expanded="terrainOpen" @click="terrainOpen = !terrainOpen">
-      <span>Terrain</span>
-      <span :class="[$style.chevron, { [$style.up]: terrainOpen }]" />
-    </button>
-    <div v-if="terrainOpen" :class="$style.nested">
-      <label v-for="option in terrain" :key="option.name" :class="$style.option">
+    <template v-for="option in checkboxes" :key="option.name">
+      <label :class="$style.option">
         <input type="checkbox" :checked="preview.valueOf(option.name)" @change="toggle(option.name, $event)" />
         <span>{{ optionLabel(option.name) }}</span>
         <span v-if="option.description" :class="$style.info" :title="option.description" aria-label="What it does">i</span>
       </label>
-    </div>
+      <label v-if="coverOptions.has(option.name) && preview.valueOf(option.name)" :class="$style.material">
+        <span :class="$style.muted">to</span>
+        <select :class="$style.select" aria-label="Material" disabled>
+          <option v-for="material in coverMaterials" :key="material">{{ material }}</option>
+        </select>
+      </label>
+    </template>
   </fieldset>
 </template>
 
@@ -73,12 +73,6 @@ const toggle = (name: string, event: Event) => history.change(() => preview.set(
   cursor: default;
 }
 
-.nested {
-  display: grid;
-  gap: 2px;
-  padding-left: 14px;
-}
-
 .option {
   composes: option from '../ui.module.css';
 }
@@ -91,15 +85,14 @@ const toggle = (name: string, event: Event) => history.change(() => preview.set(
   composes: select from '../ui.module.css';
 }
 
-.fold {
-  composes: fold from '../ui.module.css';
+.material {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0 0 2px 22px;
 }
 
-.chevron {
-  composes: chevron from '../ui.module.css';
-}
-
-.up {
-  composes: up from '../ui.module.css';
+.muted {
+  composes: muted from '../ui.module.css';
 }
 </style>

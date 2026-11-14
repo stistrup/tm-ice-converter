@@ -50,12 +50,12 @@ internal static class MaterialLib
         var env = environment is null || environment.StartsWith("Stadium") ? "Stadium" : environment;
         // vistas swap Stadium's walls for "…InWorld" versions
         return new[] { $"{env}\\Media\\Modifier\\StadiumOnTerrain\\{material}", $"{env}\\Media\\Modifier\\StadiumOnTerrain\\{material}InWorld", $"{env}\\Media\\Material\\{material}", $"Stadium\\Media\\Material\\{material}" }
-            .FirstOrDefault(l => File.Exists(Path.Combine(root, l.Replace('\\', '/') + ".Material.Gbx")));
+            .FirstOrDefault(l => File.Exists(GameFiles.OnDisk(Path.Combine(root, l.Replace('\\', '/') + ".Material.Gbx"))));
     }
 
     public static string NativeSurface(string name, string? environment)
-        => Gbx.ParseNode<CPlugMaterial>(Path.Combine(Path.GetDirectoryName(Paths.ExtractedStadium)!,
-            NativeLink(name[NativePrefix.Length..], environment)!.Replace('\\', '/') + ".Material.Gbx")).SurfaceId.ToString();
+        => Gbx.ParseNode<CPlugMaterial>(GameFiles.OnDisk(Path.Combine(Path.GetDirectoryName(Paths.ExtractedStadium)!,
+            NativeLink(name[NativePrefix.Length..], environment)!.Replace('\\', '/') + ".Material.Gbx"))).SurfaceId.ToString();
 
     public static Dictionary<string, string> Surfaces(IEnumerable<string> names)
     {

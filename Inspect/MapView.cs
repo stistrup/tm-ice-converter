@@ -13,7 +13,11 @@ public sealed class MapView(BlockCatalog shapes)
 {
     private static readonly string GameData = Path.GetDirectoryName(Paths.ExtractedStadium)!;
 
-    private readonly MeshExporter exporter = new(shapes.Files, new Dictionary<string, string>()) { DynaObjects = true, VegetTrees = true };
+    // GrassFence: its shader places the blades; raw it spreads copies over the neighbour cells (the converter drops it too)
+    private readonly MeshExporter exporter = new(shapes.Files, new Dictionary<string, string>())
+    {
+        DynaObjects = true, VegetTrees = true, KeepMaterial = name => name != "GrassFence",
+    };
     private readonly Dictionary<string, List<ScenePiece>?> meshes = [];
     private readonly SceneMaterials materials = new(shapes);
     private readonly List<SceneInstance> instances = [];

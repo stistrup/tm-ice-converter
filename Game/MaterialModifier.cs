@@ -17,9 +17,9 @@ public sealed record MaterialModifier(string? Folder, IReadOnlyDictionary<string
         var text = System.Text.Encoding.Latin1.GetString(File.ReadAllBytes(modifierFile));
         var gameData = Path.GetDirectoryName(stadiumDir)!;
         var folder = Regex.Match(text, @"[A-Za-z0-9_]+\\Media\\Modifier\\[A-Za-z0-9_]+\\") is { Success: true } f
-            ? Path.Combine(gameData, f.Value.Replace('\\', '/').TrimEnd('/')) : null;
+            ? GameFiles.OnDisk(Path.Combine(gameData, f.Value.Replace('\\', '/').TrimEnd('/'))) : null;
         var skin = Regex.Match(text, @"([A-Za-z0-9_]+)\.GameSkin\.gbx", RegexOptions.IgnoreCase) is { Success: true } k
-            ? Path.Combine(stadiumDir, "GameSkin", k.Groups[1].Value + ".GameSkin.gbx") : null;
+            ? GameFiles.OnDisk(Path.Combine(stadiumDir, "GameSkin", k.Groups[1].Value + ".GameSkin.gbx")) : null;
         if ((folder is not null && !Directory.Exists(folder)) || skin is null || !File.Exists(skin)) return null;
         var swaps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var fid in Gbx.ParseHeaderNode<CPlugGameSkin>(skin).HeaderFids ?? [])
