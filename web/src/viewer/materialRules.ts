@@ -51,7 +51,9 @@ export const isTerrainShader = (name: string) => name.includes('_Ids')
 export type Mapping = 'uv' | 'top' | 'side'
 
 // projected shaders (PyPxz): unmarked textures go on top, then on the slopes; decals keep their own UVs
-const mappingOf = (name: string, shader: string, taken: Partial<Record<Mapping, unknown>>): Mapping => {
+const mappingOf = (name: string, shader: string, taken: Partial<Record<Mapping, unknown>>, projected?: boolean | null): Mapping => {
+  // the texture file says: a UV atlas (scale 1) goes by the mesh's UVs even on a projected shader
+  if (projected === false) return 'uv'
   if (name.includes('Py')) return 'top'
   if (name.includes('Pxz')) return 'side'
   if (!shader.includes('PyPxz') || shader.includes('Decal')) return 'uv'
@@ -63,7 +65,7 @@ export const diffuseMaps = (material: SceneMaterial): Partial<Record<Mapping, Sc
   for (const texture of material.textures) {
     // only images the loader reads: decal sets and the like would hide a usable one listed later
     if (texture.role !== 'D' || !texture.image?.toLowerCase().endsWith('.dds')) continue
-    const mapping = mappingOf(texture.name, material.shader ?? '', found)
+    const mapping = mappingOf(texture.name, material.shader ?? '', found, texture.projected)
     if (!found[mapping] || (mapping === 'uv' && texture.name.startsWith(material.name))) found[mapping] = texture
   }
   return found

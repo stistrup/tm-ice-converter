@@ -37,6 +37,27 @@ export const drawOver = (mesh: InstancedMesh) => {
   }
 }
 
+// a placed block's own terrain faces (dirt banks) aren't the map's terrain: no cut while this mesh draws, the material stays shared
+export const keepUncut = (mesh: InstancedMesh) => {
+  const [before, after] = [mesh.onBeforeRender, mesh.onAfterRender]
+  let held = 0
+  mesh.onBeforeRender = (r, s, c, g, material, group) => {
+    before.call(mesh, r, s, c, g, material, group)
+    const uniforms = (material as ShaderMaterial).uniforms
+    if (uniforms?.terrain?.value !== 1) return
+    held = uniforms.hasCut.value
+    uniforms.hasCut.value = 0
+    ;(material as ShaderMaterial).uniformsNeedUpdate = true
+  }
+  mesh.onAfterRender = (r, s, c, g, material, group) => {
+    after.call(mesh, r, s, c, g, material, group)
+    const uniforms = (material as ShaderMaterial).uniforms
+    if (uniforms?.terrain?.value !== 1) return
+    uniforms.hasCut.value = held
+    ;(material as ShaderMaterial).uniformsNeedUpdate = true
+  }
+}
+
 // a piece with terrain surfaces of its own is a terrain shape (cliff deco), not something placed on terrain: it cuts nothing
 export const isTerrainShaped = (materials: Material[]) => materials.some((m) => (m as ShaderMaterial).uniforms?.terrain?.value === 1)
 

@@ -11,7 +11,7 @@ namespace TmSurfaceEditor;
 internal static class SceneBundle
 {
     // bump when the output changes
-    private const int Format = 42;
+    private const int Format = 45;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -56,7 +56,7 @@ internal static class SceneBundle
         var materialKeys = scene.Materials.Keys.ToList();
         var materialIndex = materialKeys.Select((key, i) => (key, i)).ToDictionary(x => x.key, x => x.i);
         var materials = materialKeys.Select(key => scene.Materials[key]).Select(m => new ManifestMaterial(m.Name, m.Shader,
-            m.Textures.Select(t => new ManifestTexture(t.Role, t.Name, t.Image is null ? null : Path.GetRelativePath(gameData, t.Image))).ToList(), m.Tints)).ToList();
+            m.Textures.Select(t => new ManifestTexture(t.Role, t.Name, t.Image is null ? null : Path.GetRelativePath(gameData, t.Image), t.Projected)).ToList(), m.Tints)).ToList();
 
         var meshKeys = scene.Meshes.Keys.ToList();
         var meshIndex = meshKeys.Select((key, i) => (key, i)).ToDictionary(x => x.key, x => x.i);
@@ -127,7 +127,7 @@ internal static class SceneBundle
 
     private sealed record ManifestMaterial(string Name, string? Shader, List<ManifestTexture> Textures, List<string>? Tints);
 
-    private sealed record ManifestTexture(string Role, string Name, string? Image);
+    private sealed record ManifestTexture(string Role, string Name, string? Image, bool? Projected);
 
     private sealed record ManifestMesh(string Key, List<ManifestPiece> Pieces);
 

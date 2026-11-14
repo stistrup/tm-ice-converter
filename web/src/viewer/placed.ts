@@ -34,7 +34,8 @@ export interface LayerPiece extends PieceParts {
 // a block that draws its own ground; our custom blocks carry none, except on hills and cliffs (BlockNames.OnTerrainShape)
 export const ownsGroundOf = (info: InstanceInfo) => {
   const custom = info.kind === 'custom block'
-  const keepsTerrain = custom && /On[A-Z][a-z]+(Cliff|Hill)/.test(String(info.sourceBlock ?? ''))
+  // made from a terrain block (snowed ground): it is that cell's ground
+  const keepsTerrain = custom && (/On[A-Z][a-z]+(Cliff|Hill)/.test(String(info.sourceBlock ?? '')) || /\bterrain\b/.test(info.tags ?? ''))
   return info.kind.includes('block') && (!custom || keepsTerrain) && /\b(ground|terrain)\b/.test(info.tags ?? '')
 }
 

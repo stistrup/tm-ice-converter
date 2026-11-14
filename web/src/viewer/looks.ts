@@ -1,6 +1,6 @@
 import { InstancedMesh, Matrix4, Vector3, type BufferGeometry, type Material, type Scene } from 'three'
 import { showInstance, tintOf, type PieceParts, type Placed } from './placed'
-import { markCutter } from './terrainCut'
+import { keepUncut, markCutter } from './terrainCut'
 
 // the preview's redraw of one piece: per geometry a material (null = left out), on the whole piece or only on its upward faces
 export interface LookChange {
@@ -67,6 +67,7 @@ export class Looks {
         })
         mesh.matrixAutoUpdate = false
         if (placed[0].ownsGround && placed[0].category !== 'terrain') markCutter(mesh)
+        if (placed[0].category !== 'terrain') keepUncut(mesh)
         this.scene.add(mesh)
         this.meshes.push(mesh)
       })

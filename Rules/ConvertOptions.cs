@@ -37,7 +37,9 @@ public sealed record ConvertOptions(
     [property: Category("piece"), Description("Starts, checkpoints and finishes stay native under an ice skin; they are the largest custom blocks")]
     bool SkinWaypoints = false,
     [property: Category("piece"), Description("Experimental: custom blocks next to a skinned block lift their ice toward it, so the surfaces meet")]
-    bool RampToSkins = false)
+    bool RampToSkins = false,
+    [property: Category("piece"), Description("Sides the game draws from clips (dirt, grass edges) convert too, built into the block")]
+    bool ClipSidesInBlock = true)
 {
     public ConvertOptions With(string name, bool value) => name switch
     {
@@ -57,6 +59,7 @@ public sealed record ConvertOptions(
         "skinsOnly" => this with { SkinsOnly = value },
         "skinWaypoints" => this with { SkinWaypoints = value },
         "rampToSkins" => this with { RampToSkins = value },
+        "clipSidesInBlock" => this with { ClipSidesInBlock = value },
         _ => throw new FormatException($"unknown option '{name}' (known: {string.Join(", ", All().Select(o => o.Name))})"),
     };
 

@@ -31,7 +31,7 @@ import { Picker } from './picker'
 import { PivotOrbit } from './pivotOrbit'
 import { originOf, ownsGroundOf, pieceGeometry, tintOf, type LayerPiece, type PieceParts, type Placed } from './placed'
 import { buildLayer, type PreviewLayer } from './previewLayer'
-import { drawOver, isTerrainShaped, markCutter, TerrainCut, type Extent } from './terrainCut'
+import { drawOver, isTerrainShaped, keepUncut, markCutter, TerrainCut, type Extent } from './terrainCut'
 
 export type { LookChange } from './looks'
 export type { PieceParts } from './placed'
@@ -420,6 +420,7 @@ export class MapScene {
         mesh.matrixAutoUpdate = false
         if (group[0].cuts) markCutter(mesh)
         if (group[0].stacked) drawOver(mesh)
+        if (category !== 'terrain') keepUncut(mesh)
         this.scene.add(mesh)
         const list = this.categoryMeshes.get(category)
         if (list) list.push(mesh)

@@ -10,6 +10,8 @@ export interface SceneTexture {
   role: string
   name: string
   image: string | null
+  // by world position (Py, Pxz) or by the mesh's UVs; absent: unknown
+  projected?: boolean | null
 }
 
 export interface SceneMaterial {

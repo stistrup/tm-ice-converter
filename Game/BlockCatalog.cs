@@ -160,6 +160,14 @@ public sealed partial class BlockCatalog
         => FindPlacedBlockParts(blockName, ground, variantIndex, mobil, clips) is { } parts
             ? Plain.Export(parts).Select(p => p.Material).ToHashSet() : null;
 
+    // only the shown clips' parts, not the body's
+    public IReadOnlySet<string> ClipMaterials(string blockName, bool ground, int variantIndex, int mobil, IReadOnlySet<int> clips)
+    {
+        if (clips.Count == 0 || FindPlacedBlockParts(blockName, ground, variantIndex, mobil, clips) is not { } all) return new HashSet<string>();
+        var body = FindPlacedBlockParts(blockName, ground, variantIndex, mobil, new HashSet<int>())?.ToHashSet() ?? [];
+        return Plain.Export(all.Where(p => !body.Contains(p)).ToList()).Select(p => p.Material).ToHashSet();
+    }
+
     public IReadOnlyList<(string Model, Matrix4x4 Place)> Trees(string blockName, bool ground, int variantIndex, int mobil, IReadOnlySet<int> clips)
     {
         if (FindPlacedBlockParts(blockName, ground, variantIndex, mobil, clips) is not { } parts) return [];

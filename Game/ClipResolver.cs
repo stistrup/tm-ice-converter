@@ -119,7 +119,7 @@ public sealed class ClipResolver(BlockCatalog shapes)
                 // poles (measured on the baked clips, no pillar needed): not facing their own group, nor a full clip when deletable,
                 // nor other poles on a connected side
                 if (c.Vertical && c.VerticalGroup is not null)
-                    return !facing.Any(f => f.Vertical && f.VerticalGroup == c.VerticalGroup)
+                    return !facing.Any(f => f.Vertical && f.VerticalGroup == c.VerticalGroup && f.Full == c.Full)
                         && !(c.Deletable && facing.Any(f => f.Full))
                         && !(connected && facing.Any(f => f.Vertical));
                 // a full clip on the facing side removes deletable ones too

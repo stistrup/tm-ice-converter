@@ -7,7 +7,7 @@ namespace TmSurfaceEditor;
 internal static class SurfaceTops
 {
     // no clips in any environment
-    private const string Clipless = "StageTechnicsLight";
+    public const string Clipless = "StageTechnicsLight";
 
     // walls-only blocks stay native, ice on their upward faces (not gates or stands)
     // with customs: a custom block with its tops iced in, the skin only if that fails

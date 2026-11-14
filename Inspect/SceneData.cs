@@ -20,4 +20,5 @@ public sealed record SceneWaypoint(string Kind, string Mesh, float[] M);
 
 public sealed record SceneMaterial(string Name, string? Shader, List<SceneTexture> Textures, List<string>? Tints = null);
 
-public sealed record SceneTexture(string Role, string Name, string? Image);
+// Projected: the texture file's own mapping (texcoord scale 1/32 = by world position), null if unknown
+public sealed record SceneTexture(string Role, string Name, string? Image, bool? Projected = null);

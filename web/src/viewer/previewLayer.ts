@@ -3,7 +3,7 @@ import type { SceneManifest } from '../api'
 import { groundCells } from './baseGround'
 import { SceneMaterials } from './materials'
 import { originOf, ownsGroundOf, pieceGeometry, showInstance, tintOf, type LayerPiece } from './placed'
-import { drawOver, isTerrainShaped, markCutter } from './terrainCut'
+import { drawOver, isTerrainShaped, keepUncut, markCutter } from './terrainCut'
 
 export interface PreviewLayer {
   meshes: InstancedMesh[]
@@ -83,6 +83,7 @@ export const buildLayer = async (
       const info = list[0].info
       if (/\bground\b/.test(info.tags ?? '') && !/\bterrain\b/.test(info.tags ?? '') && !isTerrainShaped(pieces[list[0].mesh].map((p) => p.material))) markCutter(mesh)
       if (info.stacked === true) drawOver(mesh)
+      if (!/\bterrain\b/.test(info.tags ?? '')) keepUncut(mesh)
       meshes.push(mesh)
     }
   }

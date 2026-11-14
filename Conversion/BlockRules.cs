@@ -250,8 +250,9 @@ internal static partial class BlockRules
         var (name, shapes, items) = (block.Name, run.Shapes, run.Items);
         var (variant, mobil, collection, noClips) = (VariantOf(block), MobilOf(block), run.Map.Collection!.Value, ConversionRun.NoClips);
         var stack = NeedsNativeUnder(block, run);
-        var built = items.BlockFor(name, name, block.IsGround, variant, mobil, collection, noClips, lift: stack) is { } own
-            ? (own, name, noClips)
+        var (self, selfBaked) = !stack && ExposedThemedClips(block, run) is { } exposed ? (SurfaceTops.Clipless, exposed) : (name, noClips);
+        var built = items.BlockFor(name, self, block.IsGround, variant, mobil, collection, selfBaked, lift: stack) is { } own
+            ? (own, self, selfBaked)
             : run.SurfaceParents.Of(name, variant, run.Clips(block)) is { } parent
                 && items.BlockFor(name, parent.Name, block.IsGround, variant, mobil, collection, parent.Baked, lift: stack) is { } onParent
                 ? (onParent, parent.Name, parent.Baked) : default((BuiltBlock, string, IReadOnlySet<int>)?);
@@ -265,6 +266,17 @@ internal static partial class BlockRules
             Bump(run.Report.TerrainItems, name);
         Bump(run.Report.ReplacedByBlock, name);
         return true;
+    }
+
+    // the game draws the archetype's clips over a custom body: shown clips with a surface the theme converts go into the body,
+    // on a clipless stand-in (air only, as it has no ground variant)
+    private static IReadOnlySet<int>? ExposedThemedClips(CGameCtnBlock block, ConversionRun run)
+    {
+        if (!run.Rules.Options.ClipSidesInBlock || block.IsGround || block.IsFree || run.Shapes.EnvironmentHas(SurfaceTops.Clipless) == false) return null;
+        var shown = run.Clips(block);
+        var theme = run.Items.Theme;
+        var map = theme.Map(null);
+        return run.Shapes.ClipMaterials(block.Name, false, VariantOf(block), MobilOf(block), shown).Any(m => theme.SwappedIn(map, m)) ? shown : null;
     }
 
     // vegetation and blended hill/cliff terrain only come from the native block: keep it under the iced body
