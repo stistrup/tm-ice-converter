@@ -10,6 +10,7 @@ import {
   Vector4,
   WebGLRenderTarget,
   type InstancedMesh,
+  type Material,
   type Scene,
   type Texture,
   type WebGLRenderer,
@@ -36,10 +37,13 @@ export const drawOver = (mesh: InstancedMesh) => {
   }
 }
 
+// a piece with terrain surfaces of its own is a terrain shape (cliff deco), not something placed on terrain: it cuts nothing
+export const isTerrainShaped = (materials: Material[]) => materials.some((m) => (m as ShaderMaterial).uniforms?.terrain?.value === 1)
+
 // ground blocks (not terrain) are what the terrain gets cut around
 export const markCutter = (mesh: InstancedMesh) => {
   const material = mesh.material as ShaderMaterial
-  if (material.uniforms?.terrain?.value === 1) return
+  if (material.uniforms?.terrain?.value === 1 || material.userData?.noCut) return
   mesh.layers.enable(CUT_LAYER)
 }
 

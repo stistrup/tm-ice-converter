@@ -23,6 +23,8 @@ switch (args)
         return new ConvertCommand(dataDir).Run(rest);
     case ["mapdiff", .. var rest]:
         return MapDiff.Run(rest);
+    case ["migrate", .. var rest]:
+        return MigrateCommand.Run(dataDir, rest);
     case ["picks", .. var rest]:
         return PicksCommand.Run(dataDir, rest);
     case ["runs", .. var rest]:
@@ -52,8 +54,9 @@ switch (args)
     default:
         Console.WriteLine($"""
             Usage:
-              gui [--port <n>] [--no-open]
+              gui [--port <n>] [--no-open] [--dev <page url>]
                   Local web interface: browse maps and look through them in 3D. Build the page first: npm run build in web/.
+                  --dev: the page comes from a dev server (tools/gui-dev); this port only answers /api and sends the rest there.
             {ConvertCommand.Usage.TrimEnd()}
               runs <map.Gbx>
                   The conversions of this map and which settings a convert would use now.
@@ -61,6 +64,8 @@ switch (args)
                   Print settings as JSON (default: what a convert would use); fields that don't read are listed.
               picks <map.Gbx> [settings file] --out <file>
                   Run the map's rules once and write what they do as conversion targets alone ("rules": false).
+              migrate [--dry-run]
+                  Maps whose saved settings or working copy still run on rules get those rules as conversion targets, once.
               mapdiff <a.Gbx> <b.Gbx> | <map.Gbx> --dups
                   Blocks and items one map has and the other hasn't (or their order); --dups lists blocks sharing name and cell.
               scan [folder]...

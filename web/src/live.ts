@@ -1,5 +1,6 @@
 import { watch } from 'vue'
 import { useMapStore } from './stores/map'
+import { useHistoryStore } from './stores/history'
 import { usePreviewStore } from './stores/preview'
 import type { CameraState } from './viewer/MapScene'
 import { displayName } from './viewer/names'
@@ -10,6 +11,8 @@ type Command =
   | { type: 'select'; index?: number; name?: string; focus?: boolean }
   | { type: 'camera' } & CameraState
   | { type: 'open'; map?: string; rebuild?: boolean }
+  | { type: 'target'; index: number; choice: string }
+  | { type: 'shown'; original: boolean }
   | { type: 'pick'; id: string; x: number; y: number }
   | { type: 'preview'; open: boolean; set?: Record<string, boolean> }
 
@@ -79,6 +82,12 @@ export const startLiveLink = () => {
         preview.show()
         void preview.run()
       }
+    } else if (command.type === 'shown') {
+      usePreviewStore().showOriginal = command.original
+    } else if (command.type === 'target') {
+      // as the properties panel sets it; "" = original
+      const key = usePreviewStore().decisions?.[command.index]?.key
+      if (key) useHistoryStore().change(() => usePreviewStore().pick([key], command.choice))
     } else if (command.type === 'open') {
       const map = command.map
         ? store.maps.find((m) => m.path === command.map || m.name === command.map)

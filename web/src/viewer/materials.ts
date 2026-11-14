@@ -29,6 +29,8 @@ interface TextureJob {
 }
 
 // fails quietly: a material keeps its plain colour
+const WATER: [number, number, number] = [0.05, 0.16, 0.24]
+
 export class SceneMaterials {
   readonly materials: ShaderMaterial[]
   private readonly loader = new DDSLoader()
@@ -55,6 +57,8 @@ export class SceneMaterials {
     const isCutout = source.name.includes('Fence') || shader === 'VegetLeaf'
     const material = flatMaterial(fallbackColor(source.name))
     material.uniforms.cutout.value = isCutout ? 1 : 0
+    // plants, fences and water aren't ground: the terrain isn't cut under them
+    material.userData.noCut = isCutout || shader.startsWith('Veget') || shader.includes('Water')
     material.uniforms.decal.value = isDecal ? 1 : 0
     material.uniforms.ice.value = shader.includes('Layered') ? 1 : 0
     material.uniforms.greyGreen.value = shader.endsWith('_Hue') ? 1 : 0
@@ -77,6 +81,7 @@ export class SceneMaterials {
       source.tints.slice(0, 5).forEach((hex, i) => tints[i].setStyle(hex))
       const hue = source.textures.find((t) => t.role === 'HueMask' && t.image?.toLowerCase().endsWith('.dds'))
       if (hue) this.extraJobs.push({ material, mapping: 'hue', path: hue.image! })
+      if (hue?.name.includes('Pxz')) material.uniforms.hueSide.value = 1
     }
     // some shader families read V the other way, each checked on 01 against the game: DispIn (road walls), decals (curb atlas rows);
     // plain CubeOut not (flagpoles)
@@ -85,7 +90,7 @@ export class SceneMaterials {
     if (isLedPanel(source)) (material.uniforms.baseColor.value as Color).setRGB(0.02, 0.02, 0.02)
     // the game's water reflects and fades with depth; here one even, opaque colour
     if (shader.includes('Water')) {
-      ;(material.uniforms.baseColor.value as Color).setRGB(0.05, 0.16, 0.24)
+      ;(material.uniforms.baseColor.value as Color).setRGB(...WATER)
       material.uniforms.water.value = 1
     }
     if (isDecal) {
@@ -130,6 +135,14 @@ export class SceneMaterials {
   }
 
   // flat base ground for cells without a block
+  // as the game's water materials are drawn here: one even colour
+  water(): ShaderMaterial {
+    const material = flatMaterial(WATER)
+    material.uniforms.water.value = 1
+    this.extra.push(material)
+    return material
+  }
+
   ground(): ShaderMaterial {
     const material = flatMaterial(terrainOf(this.environment).top)
     this.extra.push(material)

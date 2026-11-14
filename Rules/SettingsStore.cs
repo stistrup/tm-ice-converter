@@ -16,7 +16,7 @@ public sealed record SavedSettings(int Version, string Uid, DateTime Updated, Js
 public sealed partial class SettingsStore(string root)
 {
     // stored settings older than this are upgraded on read (MapSettings.Upgrade)
-    public const int Version = 3;
+    public const int Version = 4;
 
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
@@ -59,13 +59,15 @@ public sealed partial class SettingsStore(string root)
 
     public void DropSaved(string uid) => File.Delete(SavedFile(uid));
 
+    public IEnumerable<string> SavedUids() => Directory.EnumerateFiles(Dir("maps"), "*.json").Select(f => Path.GetFileNameWithoutExtension(f));
+
     // what a conversion goes by unless told otherwise: the working copy, else the saved settings, else the defaults
     public (MapSettings Settings, string From) Current(string uid)
         => WorkingOf(uid) is { } working && Dirty(uid)
             ? (new MapSettings(working.Settings.DeepClone().AsObject()), $"working copy {working.Updated.ToLocalTime():yyyy-MM-dd HH:mm}, not saved")
             : SavedOf(uid) is { } saved
                 ? (new MapSettings(saved.Settings), $"saved {saved.Updated.ToLocalTime():yyyy-MM-dd HH:mm}")
-                : (MapSettings.Empty, "defaults");
+                : (MapSettings.Empty, "none: nothing converts");
 
     // the name its settings give it, if any
     public string? NameOf(string uid) => Current(uid).Settings.Read([]).Name;

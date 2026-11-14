@@ -11,7 +11,7 @@ namespace TmSurfaceEditor;
 internal static class SceneBundle
 {
     // bump when the output changes
-    private const int Format = 35;
+    private const int Format = 42;
 
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
 
@@ -65,7 +65,7 @@ internal static class SceneBundle
             .Select(group => WritePiece(geometry, materialIndex[group.Key], group.ToList()))
             .ToList())).ToList();
 
-        return new Manifest(scene.Map, scene.Environment, geometry.Length, notExtracted, materials, meshes,
+        return new Manifest(scene.Map, scene.Environment, DefaultZone(scene.Environment), geometry.Length, notExtracted, materials, meshes,
             scene.Instances.Select(i => new ManifestInstance(meshIndex[i.Mesh], i.M, i.Info)).ToList(),
             scene.Placeholders, scene.Boxes, scene.Skipped);
     }
@@ -93,11 +93,29 @@ internal static class SceneBundle
         return new ManifestPiece(material, offset, vertices, indexCount, colors);
     }
 
+    private static readonly Dictionary<string, string?> defaultZones = [];
+
+    private static string? DefaultZone(string? environment)
+    {
+        if (environment is null) return null;
+        lock (defaultZones)
+        {
+            if (defaultZones.TryGetValue(environment, out var known)) return known;
+            var file = Path.Combine(Path.GetDirectoryName(Paths.ExtractedStadium)!, "Collections", environment + ".Collection.Gbx");
+            string? zone = null;
+            try { if (File.Exists(file)) zone = Gbx.ParseNode<CGameCtnCollection>(file, new GbxReadSettings { IgnoreExceptionsInBody = true }).DefaultZoneId; }
+            catch (Exception e) { Console.Error.WriteLine($"default zone of {environment}: {e.Message}"); }
+            return defaultZones[environment] = zone;
+        }
+    }
+
     private static void Put<T>(Stream stream, T[] values) where T : struct => stream.Write(MemoryMarshal.AsBytes(values.AsSpan()));
 
     private sealed record Manifest(
         string Map,
         string? Environment,
+        // what cells without a terrain block are (the collection's default zone): Sea, Grass, Dirt, Land
+        string? BaseZone,
         long GeometryBytes,
         List<string> NotExtracted,
         List<ManifestMaterial> Materials,

@@ -114,10 +114,14 @@ public sealed class ClipResolver(BlockCatalog shapes)
             {
                 // anti-clips show where they connect
                 if (c.Anti) return facing.Any(f => Compatible(c, f));
-                // facing poles of the same group: neither shows
+                // horizontal clips go by their own group: another group connecting the side (water edge) doesn't hide a ramp
+                if (c.HorizontalGroup is not null) return !facing.Any(f => f.HorizontalGroup == c.HorizontalGroup || Compatible(c, f));
+                // poles (measured on the baked clips, no pillar needed): not facing their own group, nor a full clip when deletable,
+                // nor other poles on a connected side
                 if (c.Vertical && c.VerticalGroup is not null)
-                    return Column(cell, dir, c.VerticalGroup)
-                        && !(facing.Any(f => f.Vertical && f.VerticalGroup == c.VerticalGroup) && Column(cell + dir, Neg(dir), c.VerticalGroup));
+                    return !facing.Any(f => f.Vertical && f.VerticalGroup == c.VerticalGroup)
+                        && !(c.Deletable && facing.Any(f => f.Full))
+                        && !(connected && facing.Any(f => f.Vertical));
                 // a full clip on the facing side removes deletable ones too
                 return !connected && !(dir.Y > 0 && PillarAbove(cell, at.Block)) && !(c.Deletable && facing.Any(f => f.Full));
             }

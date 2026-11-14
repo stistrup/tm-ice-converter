@@ -42,6 +42,10 @@ export const layerImage = (environment: string | null, layer: string) => `${envi
 // measured: vista zone tops sit 2 m above the base cell (01 RedIsland, 02 GreenCoast); Stadium's ground is at 8 m
 export const groundHeight = (environment: string | null): number => (environment ?? 'Stadium2020').startsWith('Stadium') ? 8 : 2
 
+// a default zone of water (BlueBay's Sea): its surface as measured on 09's beaches
+export const isWaterZone = (zone: string | null) => /Sea|Water|Lake/.test(zone ?? '')
+export const waterHeight = 7
+
 export const isTerrainShader = (name: string) => name.includes('_Ids')
 
 export type Mapping = 'uv' | 'top' | 'side'

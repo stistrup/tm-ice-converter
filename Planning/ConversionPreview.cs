@@ -18,6 +18,8 @@ internal sealed partial class ConversionPreview(string dataDir)
         public string Kind { get; init; } = "";
         public string Key { get; init; } = "";
         public string? Picked { get; init; }
+        // its group for group conversions (data/groups.jsonc), e.g. roads/checkpoints; null: none
+        public string? Group { get; init; }
     }
 
     private static string KindOf(ConversionRun run, string name, bool ground, bool pillarOrFree, string? rule)
@@ -48,6 +50,9 @@ internal sealed partial class ConversionPreview(string dataDir)
         // per kind what a piece can be picked to become (data/picks.jsonc)
         public Dictionary<string, List<PickCatalog.Choice>> Choices { get; init; } = [];
         public Dictionary<string, string> KindLabels { get; init; } = [];
+        // waiting for their items to be built, by index in the map's own order
+        public List<int> PendingBlocks { get; init; } = [];
+        public List<int> PendingItems { get; init; } = [];
     }
 
     // the pieces previews needed and nobody had built, built in the background
@@ -75,6 +80,7 @@ internal sealed partial class ConversionPreview(string dataDir)
 
     private (Dictionary<string, string> Swaps, Dictionary<string, Look> Looks) themeLooks = ([], []);
     private PickCatalog? picks;
+    private GroupCatalog? groups;
 
     private readonly SemaphoreSlim one = new(1);
     private MapConverter? converter;
@@ -82,12 +88,14 @@ internal sealed partial class ConversionPreview(string dataDir)
     // newest data file the converter was set up from: an edited jsonc sets it up again
     private DateTime dataStamp;
     private readonly Dictionary<string, Result> recent = [];
+    // the last runs' scene drawing, to redraw once their pieces are built; few, they hold the converted map
+    private readonly List<(string Key, Func<(Result, (byte[] Manifest, byte[] Geometry))> Draw)> drawings = [];
     // the items a run adds, as a small scene of their own; by Result.AddedScene
     private readonly Dictionary<string, (byte[] Manifest, byte[] Geometry)> addedScenes = [];
     private BlockCatalog? catalog;
     private ItemBuilder? builder;
     private Task building = Task.CompletedTask;
-    private int buildDone, buildTotal, builds, cachedBuilds;
+    private int buildDone, buildTotal, builds;
     // the map the page asked for last: runs for others are dropped, their builds stop
     private volatile string? wanted;
     private string? buildsFor;
@@ -177,13 +185,24 @@ internal sealed partial class ConversionPreview(string dataDir)
             var clock = Stopwatch.StartNew();
             SetUpIfDataChanged();
             var key = $"{mapPath}|{File.GetLastWriteTimeUtc(mapPath).Ticks}|{settings.Json.ToJsonString()}";
-            if (cachedBuilds != builds) recent.Clear();
-            cachedBuilds = builds;
-            if (recent.TryGetValue(key, out var known)) return known with { Milliseconds = clock.ElapsedMilliseconds };
-            var (result, scene) = Run(mapPath, settings, key, clock);
+            if (recent.TryGetValue(key, out var known))
+            {
+                if (known.Builds == builds) return known with { Milliseconds = clock.ElapsedMilliseconds };
+                // the plan stands (meshes are made while planning); only the built pieces are new
+                if (drawings.FirstOrDefault(d => d.Key == key).Draw is { } draw)
+                {
+                    var (redrawn, again) = draw();
+                    Remember(key, redrawn, again);
+                    return redrawn with { Milliseconds = clock.ElapsedMilliseconds };
+                }
+            }
+            var (result, scene, drawing) = Run(mapPath, settings, key);
             StartBuilds(mapPath);
             Remember(key, result, scene);
-            return result;
+            drawings.RemoveAll(d => d.Key == key);
+            drawings.Add((key, drawing));
+            if (drawings.Count > 3) drawings.RemoveAt(0);
+            return result with { Milliseconds = clock.ElapsedMilliseconds };
         }
         finally { one.Release(); }
     }
@@ -195,11 +214,13 @@ internal sealed partial class ConversionPreview(string dataDir)
         if (converter is not null && stamp == dataStamp) return;
         dataRules = ConversionRules.Load(dataDir);
         var shapes = catalog = new BlockCatalog(Paths.ExtractedStadium);
-        converter = new MapConverter(ConvertCommand.KnownBlocks(dataDir), dataRules, shapes, (builder = new ItemBuilder(dataDir) { Planning = true }));
+        converter = new MapConverter(ConvertCommand.KnownBlocks(dataDir), dataRules, shapes, (builder = new ItemBuilder(dataDir) { Planning = true, MeshWhilePlanning = true }));
         dataStamp = stamp;
         recent.Clear();
+        drawings.Clear();
         themeLooks = ThemeLooks(shapes);
         picks = PickCatalog.Load(dataDir);
+        groups = GroupCatalog.Load(dataDir);
     }
 
     private void Remember(string key, Result result, (byte[] Manifest, byte[] Geometry) scene)
@@ -232,8 +253,9 @@ internal sealed partial class ConversionPreview(string dataDir)
         }
     }
 
-    private (Result, (byte[] Manifest, byte[] Geometry)) Run(string mapPath, MapSettings settings, string key, Stopwatch clock)
+    private (Result, (byte[] Manifest, byte[] Geometry), Func<(Result, (byte[] Manifest, byte[] Geometry))>) Run(string mapPath, MapSettings settings, string key)
     {
+        var clock = Stopwatch.StartNew();
         var map = Gbx.ParseNode<CGameCtnChallenge>(mapPath);
         var problems = new List<string>();
         var own = settings.Read(problems);
@@ -242,9 +264,9 @@ internal sealed partial class ConversionPreview(string dataDir)
         var before = Before.Of(map);
         var run = converter!.Run(map, own);
 
-        var blockDecisions = before.Blocks.Index().ToDictionary(b => b.Index, b => BlockDecision(run, before, b.Index, rulesNow));
+        var blockDecisions = before.Blocks.Index().ToDictionary(b => b.Index, b => BlockDecision(run, before, b.Index, rulesNow, groups!));
         var now = new HashSet<object>(map.AnchoredObjects ?? [], ReferenceEqualityComparer.Instance);
-        var itemDecisions = before.Items.Index().ToDictionary(o => o.Index, o => ItemDecision(run, o.Item, now, rulesNow));
+        var itemDecisions = before.Items.Index().ToDictionary(o => o.Index, o => ItemDecision(run, o.Item, now, rulesNow, groups!));
 
         // what the conversion changed, drawn from the converted map where a real mesh exists; the originals those replace get hidden
         var blockOrigin = before.Blocks.Index().ToDictionary(b => (object)b.Item, b => b.Index, ReferenceEqualityComparer.Instance);
@@ -253,41 +275,57 @@ internal sealed partial class ConversionPreview(string dataDir)
         var convertedItems = (map.AnchoredObjects ?? []).ToList();
         var changedBlocks = ChangedBlocks(run, before, converted, blockOrigin);
         var changedItems = convertedItems.Where(o => !itemOrigin.ContainsKey(o) || itemDecisions[itemOrigin[o]].Outcome != "unchanged").ToHashSet();
-        var part = new MapView(catalog!).BuildPart(map, changedBlocks, changedItems);
-        var stillThere = converted.ToHashSet(ReferenceEqualityComparer.Instance);
-        var hiddenBlocks = before.Blocks.Index().Where(b => !stillThere.Contains(b.Item)).Select(b => b.Index).ToHashSet();
-        var hiddenItems = before.Items.Index().Where(o => !now.Contains(o.Item.Item)).Select(o => o.Index).ToHashSet();
-        // origin: the original it replaces, for the properties picture
-        foreach (var info in part.Instances.Select(i => i.Info))
+        var drawCatalog = catalog!;
+        var environment = drawCatalog.Environment;
+        (Result, (byte[] Manifest, byte[] Geometry)) Draw()
         {
-            if (info.TryGetValue("block", out var b) && blockOrigin.TryGetValue(converted[(int)b], out var ob)) { hiddenBlocks.Add(ob); info["originBlock"] = ob; }
-            if (info.TryGetValue("item", out var it) && itemOrigin.TryGetValue(convertedItems[(int)it], out var oi)) { hiddenItems.Add(oi); info["originItem"] = oi; }
+            // shared with later runs of other maps: native materials resolve per environment
+            drawCatalog.Environment = environment;
+            var part = new MapView(drawCatalog).BuildPart(map, changedBlocks, changedItems);
+            var stillThere = converted.ToHashSet(ReferenceEqualityComparer.Instance);
+            var hiddenBlocks = before.Blocks.Index().Where(b => !stillThere.Contains(b.Item)).Select(b => b.Index).ToHashSet();
+            var hiddenItems = before.Items.Index().Where(o => !now.Contains(o.Item.Item)).Select(o => o.Index).ToHashSet();
+            // origin: the original it replaces, for the properties picture
+            foreach (var info in part.Instances.Select(i => i.Info))
+            {
+                if (info.TryGetValue("block", out var b) && blockOrigin.TryGetValue(converted[(int)b], out var ob)) { hiddenBlocks.Add(ob); info["originBlock"] = ob; }
+                if (info.TryGetValue("item", out var it) && itemOrigin.TryGetValue(convertedItems[(int)it], out var oi)) { hiddenItems.Add(oi); info["originItem"] = oi; }
+            }
+            var addedCount = convertedItems.Count(o => !itemOrigin.ContainsKey(o));
+            var sceneId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes($"{key}|{builds}")))[..16];
+            var scene = SceneBundle.InMemory(part);
+            var keys = before.Keys.Concat(before.PlainKeys).Concat(before.Items.Select(o => ItemKey(o.Id, o.Position))).Select(Normal).ToHashSet();
+            var stale = rulesNow.Pieces.Keys.Where(k => !keys.Contains(k)).Order(StringComparer.Ordinal).ToList();
+            var result = new Result(OptionList(rulesNow.Options, defaults), blockDecisions, itemDecisions, addedCount, clock.ElapsedMilliseconds, themeLooks.Swaps, themeLooks.Looks,
+                sceneId, hiddenBlocks.Order().ToList(), hiddenItems.Order().ToList(), builds, problems, stale)
+                {
+                    Choices = picks!.Choices,
+                    KindLabels = picks.KindLabels,
+                    PendingBlocks = [.. before.Blocks.Index().Where(b => run.Waiting.TryGetValue(b.Item, out var file) && !File.Exists(file) || run.Customs.TryGetValue(b.Item, out var c) && c.Waiting).Select(b => b.Index)],
+                    PendingItems = [.. before.Items.Index().Where(o => run.WaitingItems.TryGetValue(o.Item.Item, out var file) && !File.Exists(file)).Select(o => o.Index)],
+                };
+            return (result, scene);
         }
-        var addedCount = convertedItems.Count(o => !itemOrigin.ContainsKey(o));
-        var sceneId = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key)))[..16];
-        var scene = SceneBundle.InMemory(part);
-        var keys = before.Keys.Concat(before.PlainKeys).Concat(before.Items.Select(o => ItemKey(o.Id, o.Position))).Select(Normal).ToHashSet();
-        var stale = rulesNow.Pieces.Keys.Where(k => !keys.Contains(k)).Order(StringComparer.Ordinal).ToList();
-        var result = new Result(OptionList(rulesNow.Options, defaults), blockDecisions, itemDecisions, addedCount, clock.ElapsedMilliseconds, themeLooks.Swaps, themeLooks.Looks,
-            sceneId, hiddenBlocks.Order().ToList(), hiddenItems.Order().ToList(), builds, problems, stale)
-            { Choices = picks!.Choices, KindLabels = picks.KindLabels };
-        return (result, scene);
+        var (first, firstScene) = Draw();
+        return (first, firstScene, Draw);
     }
 
-    private static Decision BlockDecision(ConversionRun run, Before before, int i, ConversionRules rulesNow)
+    private static Decision BlockDecision(ConversionRun run, Before before, int i, ConversionRules rulesNow, GroupCatalog groups)
     {
         var d = Of(run, before.Blocks[i]);
         var ground = (before.Flags[i] & BlockFlags.Ground) != 0;
+        var (name, kind) = (before.Names[i], KindOf(run, before.Names[i], ground, before.PillarOrFree[i], d.Rule));
         return d with
         {
-            Kind = KindOf(run, before.Names[i], ground, before.PillarOrFree[i], d.Rule),
+            Kind = kind,
+            Group = groups.PathOf(kind, name, run.Shapes.Waypoint(name), tree: false),
             Key = before.Keys[i],
             // a shared block picked by its cell's key before keys told them apart
             Picked = rulesNow.Pieces.GetValueOrDefault(Normal(before.Keys[i])) ?? rulesNow.Pieces.GetValueOrDefault(Normal(before.PlainKeys[i])),
         };
     }
 
-    private static Decision ItemDecision(ConversionRun run, (CGameCtnAnchoredObject Item, string Id, Vec3 Position) was, HashSet<object> now, ConversionRules rulesNow)
+    private static Decision ItemDecision(ConversionRun run, (CGameCtnAnchoredObject Item, string Id, Vec3 Position) was, HashSet<object> now, ConversionRules rulesNow, GroupCatalog groups)
     {
         var (item, id, position) = was;
         Decision d = !now.Contains(item) ? new("removed", null, null)
@@ -297,7 +335,22 @@ internal sealed partial class ConversionPreview(string dataDir)
         var itemKey = ItemKey(id, position);
         // no kind: nothing to pick
         if (run.DataRules.Untouched(id)) return d with { Key = itemKey };
-        return d with { Kind = "items", Key = itemKey, Picked = rulesNow.Pieces.GetValueOrDefault(Normal(itemKey)) };
+        return d with
+        {
+            Kind = "items",
+            Key = itemKey,
+            Picked = rulesNow.Pieces.GetValueOrDefault(Normal(itemKey)),
+            Group = groups.PathOf("items", id, null, tree: ItemSwaps.CoverSwap(run, id) is not null),
+        };
+    }
+
+    // every piece's target key by index in the map's own order, before any run: the page marks what the next run is working on
+    public sealed record KeyList(List<string> Blocks, List<string> PlainBlocks, List<string> Items);
+
+    public static KeyList KeysOf(string mapPath)
+    {
+        var before = Before.Of(Gbx.ParseNode<CGameCtnChallenge>(mapPath));
+        return new([.. before.Keys.Select(Normal)], [.. before.PlainKeys.Select(Normal)], [.. before.Items.Select(o => Normal(ItemKey(o.Id, o.Position)))]);
     }
 
     private static string ItemKey(string id, Vec3 position) => $"{id} {Inv(position.X)}, {Inv(position.Y)}, {Inv(position.Z)}";
@@ -312,6 +365,9 @@ internal sealed partial class ConversionPreview(string dataDir)
         var underCustoms = run.Customs.Keys.Where(b => b.IsGround && run.Cells.ContainsKey(b) && !(blockOrigin.TryGetValue(b, out var o) && BlockNames.OnTerrainShape(before.Names[o])))
             .SelectMany(b => run.Cells[b]).ToHashSet();
         changed.UnionWith(converted.Where(b => run.Shapes.IsTerrain(b.Name) && run.Cells.TryGetValue(b, out var cells) && cells.Any(underCustoms.Contains)));
+        // a pillar's walls follow the block it holds up
+        var parents = PillarParents.Find(run.Shapes, converted.Where(run.Cells.ContainsKey).Select(b => (b, (IReadOnlyList<Int3>)run.Cells[b])));
+        changed.UnionWith(parents.Where(p => changed.Contains(p.Value)).Select(p => p.Key));
         return changed;
     }
 

@@ -30,7 +30,7 @@ internal static class PresetApply
             else pieces.Remove(stored);
         }
         json["pieces"] = pieces;
-        json["rules"] = false;
+        json.Remove("rules");
         // now in the picks
         json.Remove("snowTerrain");
         json.Remove("skinned");
@@ -40,7 +40,8 @@ internal static class PresetApply
     // null: stays as it is
     private static string? PickOf(ConversionPreview.Decision d)
     {
-        if (d.Picked is { } own) return own;
+        // keep and no target are the same now
+        if (d.Picked is { } own) return own == "keep" ? null : own;
         if (d.Kind == "items")
             return d.Outcome switch { "removed" => "remove", "swapped" => "frozen", "ice" => "copy", "sunk" => "sink", _ => null };
         var rule = d.Rule ?? "";

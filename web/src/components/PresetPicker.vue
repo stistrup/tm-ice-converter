@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { fetchBuildStatus, fetchPresets, type BuildStatus, type Preset } from '../api'
+import { inGroup, useAffected, useApplying } from '../affected'
+import { fetchPresets, type Preset } from '../api'
 import { useHistoryStore } from '../stores/history'
 import { useMapStore } from '../stores/map'
 import { usePreviewStore } from '../stores/preview'
@@ -11,39 +12,25 @@ const history = useHistoryStore()
 
 const presets = ref<Preset[]>([])
 const presetName = ref('')
-const applying = ref(false)
-// pieces the preset needs get built first
-const building = ref<BuildStatus | null>(null)
-const status = computed(() =>
-  !applying.value ? '' : building.value?.running ? `Building pieces ${building.value.done} of ${building.value.total}…` : 'Applying…',
-)
-
 onMounted(async () => {
   presets.value = await fetchPresets().catch(() => [])
   presetName.value = presets.value[0]?.name ?? ''
 })
 
-const apply = async (selected: boolean) => {
-  if (!presetName.value || applying.value) return
-  const only = selected ? store.selection.map((i) => preview.decisions?.[i]?.key).filter((k): k is string => !!k) : null
-  if (selected && !only?.length) return
-  applying.value = true
-  const poll = setInterval(async () => {
-    building.value = await fetchBuildStatus().catch(() => null)
-  }, 1000)
-  try {
-    await history.preset(presetName.value, only)
-  } finally {
-    clearInterval(poll)
-    building.value = null
-    applying.value = false
-  }
+const preset = computed(() => presets.value.find((p) => p.name === presetName.value))
+const { affected, selectedByUs, toggle, keys } = useAffected(() => (d) => preset.value?.steps.some((step) => inGroup(d.group, step.group)) ?? false)
+const { applying, status, run } = useApplying()
+
+const apply = () => {
+  const only = keys()
+  if (presetName.value && only.length) void run(() => history.preset(presetName.value, only))
 }
 </script>
 
 <template>
   <div v-if="presets.length" :class="$style.preset">
     <div :class="$style.row">
+      <span :class="$style.title">Preset</span>
       <select v-model="presetName" :class="[$style.select, $style.grow]" aria-label="Preset">
         <option v-for="p in presets" :key="p.name" :value="p.name">{{ p.name }}</option>
       </select>
@@ -52,18 +39,26 @@ const apply = async (selected: boolean) => {
         <option>Ice</option>
       </select>
     </div>
-    <div :class="$style.row">
+    <div :class="$style.actions">
       <span :class="[$style.muted, $style.grow]">{{ status }}</span>
       <button
         type="button"
         :class="$style.smallButton"
-        :disabled="applying || !store.selection.length || !preview.result"
-        :title="store.selection.length && !preview.result ? 'Waits for the preview' : ''"
-        @click="apply(true)"
+        :disabled="applying || (!affected.length && !selectedByUs)"
+        :title="preview.result ? '' : 'Waits for the preview'"
+        @click="toggle"
       >
-        To selection
+        {{ selectedByUs ? 'Deselect' : 'Select affected blocks' }}
       </button>
-      <button type="button" :class="$style.smallButton" :disabled="applying" @click="apply(false)">To map</button>
+      <button
+        type="button"
+        :class="$style.smallButton"
+        :disabled="applying || !store.selection.length || !preview.result"
+        :title="!store.selection.length ? 'Select blocks first' : ''"
+        @click="apply"
+      >
+        Apply
+      </button>
     </div>
   </div>
 </template>
@@ -71,6 +66,7 @@ const apply = async (selected: boolean) => {
 <style module>
 .preset {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   margin-bottom: 8px;
 }
@@ -79,6 +75,17 @@ const apply = async (selected: boolean) => {
   display: flex;
   gap: 6px;
   align-items: center;
+}
+
+.actions {
+  composes: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.title {
+  flex: none;
+  width: 44px;
 }
 
 .select {

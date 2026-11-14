@@ -5,7 +5,8 @@ using System.Text.Json;
 namespace TmSurfaceEditor;
 
 // localhost only; HttpListener rejects other Host headers. Endpoints by topic in the other parts.
-internal sealed partial class GuiServer(string url, string webRoot, ConversionPreview preview, ConvertJobs jobs, string dataDir)
+// devPage: the dev server's page; the built page isn't served then, its address leads there
+internal sealed partial class GuiServer(string url, string webRoot, ConversionPreview preview, ConvertJobs jobs, string dataDir, string? devPage = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     private static readonly JsonSerializerOptions ReadOptions = new() { PropertyNameCaseInsensitive = true };
@@ -58,7 +59,9 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
         ["/api/texture"] = Texture,
         ["/api/preview-build"] = c => Json(c.Response, preview.Building()),
         ["/api/preview-scene"] = PreviewScene,
-        ["/api/presets"] = c => Json(c.Response, Preset.Load(dataDir).Select(p => new { p.Name, p.Kinds })),
+        ["/api/presets"] = c => Json(c.Response, Preset.Load(dataDir)),
+        ["/api/groups"] = c => Json(c.Response, GroupCatalog.Load(dataDir) is var g ? new { Methods = g.Methods.ToDictionary(m => m.Key, m => m.Value.Label), g.Tree } : null),
+        ["/api/piece-keys"] = async c => await Json(c.Response, await Task.Run(() => ConversionPreview.KeysOf(MapFileOf(c))).ConfigureAwait(false)),
         ["/api/settings"] = async c => await Json(c.Response, await Task.Run(() => preview.StateOf(MapFileOf(c))).ConfigureAwait(false)),
     };
 
@@ -76,6 +79,7 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
         ["/api/save-settings"] = c => Document(c, (log, uid) => log.SaveWorking(uid)),
         ["/api/revert"] = c => Document(c, (log, uid) => log.Revert(uid)),
         ["/api/apply-preset"] = ApplyPreset,
+        ["/api/apply-group"] = ApplyGroup,
         ["/api/convert"] = Convert,
         ["/api/convert-cancel"] = c => Ok(c, () => jobs.Cancel(c.Query("id") ?? "")),
         ["/api/convert-dismiss"] = c => Ok(c, () => jobs.Dismiss(c.Query("id") ?? "")),
@@ -150,6 +154,11 @@ internal sealed partial class GuiServer(string url, string webRoot, ConversionPr
 
     private async Task Static(HttpListenerResponse response, string path)
     {
+        if (devPage is not null)
+        {
+            response.Redirect(devPage.TrimEnd('/') + path);
+            return;
+        }
         var file = Inside(webRoot, path.TrimStart('/'));
         if (file is null || !File.Exists(file)) file = Path.Combine(webRoot, "index.html");
         if (!File.Exists(file)) throw new Refused(404, "page not built: npm run build in web/");

@@ -5,8 +5,8 @@ using GBX.NET.Engines.Plug;
 namespace TmSurfaceEditor;
 
 // a block's TerrainModifier: a material folder plus a game skin listing which materials it swaps.
-// Swaps: game material name -> the name to load from Folder instead
-public sealed record MaterialModifier(string Folder, IReadOnlyDictionary<string, string> Swaps)
+// Swaps: game material name -> the name to load from Folder instead. No folder: a pillar's (TrackWallFromParent), see Under
+public sealed record MaterialModifier(string? Folder, IReadOnlyDictionary<string, string> Swaps)
 {
     // GBX.NET can't read the modifier's body; its paths are plain text
     public static MaterialModifier? Read(string blockPath, string modifierRef, string stadiumDir)
@@ -20,11 +20,15 @@ public sealed record MaterialModifier(string Folder, IReadOnlyDictionary<string,
             ? Path.Combine(gameData, f.Value.Replace('\\', '/').TrimEnd('/')) : null;
         var skin = Regex.Match(text, @"([A-Za-z0-9_]+)\.GameSkin\.gbx", RegexOptions.IgnoreCase) is { Success: true } k
             ? Path.Combine(stadiumDir, "GameSkin", k.Groups[1].Value + ".GameSkin.gbx") : null;
-        if (folder is null || !Directory.Exists(folder) || skin is null || !File.Exists(skin)) return null;
+        if ((folder is not null && !Directory.Exists(folder)) || skin is null || !File.Exists(skin)) return null;
         var swaps = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var fid in Gbx.ParseHeaderNode<CPlugGameSkin>(skin).HeaderFids ?? [])
             if (fid.Directory is { } source)
                 swaps.TryAdd(Path.GetFileName(source.Replace('\\', '/')).Split('.')[0], fid.Name!.TrimStart('*'));
         return new MaterialModifier(folder, swaps);
     }
+
+    // own swaps, the parent's folder; without one nothing is swapped
+    public MaterialModifier? Under(MaterialModifier? parent)
+        => Folder is not null ? this : parent?.Folder is { } folder ? this with { Folder = folder } : null;
 }

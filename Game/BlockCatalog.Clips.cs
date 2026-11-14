@@ -35,7 +35,8 @@ public sealed partial class BlockCatalog
             yield return new ClipInfo(i, node?.Ident.Id ?? Path.GetFileName(file).Split('.')[0], node?.ClipType.ToString() ?? "",
                 BlockParts.IsVertical(clips[i]), NonEmpty(node?.ClipGroupId), NonEmpty(node?.SymmetricalClipGroupId),
                 NonEmpty((node as CGameCtnBlockInfoClipVertical)?.VerticalClipGroupId), NonEmpty(node?.ASymmetricalClipId),
-                node?.IsFullFreeClip ?? false, node?.CanBeDeletedByFullFreeClip ?? false, IsAntiClip(node), node?.TopBottomMultiDir.ToString() ?? "SameDir");
+                node?.IsFullFreeClip ?? false, node?.CanBeDeletedByFullFreeClip ?? false, IsAntiClip(node), node?.TopBottomMultiDir.ToString() ?? "SameDir",
+                NonEmpty((node as CGameCtnBlockInfoClipHorizontal)?.HorizontalClipGroupId));
         }
     }
 

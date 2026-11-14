@@ -3,23 +3,23 @@ import { computed, ref } from 'vue'
 import { useHistoryStore } from '../stores/history'
 import { useMapStore } from '../stores/map'
 import { usePreviewStore } from '../stores/preview'
+import { normalKey } from '../api'
 
 const store = useMapStore()
 const preview = usePreviewStore()
 const history = useHistoryStore()
 
 const open = ref(false)
-const normal = (key: string) => key.trim().replace(/\s*,\s*/g, ',')
 
 // index null: not on this map
 const picks = computed(() => {
   const at = new Map<string, number>()
   preview.decisions?.forEach((d, i) => {
-    if (d?.key) at.set(normal(d.key), i)
+    if (d?.key) at.set(normalKey(d.key), i)
   })
   const result = preview.result
   return Object.entries(preview.picks).map(([key, choice]) => {
-    const index = at.get(normal(key)) ?? null
+    const index = at.get(normalKey(key)) ?? null
     const kind = index === null ? undefined : preview.decisions?.[index]?.kind
     const label = (kind && result?.choices[kind]?.find((c) => c.value === choice)?.label) || choice
     const name = /^\S+/.exec(key)?.[0] ?? key

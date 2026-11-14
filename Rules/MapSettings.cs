@@ -13,7 +13,7 @@ public sealed class MapSettings(JsonObject json)
 
     public static MapSettings Parse(string text)
         => JsonNode.Parse(text, documentOptions: new JsonDocumentOptions { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true }) is JsonObject o
-            ? new(Upgrade(o, 0)) : throw new FormatException("settings must be a JSON object");
+            ? new(o) : throw new FormatException("settings must be a JSON object");
 
     // stored settings from an older version, in place: the only place old forms are known
     public static JsonObject Upgrade(JsonObject json, int version)
@@ -28,6 +28,8 @@ public sealed class MapSettings(JsonObject json)
             json.Remove("presets");
             json["rules"] = on;
         }
+        // 3: no switch meant the rules on; now it means targets only
+        if (version < 4 && json["rules"] is null) json["rules"] = true;
         return json;
     }
 

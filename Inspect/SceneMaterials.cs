@@ -36,7 +36,7 @@ internal sealed class SceneMaterials(BlockCatalog shapes)
             if (ShaderOf(native) is { } terrain && terrain.Contains("_Ids")) return Key(terrain, modifier, ours);
             path = native;
         }
-        else if (modifier is not null && modifier.Swaps.TryGetValue(name, out var swap) && FindFile(modifier.Folder, swap + ".Material.Gbx") is { } m) path = m;
+        else if (modifier?.Folder is { } folder && modifier.Swaps.TryGetValue(name, out var swap) && FindFile(folder, swap + ".Material.Gbx") is { } m) path = m;
         else if (name.IndexOf('_') is > 0 and var u
             && FindFile(Path.Combine(Paths.ExtractedStadium, "Media", "Modifier", name[..u]), name[(u + 1)..] + ".Material.Gbx") is { } i) path = i;
         else path = materialFiles[name].OrderBy(f => f.Contains("/Media/Material/") ? 0 : 1).FirstOrDefault();

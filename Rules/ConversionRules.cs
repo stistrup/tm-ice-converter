@@ -37,8 +37,9 @@ public sealed class ConversionRules
     // copy, sink: items, as their rules do
     public static readonly string[] PieceChoices = ["keep", "custom", "item", "skin", "snow", "tops", "twin", "twincover", "table", "gate", "copy", "sink", "plain", "remove", "frozen", "flip", "snowflip"];
 
-    // off ("rules": false): only pieces with a pick convert; the snow and skin areas stay out, map-wide options still run
-    public bool RulesOn { get; internal set; } = true;
+    // "rules": true, maps from before conversion targets: the rules decide every piece without a pick, the snow and skin areas count.
+    // Off (the default): only pieces with a pick convert; map-wide options still run
+    public bool RulesOn { get; internal set; }
 
     // grid blocks sharing a cell and name, by their own keys (PieceKeys); set per map before anything moves them
     public Dictionary<GBX.NET.Engines.Game.CGameCtnBlock, string> AmbiguousKeys { get; set; } = new(ReferenceEqualityComparer.Instance);

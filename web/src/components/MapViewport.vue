@@ -2,7 +2,7 @@
 import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useMapStore } from '../stores/map'
 import { MapScene } from '../viewer/MapScene'
-import { previewDraw } from '../viewer/previewDraw'
+import { previewDraw, waitingDraw } from '../viewer/previewDraw'
 import ConvertMenu from './ConvertMenu.vue'
 import ConvertDialog from './ConvertDialog.vue'
 import InspectPanel from './InspectPanel.vue'
@@ -25,9 +25,18 @@ const showPreview = async () => {
   const view = store.view
   if (!view) return
   const result = preview.showOriginal ? null : preview.result
-  await view.showPreview(result ? previewDraw(view, result, preview.decisions ?? [], store.infos, preview.changed) : null)
+  const waiting = preview.waiting
+  const draw = result ? previewDraw(view, result, preview.decisions ?? [], store.infos, preview.changed, waiting) : waiting.size ? waitingDraw(view, waiting) : null
+  await view.showPreview(draw)
   preview.lookVersion++
 }
+
+const busy = computed(() => {
+  if (preview.showOriginal) return ''
+  if (preview.loading) return 'Previewing…'
+  const building = preview.building
+  return building ? `Building pieces ${building.done} of ${building.total}…` : ''
+})
 
 const hoverName = computed(() => (store.hovered === null ? '' : displayName(store.infos[store.hovered])))
 
@@ -89,6 +98,7 @@ watch(() => store.hidden, (hidden) => store.view?.setHiddenCategories(hidden))
 watch(() => store.selection, (selection) => store.view?.setSelection(selection))
 watch(() => preview.decisions, showPreview)
 watch(() => preview.showOriginal, showPreview)
+watch(() => [...preview.waiting].join(','), showPreview)
 
 const onPointerMove = (event: PointerEvent) => {
   const rect = stage.value!.getBoundingClientRect()
@@ -134,6 +144,17 @@ onBeforeUnmount(() => {
         :style="{ left: `${pointer.x + 14}px`, top: `${pointer.y + 16}px` }"
       >
         {{ hoverName }}
+      </div>
+      <div v-if="store.scene" :class="$style.topLeft">
+        <button type="button" :class="$style.home" title="Whole map (Home)" aria-label="Whole map" @click="store.view?.frameAll()">
+          <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+            <path d="M2 7.5 8 2l6 5.5M3.5 6.5V14h3.5v-4h2v4h3.5V6.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <div v-if="busy" :class="$style.busy" role="status">
+          <span :class="$style.spinner" aria-hidden="true" />
+          {{ busy }}
+        </div>
       </div>
       <div v-if="store.scene" :class="$style.right">
         <ConvertMenu :class="$style.section" />
@@ -214,6 +235,61 @@ onBeforeUnmount(() => {
   right: 0;
   bottom: 0;
   z-index: 1;
+}
+
+/* home, then the preview at work, right of the floating maps panel */
+.topLeft {
+  position: absolute;
+  top: 10px;
+  left: calc(var(--side-width, 0px) + 10px);
+  z-index: 1;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.home {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--strong);
+  cursor: default;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
+.home:hover {
+  background: var(--header);
+}
+
+.busy {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 10px;
+  color: var(--strong);
+  pointer-events: none;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--accent);
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .tooltip {

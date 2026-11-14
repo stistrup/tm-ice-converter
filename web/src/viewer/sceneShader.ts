@@ -37,6 +37,7 @@ const fragmentShader = /* glsl */ `
   uniform vec3 baseColor;
   uniform sampler2D mapHue;
   uniform float hasHue;
+  uniform float hueSide;
   uniform sampler2D mapIllum;
   uniform float hasIllum;
   uniform float additive;
@@ -83,14 +84,12 @@ const fragmentShader = /* glsl */ `
     vec4 albedo = vec4(baseColor, 1.0);
     if (terrain > 0.5) albedo.rgb = mix(sideColor, baseColor, smoothstep(0.55, 0.8, n.y));
     if (hasMap.x > 0.5) albedo = texture2D(mapUv, vUv);
-    if (hasMap.z > 0.5) {
-      vec2 sideUv = abs(n.x) > abs(n.z) ? vWorld.zy : vWorld.xy;
-      // no top texture: flat faces take the side one from above
-      if (hasMap.y < 0.5 && abs(n.y) > max(abs(n.x), abs(n.z))) sideUv = vec2(vWorld.x, -vWorld.z);
-      albedo = texture2D(mapSide, sideUv * TILE);
-    }
+    vec2 sideUv = abs(n.x) > abs(n.z) ? vWorld.zy : vWorld.xy;
+    // no top texture: flat faces take the side one from above
+    if (hasMap.y < 0.5 && abs(n.y) > max(abs(n.x), abs(n.z))) sideUv = vec2(vWorld.x, -vWorld.z);
+    if (hasMap.z > 0.5) albedo = texture2D(mapSide, sideUv * TILE);
+    float up = hasMap.y > 0.5 ? smoothstep(0.55, 0.8, n.y) : 0.0;
     if (hasMap.y > 0.5) {
-      float up = smoothstep(0.55, 0.8, n.y);
       vec4 top = texture2D(mapTop, vec2(vWorld.x, -vWorld.z) * TILE);
       albedo = hasMap.x + hasMap.z > 0.5 ? mix(albedo, top, up) : top;
     }
@@ -101,8 +100,14 @@ const fragmentShader = /* glsl */ `
     // the block's colour repaints the hue mask's area: alpha = how much, green = brightness; Default keeps the painted green
     int tint = int(vTint + 0.5);
     if (hasHue > 0.5 && tint >= 1 && tint <= 5) {
-      vec4 hue = texture2D(mapHue, vUv);
-      albedo.rgb = mix(albedo.rgb, tints[tint - 1] * hue.g, hue.a);
+      // a projected texture's mask (…Pxz_D_HueMask) goes on as that texture does, the sides only
+      vec4 hue = hueSide > 0.5 ? texture2D(mapHue, sideUv * TILE) : texture2D(mapHue, vUv);
+      // projected walls keep their texture's brightness, the colour takes its hue (TrackWall on White = the plain DecoCliff beside it)
+      vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+      vec3 repainted = hueSide > 0.5
+        ? tints[tint - 1] * dot(albedo.rgb, LUMA) / max(dot(tints[0], LUMA), 0.01)
+        : tints[tint - 1] * hue.g;
+      albedo.rgb = mix(albedo.rgb, repainted, hue.a * (hueSide > 0.5 ? 1.0 - up : 1.0));
     }
 
     if (ice > 0.5) {
@@ -160,6 +165,7 @@ export const flatMaterial = (color: [number, number, number]): ShaderMaterial =>
       flipV: { value: 0 },
       mapHue: { value: blank },
       hasHue: { value: 0 },
+      hueSide: { value: 0 },
       mapIllum: { value: blank },
       hasIllum: { value: 0 },
       additive: { value: 0 },

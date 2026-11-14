@@ -38,7 +38,7 @@ public sealed partial class SettingsStore
     public DocumentState Edit(string uid, JsonObject settings)
     {
         var w = WorkingOf(uid) ?? NewWorking(uid);
-        settings = MapSettings.Upgrade(settings.DeepClone().AsObject(), 0);
+        settings = settings.DeepClone().AsObject();
         if (Same(w.Settings, settings)) return Document(uid);
         var past = w.Past.Append(w.Settings).TakeLast(HistoryLength).ToList();
         WriteWorking(w with { Settings = settings, Past = past, Future = [] });

@@ -29,6 +29,7 @@ internal static class ItemPlacer
                 && Vector3.Distance(new Vector3(o.AbsolutePositionInMap.X, o.AbsolutePositionInMap.Y, o.AbsolutePositionInMap.Z), pos) < 0.01f))
             return true;
         var placed = run.Map.PlaceAnchoredObject(item.Ident, new Vec3(pos.X, pos.Y, pos.Z), rotation, default);
+        if (!File.Exists(item.FilePath)) run.Waiting[block] = item.FilePath;
         if (!block.IsGround && kind == ItemKind.None) placed.WaypointSpecialProperty = block.WaypointSpecialProperty;
         placed.Color = block.Color;
         run.Report.UsedItems.Add(item);

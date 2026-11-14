@@ -10,13 +10,15 @@ internal sealed class GuiCommand(string dataDir)
         var noOpen = rest.Contains("--no-open");
         rest = rest.Where(a => a != "--no-open").ToArray();
         var port = int.TryParse(Option(ref rest, "--port"), out var p) ? p : 5199;
+        // tools/gui-dev: the page comes from Vite; the built one here would be stale
+        var devPage = Option(ref rest, "--dev");
         var webRoot = Path.GetFullPath(Path.Combine(dataDir, "..", "web", "dist"));
-        if (!File.Exists(Path.Combine(webRoot, "index.html")))
+        if (devPage is null && !File.Exists(Path.Combine(webRoot, "index.html")))
             Console.WriteLine($"No built page in {webRoot}: run npm install and npm run build in web/ (the API still runs).");
 
         var url = $"http://localhost:{port}/";
         var preview = new ConversionPreview(dataDir);
-        var server = new GuiServer(url, webRoot, preview, new ConvertJobs(new ConvertCommand(dataDir), preview), dataDir);
+        var server = new GuiServer(url, webRoot, preview, new ConvertJobs(new ConvertCommand(dataDir), preview), dataDir, devPage);
         if (!noOpen) server.Started += () => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
         try { server.RunAsync().GetAwaiter().GetResult(); }
         // started twice: the first one is serving, show it

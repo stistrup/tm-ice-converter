@@ -70,6 +70,7 @@ public sealed class MapView(BlockCatalog shapes)
         var drop = Matrix4x4.CreateTranslation(0, -Placement.EnvironmentDrop(map.Collection?.ToString()), 0);
         // a placed native ground block draws its own ground and replaces the terrain in its cells (the game hides it);
         // our custom blocks carry no ground, so the terrain shows, except on hills and cliffs, whose bodies keep the terrain's faces
+        var parents = PillarParents.Find(shapes, grid.Select(g => (g.Block, (IReadOnlyList<Int3>)g.Cells)));
         var built = grid.Where(g => g.Block.IsGround && !shapes.IsTerrain(g.Block.Name) && OwnsGround(g.Block.Name)).SelectMany(g => g.Cells).ToHashSet();
         for (int i = 0; i < grid.Count; i++)
         {
@@ -83,7 +84,7 @@ public sealed class MapView(BlockCatalog shapes)
             var info = Info(block, null);
             if (placed.Name != block.Name) info["drawnAs"] = placed.Name;
             if (placed.Variant != BlockFlags.VariantOf(block)) info["shownVariant"] = placed.Variant;
-            Add(block, placed.Name, placed.Ground, placed.Variant, mobil, placed.Place * drop, shown[i], info);
+            Add(block, placed.Name, placed.Ground, placed.Variant, mobil, placed.Place * drop, shown[i], info, parents.GetValueOrDefault(block)?.Name);
         }
     }
 
@@ -93,7 +94,7 @@ public sealed class MapView(BlockCatalog shapes)
         var free = Matrix4x4.CreateFromYawPitchRoll(r.X, r.Y, r.Z) * Matrix4x4.CreateTranslation(p.X, p.Y, p.Z);
         var all = BlockKinds.DrawnFreeClips(shapes, block);
         if (onlyBlocks?.Contains(block) != false)
-            Add(block, block.Name, block.IsGround, BlockFlags.VariantOf(block), BlockFlags.MobilOf(block), free, all, Info(block, p));
+            Add(block, block.Name, block.IsGround, BlockFlags.VariantOf(block), BlockFlags.MobilOf(block), free, all, Info(block, p), null);
     }
 
     // as the clip resolver sees it: a body-less pillar draws from the block above, a custom block clips as its archetype
@@ -113,15 +114,16 @@ public sealed class MapView(BlockCatalog shapes)
     }
 
     // the shown clips of a custom block's archetype: the game still draws them (terrain ones included)
-    private void AddClipsOf(string source, bool ground, int variant, int mobil, Matrix4x4 place, HashSet<int> clips, Dictionary<string, object> info)
+    private void AddClipsOf(string source, bool ground, int variant, int mobil, Matrix4x4 place, HashSet<int> clips, Dictionary<string, object> info,
+        MaterialModifier? modifier)
     {
         if (clips.Count == 0) return;
-        var key = $"clipsof:{source}|{(ground ? "g" : "a")}{variant}.{mobil}|{ClipKey.OfSet(clips)}";
+        var key = $"clipsof:{source}|{(ground ? "g" : "a")}{variant}.{mobil}|{ClipKey.OfSet(clips)}|{Path.GetFileName(modifier?.Folder)}";
         if (!meshes.ContainsKey(key))
         {
             var body = shapes.FindPlacedBlockParts(source, ground, variant, mobil, new HashSet<int>())?.ToHashSet() ?? [];
             var all = shapes.FindPlacedBlockParts(source, ground, variant, mobil, clips);
-            meshes[key] = all is null ? null : Pieces(exporter.Export(all.Where(p => !body.Contains(p)).ToList()), shapes.MaterialModifierOf(source));
+            meshes[key] = all is null ? null : Pieces(exporter.Export(all.Where(p => !body.Contains(p)).ToList()), modifier);
         }
         if (meshes[key] is not { Count: > 0 }) return;
         instances.Add(new SceneInstance(key, Flatten(place), new Dictionary<string, object>(info) { ["kind"] = "block", ["name"] = source, ["drawnAs"] = "clips" }));
@@ -155,20 +157,22 @@ public sealed class MapView(BlockCatalog shapes)
         return info;
     }
 
+    // parent: the block a pillar holds up
     private void Add(CGameCtnBlock block, string meshName, bool ground, int variant, int mobil, Matrix4x4 place, HashSet<int> clips,
-        Dictionary<string, object> info)
+        Dictionary<string, object> info, string? parent)
     {
+        var modifier = shapes.MaterialModifierOf(meshName, parent);
         if (AddCustomBlock(block.Name, place, info))
         {
-            if (CustomBlockMesh.Parse(block.Name) is not { Cover: true }) AddClipsOf(meshName, ground, variant, mobil, place, clips, info);
+            if (CustomBlockMesh.Parse(block.Name) is not { Cover: true }) AddClipsOf(meshName, ground, variant, mobil, place, clips, info, modifier);
             return;
         }
         if (shapes.IsTerrain(meshName)) info["tags"] = info.TryGetValue("tags", out var t) ? $"{t}, terrain" : "terrain";
-        var key = $"{meshName}|{(ground ? "g" : "a")}{variant}.{mobil}|{ClipKey.OfSet(clips)}";
+        var key = $"{meshName}|{(ground ? "g" : "a")}{variant}.{mobil}|{ClipKey.OfSet(clips)}|{Path.GetFileName(modifier?.Folder)}";
         if (!meshes.ContainsKey(key))
         {
             var parts = shapes.FindPlacedBlockParts(meshName, ground, variant, mobil, clips);
-            meshes[key] = parts is null ? null : Pieces(exporter.Export(parts), shapes.MaterialModifierOf(meshName));
+            meshes[key] = parts is null ? null : Pieces(exporter.Export(parts), modifier);
         }
         // a body-less block (pillar) is only its clips: with all of them hidden the game draws nothing there either
         if (meshes[key] is null && clips.Count == 0 && shapes.ClipSides(meshName, ground, variant).Count > 0)

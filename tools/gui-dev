@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # gui-dev: API on :5199 (rebuilt and started again whenever it stops) + Vite on :5173 with hot reload.
+# :5199 sends page requests to :5173, so the stale built page never opens by mistake.
 # Restart the API after C# changes: tools/gui-dev restart
 set -uo pipefail
 root="$(dirname "$(readlink -f "$0")")/.."
@@ -15,7 +16,7 @@ vite=$!
 trap 'kill $vite 2>/dev/null; exit 0' INT TERM EXIT
 
 while true; do
-    dotnet run --project "$root" -- gui --no-open
+    dotnet run --project "$root" -- gui --no-open --dev http://localhost:5173
     echo "API stopped, starting again"
     sleep 1
 done

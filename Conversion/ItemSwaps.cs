@@ -59,6 +59,7 @@ internal static class ItemSwaps
         placedAt[spot] = stacked + 1;
         if (stacked > 0) item.AbsolutePositionInMap = p with { Y = p.Y + 0.01f * stacked };
         item.ItemModel = copy.Ident;
+        if (!File.Exists(copy.FilePath)) run.WaitingItems[item] = copy.FilePath;
         run.Report.UsedItems.Add(copy);
         Bump(run.Report.ThemedItems, model.Id);
     }

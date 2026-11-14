@@ -42,8 +42,7 @@ public sealed partial class ItemBuilder
 
     public ItemStyle Style { get => styleOf.Value!; set => styleOf.Value = value; }
 
-    // planning works out each new item's mesh at once (a convert: one plan, one build);
-    // off for the preview, which answers first and draws the built pieces after
+    // planning works out each new item's mesh at once: one plan, one build
     public bool MeshWhilePlanning { get; init; }
 
     // once per run: the stale check only sees the item, not the block writer

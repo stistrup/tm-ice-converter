@@ -1,5 +1,5 @@
-import { Box3, BufferAttribute, BufferGeometry, type Matrix4 } from 'three'
-import { groundHeight } from './materialRules'
+import { Box3, BufferAttribute, BufferGeometry, Vector3, type Matrix4 } from 'three'
+import { groundHeight, isWaterZone, waterHeight } from './materialRules'
 import type { Placed } from './placed'
 import type { Extent } from './terrainCut'
 
@@ -21,23 +21,54 @@ export const cellsOf = (geometries: BufferGeometry[], matrix: Matrix4) => {
   }
 }
 
-// cells without a ground or terrain block show the environment's base ground; covered: cells the preview fills.
-// extent: what the map spans, for the cut pass
-export const baseGround = (placed: Placed[], environment: string | null, covered: Iterable<string>): { geometry: BufferGeometry | null; extent: Extent } => {
+// m² of upward faces a cell needs: a wall's top edge reaching into the next cell (pillar clips) doesn't count
+const GROUND_AREA = 64
+
+// the cells a ground piece has ground in: those its upward faces cover, not its whole box (beach deco blocks leave cells to the sea)
+export const groundCells = (geometries: BufferGeometry[], matrix: Matrix4): Set<string> => {
+  const area = new Map<string, number>()
+  const [a, b, c, ab, ac] = [new Vector3(), new Vector3(), new Vector3(), new Vector3(), new Vector3()]
+  for (const geometry of geometries) {
+    const position = geometry.getAttribute('position')
+    const index = geometry.getIndex()
+    const count = index ? index.count : position.count
+    const at = (i: number) => (index ? index.getX(i) : i)
+    for (let i = 0; i + 2 < count; i += 3) {
+      a.fromBufferAttribute(position, at(i)).applyMatrix4(matrix)
+      b.fromBufferAttribute(position, at(i + 1)).applyMatrix4(matrix)
+      c.fromBufferAttribute(position, at(i + 2)).applyMatrix4(matrix)
+      const normal = ab.subVectors(b, a).cross(ac.subVectors(c, a))
+      // its area seen from above
+      const flat = Math.abs(normal.y) / 2
+      if (flat === 0 || normal.normalize().y < 0.3) continue
+      // the middle and each corner a little inward share it: a large face spans several cells
+      const [mx, mz] = [(a.x + b.x + c.x) / 3, (a.z + b.z + c.z) / 3]
+      for (const [px, pz] of [[mx, mz], [a.x, a.z], [b.x, b.z], [c.x, c.z]]) {
+        const key = `${Math.floor((px + (mx - px) * 0.05) / CELL.x)},${Math.floor((pz + (mz - pz) * 0.05) / CELL.z)}`
+        area.set(key, (area.get(key) ?? 0) + flat / 4)
+      }
+    }
+  }
+  return new Set([...area].filter(([, m2]) => m2 >= GROUND_AREA).map(([key]) => key))
+}
+
+// cells without a ground or terrain block show the environment's base ground; covered: cells the preview fills,
+// hidden: pieces the preview takes away (their ground goes with them). extent: what the map spans, for the cut pass
+export const baseGround = (placed: Placed[], environment: string | null, zone: string | null, covered: Iterable<string>, hidden: ReadonlySet<number> = new Set()): { geometry: BufferGeometry | null; extent: Extent } => {
   const cell = CELL.x
   const owned = new Set<string>(covered)
   let [minX, maxX, minZ, maxZ] = [0, 48, 0, 48]
-  for (const piece of placed) {
+  for (const [index, piece] of placed.entries()) {
     const cells = cellsOf(piece.geometries, piece.matrix)
     if (!cells) continue
     const { x0, x1, z0, z1 } = cells
     ;[minX, maxX, minZ, maxZ] = [Math.min(minX, x0), Math.max(maxX, x1 + 1), Math.min(minZ, z0), Math.max(maxZ, z1 + 1)]
-    if (!piece.ownsGround) continue
-    for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) owned.add(`${x},${z}`)
+    if (!piece.ownsGround || hidden.has(index)) continue
+    for (const key of groundCells(piece.geometries, piece.matrix)) owned.add(key)
   }
   const positions: number[] = []
   // exact: it only fills cells no block owns, so nothing shares its plane
-  const y = groundHeight(environment)
+  const y = isWaterZone(zone) ? waterHeight : groundHeight(environment)
   for (let x = minX; x < maxX; x++) {
     for (let z = minZ; z < maxZ; z++) {
       if (owned.has(`${x},${z}`)) continue

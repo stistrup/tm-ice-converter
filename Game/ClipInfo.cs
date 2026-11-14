@@ -11,7 +11,7 @@ public sealed record ClipSide(int Bit, Vector3 Probe)
 }
 
 public sealed record ClipInfo(int Index, string Name, string Type, bool Vertical, string? Group, string? SymmetricGroup,
-    string? VerticalGroup, string? Pair, bool Full, bool Deletable, bool Anti, string MultiDir = "SameDir");
+    string? VerticalGroup, string? Pair, bool Full, bool Deletable, bool Anti, string MultiDir = "SameDir", string? HorizontalGroup = null);
 
 internal static class ClipKey
 {

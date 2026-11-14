@@ -23,7 +23,7 @@ const toggle = (name: string, event: Event) => history.change(() => preview.set(
 </script>
 
 <template>
-  <fieldset v-if="preview.options.length" :class="$style.options" :disabled="!preview.rulesOn">
+  <fieldset v-if="preview.options.length" :class="$style.options" >
     <label v-for="group in optionGroups" :key="group.title" :class="$style.choice">
       <span :class="$style.option">
         <span>{{ group.title }}</span>
@@ -33,7 +33,7 @@ const toggle = (name: string, event: Event) => history.change(() => preview.set(
         <option v-for="(choice, i) in group.choices" :key="choice.label" :value="i">{{ choice.label }}</option>
       </select>
     </label>
-    <label v-for="option in preview.options.filter((o) => !grouped.has(o.name))" :key="option.name" :class="$style.option">
+    <label v-for="option in preview.options.filter((o) => !grouped.has(o.name) && o.category !== 'piece')" :key="option.name" :class="$style.option">
       <input type="checkbox" :checked="preview.valueOf(option.name)" @change="toggle(option.name, $event)" />
       <span>{{ optionLabel(option.name) }}</span>
       <span v-if="option.description" :class="$style.info" :title="option.description" aria-label="What it does">i</span>

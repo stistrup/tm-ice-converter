@@ -47,6 +47,7 @@ onMounted(async () => {
 
 <style module>
 .layout {
+  --side-width: 261px;
   position: relative;
   display: grid;
   grid-template-rows: minmax(0, 1fr) 22px;
@@ -65,7 +66,7 @@ onMounted(async () => {
   z-index: 1;
   display: flex;
   flex-direction: column;
-  width: 261px;
+  width: var(--side-width);
   pointer-events: none;
 }
 

@@ -39,11 +39,11 @@ The first time you open a map, it takes a while to load and any ice pieces it wa
 The same options as the Convert popup:
 
 ```
-TmSurfaceEditor convert <maps or folders> [--folder <dir>] [--name <name>] [--fake-author-time] [--me-as-author]
-                       [--rebuild-blocks] [--overwrite] [--settings <from>] [--set <option>=true|false]
+TmSurfaceEditor convert <maps or folders> (--settings <from> | --preset <name>) [--folder <dir>] [--name <name>]
+                       [--fake-author-time] [--me-as-author] [--rebuild-blocks] [--overwrite] [--set <option>=true|false]
 ```
 
-`--folder` is a folder under Maps or an absolute path (default: `ICE in progress`). An overwritten map keeps its UID; a new file name gets a UID of its own. `convert` without arguments lists every option. From the repo, `tools/ice-convert` takes the same arguments.
+Say what a map converts by: `--settings current` takes what you set up in the GUI (the working copy, else the saved settings), `--settings saved`, a settings file or a run id; `--preset <name>` applies a preset (on top of `--settings` when both are given). `--folder` is a folder under Maps or an absolute path (default: `ICE in progress`). An overwritten map keeps its UID; a new file name gets a UID of its own. `convert` without arguments lists every option. From the repo, `tools/ice-convert` takes the same arguments.
 
 For working on the converter there are Blender tools: `view <map>` (a scene and renders of a map), `inspect <map>` (the same with a panel to look up and mark blocks) and `show <item>` (a built item). They're experimental and rough, but they somewhat work. I abandoned this route as soon as I started to work in the editor as that served the purpose as a debug tool. Blender preview could prove useful at some point, time will tell.
 

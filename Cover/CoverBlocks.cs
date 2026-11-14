@@ -21,7 +21,7 @@ internal static class CoverBlocks
         var path = Path.Combine(Paths.Blocks, name + ".Block.Gbx");
         items.WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, block, CoverTerrainArchetype, 0,
             raise: underDeco ? CoverUnderDecoRaise : CoverTerrainRaise, snowAs: CoverTerrainMaterial, lightmapFromAbove: true, hollow: underDeco));
-        return new BuiltBlock(ident, path);
+        return new BuiltBlock(ident, path, item.FilePath);
     }
 
     // deco in a snow terrain area: its own archetype keeps the ground away, its deco surface in the same snow
@@ -34,7 +34,7 @@ internal static class CoverBlocks
         var ident = new Ident($"{Paths.ItemFolder}\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Blocks, name + ".Block.Gbx");
         items.WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, block, block, variantId, snowAs: CoverTerrainMaterial, lightmapFromAbove: true));
-        return new BuiltBlock(ident, path);
+        return new BuiltBlock(ident, path, item.FilePath);
     }
 
     // a gameplay block's ground in snow, on its terrain cell; the block itself goes to the air and keeps its trigger
@@ -45,7 +45,7 @@ internal static class CoverBlocks
         var ident = new Ident($"{Paths.ItemFolder}\\{name}.Block.Gbx", collection, item.Ident.Author);
         var path = Path.Combine(Paths.Blocks, name + ".Block.Gbx");
         items.WriteBlock(path, item.FilePath, to => CustomBlockWriter.Write(item.FilePath, to, ident, block, CoverTerrainArchetype, 0, snowAs: CoverTerrainMaterial, lightmapFromAbove: true));
-        return new BuiltBlock(ident, path);
+        return new BuiltBlock(ident, path, item.FilePath);
     }
 
     // nothing to see or bake, the block still keeps the terrain away: a 3 cm speck at the cell's middle, its floor

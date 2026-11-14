@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, Color, type InstancedMesh, type Material, type Matrix4 } from 'three'
+import { BufferAttribute, BufferGeometry, Color, Vector3, type InstancedMesh, type Material, type Matrix4 } from 'three'
 import type { InstanceInfo } from '../api'
 import type { Category } from './categories'
 
@@ -31,7 +31,14 @@ export interface LayerPiece extends PieceParts {
   matrix: Matrix4
 }
 
-export const originOf = (info: InstanceInfo, block: string, item: string): string | null => typeof info[block] === 'number' ? `b${info[block]}` : typeof info[item] === 'number' ? `i${info[item]}` : null
+// a block that draws its own ground; our custom blocks carry none, except on hills and cliffs (BlockNames.OnTerrainShape)
+export const ownsGroundOf = (info: InstanceInfo) => {
+  const custom = info.kind === 'custom block'
+  const keepsTerrain = custom && /On[A-Z][a-z]+(Cliff|Hill)/.test(String(info.sourceBlock ?? ''))
+  return info.kind.includes('block') && (!custom || keepsTerrain) && /\b(ground|terrain)\b/.test(info.tags ?? '')
+}
+
+export const originOf =(info: InstanceInfo, block: string, item: string): string | null => typeof info[block] === 'number' ? `b${info[block]}` : typeof info[item] === 'number' ? `i${info[item]}` : null
 
 // the colour index rides in the instance colour's red channel
 const tintColor = new Color()
@@ -45,4 +52,14 @@ export const pieceGeometry = (buffer: ArrayBuffer, offset: number, vertices: num
   geometry.setIndex(new BufferAttribute(new Uint32Array(buffer, offset + vertices * 32, indices), 1))
   if (colors) geometry.setAttribute('cv', new BufferAttribute(new Float32Array(buffer, offset + vertices * 32 + indices * 4, vertices * 4), 4))
   return geometry
+}
+
+const none = new Vector3(0, 0, 0)
+
+// hidden = scaled to nothing where it stands; three culls an instanced mesh by bounds it works out once, so they go stale here
+export const showInstance = (mesh: InstancedMesh, n: number, matrix: Matrix4, shown: boolean) => {
+  mesh.setMatrixAt(n, shown ? matrix : matrix.clone().scale(none))
+  mesh.instanceMatrix.needsUpdate = true
+  mesh.boundingSphere = null
+  mesh.boundingBox = null
 }

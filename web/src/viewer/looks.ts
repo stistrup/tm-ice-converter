@@ -1,5 +1,5 @@
 import { InstancedMesh, Matrix4, Vector3, type BufferGeometry, type Material, type Scene } from 'three'
-import { tintOf, type PieceParts, type Placed } from './placed'
+import { showInstance, tintOf, type PieceParts, type Placed } from './placed'
 import { markCutter } from './terrainCut'
 
 // the preview's redraw of one piece: per geometry a material (null = left out), on the whole piece or only on its upward faces
@@ -9,8 +9,6 @@ export interface LookChange {
   materials: (Material | null | undefined)[]
   topsOnly: boolean
 }
-
-const hidden = new Matrix4().makeScale(0, 0, 0)
 
 // the conversion preview drawn in its materials: whole pieces swapped (the native one hidden), or the theme laid on their upward faces
 export class Looks {
@@ -30,10 +28,7 @@ export class Looks {
   }
 
   set(changes: LookChange[], placedList: Placed[]) {
-    for (const { mesh, n, matrix } of this.hiddenSlots) {
-      mesh.setMatrixAt(n, matrix)
-      mesh.instanceMatrix.needsUpdate = true
-    }
+    for (const { mesh, n, matrix } of this.hiddenSlots) showInstance(mesh, n, matrix, true)
     this.hiddenSlots = []
     for (const mesh of this.meshes) {
       this.scene.remove(mesh)
@@ -49,8 +44,7 @@ export class Looks {
       if (!change.topsOnly)
         for (const { mesh, n } of placed.slots) {
           this.hiddenSlots.push({ mesh, n, matrix: placed.matrix })
-          mesh.setMatrixAt(n, hidden)
-          mesh.instanceMatrix.needsUpdate = true
+          showInstance(mesh, n, placed.matrix, false)
         }
       // drawn by the changed layer: partsOf takes it from there
       if (change.topsOnly || change.materials.some((m) => m !== null)) this.parts.set(change.index, this.lookOf(placed, change))

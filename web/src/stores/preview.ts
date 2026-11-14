@@ -3,8 +3,11 @@ import { computed, ref, shallowRef, watch } from 'vue'
 import {
   fetchBuildStatus,
   fetchMapState,
+  fetchPieceKeys,
+  normalKey,
   fetchPreview,
   fetchPreviewScene,
+  applyGroup as postGroup,
   applyPreset as postPreset,
   editSettings,
   redoSettings,
@@ -15,6 +18,7 @@ import {
   type DocumentState,
   type MapSettings,
   type MapState,
+  type PieceKeys,
   type PreviewDecision,
   type PreviewOption,
   type PreviewResult,
@@ -55,11 +59,38 @@ export const usePreviewStore = defineStore('preview', () => {
 
   const options = computed<PreviewOption[]>(() => state.value?.defaults ?? [])
 
-  // per piece key, from the manual flow
-  const picks = computed<Record<string, string>>(() => {
-    const pieces = working.value.pieces
+  const targetsOf = (settings: MapSettings): Record<string, string> => {
+    const pieces = settings.pieces
     if (!pieces || typeof pieces !== 'object') return {}
     return Object.fromEntries(Object.entries(pieces).filter((e): e is [string, string] => typeof e[1] === 'string'))
+  }
+
+  // per piece key, from the manual flow
+  const picks = computed(() => targetsOf(working.value))
+
+  const keys = shallowRef<PieceKeys | null>(null)
+  const loadKeys = async () => {
+    const current = map.currentMap
+    keys.value = null
+    if (!current) return
+    const loaded = await fetchPieceKeys(current.path).catch(() => null)
+    if (map.currentMap === current) keys.value = loaded
+  }
+
+  // while a run works: the pieces whose targets it is changing (before the first result, every target), by scene index
+  const waiting = computed(() => {
+    const out = new Set<number>()
+    const k = keys.value
+    if (!loading.value || showOriginal.value || !k) return out
+    const before = result.value ? targetsOf(JSON.parse(ranWith.value)) : {}
+    const now = picks.value
+    const changed = new Set([...Object.keys(before), ...Object.keys(now)].filter((key) => before[key] !== now[key]).map(normalKey))
+    if (!changed.size) return out
+    map.infos.forEach((info, i) => {
+      const hit = typeof info.block === 'number' ? changed.has(k.blocks[info.block]) || changed.has(k.plainBlocks[info.block]) : typeof info.item === 'number' && changed.has(k.items[info.item])
+      if (hit) out.add(i)
+    })
+    return out
   })
 
   // the working settings as they are, or (after builds) what the shown result came from
@@ -133,6 +164,7 @@ export const usePreviewStore = defineStore('preview', () => {
   const save = () => documentCall(saveSettings, false)
   const revert = () => documentCall(revertSettings, true)
   const applyPreset = (name: string, only: string[] | null) => documentCall((path) => postPreset(path, name, only), true)
+  const applyGroup = (group: string, method: string, only: string[] | null) => documentCall((path) => postGroup(path, group, method, only), true)
 
   const loadState = async () => {
     const current = map.currentMap
@@ -177,6 +209,7 @@ export const usePreviewStore = defineStore('preview', () => {
       error.value = ''
       clear()
       void loadState()
+      void loadKeys()
     },
     { immediate: true },
   )
@@ -201,12 +234,7 @@ export const usePreviewStore = defineStore('preview', () => {
   }
 
   // off: only the pieces picked by hand convert
-  const rulesOn = computed(() => working.value.rules !== false)
 
-  const setRules = (on: boolean) => {
-    const { rules: _, ...rest } = working.value
-    working.value = on ? rest : { ...rest, rules: false }
-  }
 
   const stale = computed(() => JSON.stringify(working.value) !== ranWith.value)
 
@@ -260,9 +288,11 @@ export const usePreviewStore = defineStore('preview', () => {
     save,
     revert,
     applyPreset,
+    applyGroup,
     picks,
     pick,
     building,
+    waiting,
     changed,
     lookVersion,
     showOriginal,
@@ -277,8 +307,6 @@ export const usePreviewStore = defineStore('preview', () => {
     show,
     close,
     set,
-    rulesOn,
-    setRules,
     valueOf,
   }
 })

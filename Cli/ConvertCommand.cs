@@ -15,6 +15,8 @@ internal sealed class ConvertCommand(string dataDir)
         // after each default name
         public string Suffix { get; init; } = MapNames.DefaultSuffix;
         public string? From { get; init; }
+        // applied on top of the settings (data/presets.jsonc)
+        public string? Preset { get; init; }
         public IReadOnlyList<(string, bool)> Set { get; init; } = [];
 
         public string Kind => string.Join(", ", new[] { "convert", FakeAuthorTime ? "fake author time" : null, MeAsAuthor ? "me as author" : null }.OfType<string>());
@@ -34,8 +36,10 @@ internal sealed class ConvertCommand(string dataDir)
               --me-as-author        your account (testrunAuthor in local.jsonc) as the map's author
               --rebuild-blocks      write the custom blocks again even when their items didn't change
               --overwrite           replace a map of the same file name; it keeps that map's UID
-              --settings <from>     a settings file, a run id or file, "saved" or "defaults" (data/options.jsonc);
-                                    default: the map's working copy (the GUI's edits), else its saved settings, else the defaults
+              --settings <from>     current (the map's working copy from the GUI, else its saved settings), saved,
+                                    a settings file, or a run id or file
+              --preset <name>       a preset from data/presets.jsonc; alone it's all the map converts by, with --settings it goes on top
+                                    One of the two is needed: nothing converts by default.
               --set <option>=true|false   override an option for this run (repeatable)
               A new file name gets a UID of its own (from the original map and the name). Every conversion is
               logged with its settings (see runs).
@@ -84,6 +88,9 @@ internal sealed class ConvertCommand(string dataDir)
         }
     }
 
+    // --preset alone: nothing under it
+    internal const string None = "none";
+
     private static Choices? Parse(ref string[] rest, bool allowName)
     {
         bool Flag(ref string[] args, string name)
@@ -99,6 +106,12 @@ internal sealed class ConvertCommand(string dataDir)
         var folder = Option(ref rest, "--folder");
         var name = allowName ? Option(ref rest, "--name") : null;
         var from = Option(ref rest, "--settings");
+        var preset = Option(ref rest, "--preset");
+        if (from is null && preset is null)
+        {
+            Fail("which settings? --settings current (the GUI's working copy, else saved), --settings saved, a settings file or run id; or --preset <name>");
+            return null;
+        }
         var set = new List<(string, bool)>();
         while (Option(ref rest, "--set") is { } pair)
         {
@@ -109,7 +122,7 @@ internal sealed class ConvertCommand(string dataDir)
         if (me && Paths.TestrunAuthorIfSet is null) { Fail($"--me-as-author needs \"testrunAuthor\" in {Paths.LocalSettings} (or set it in the GUI's Convert popup)"); return null; }
         if (name is not null && MapNames.FileName(name) is null) { Fail("--name can't hold < > : \" / \\ | ? * or end in a dot"); return null; }
         var dir = folder is null ? Paths.OutFolder : Path.IsPathRooted(folder) ? folder : Path.GetFullPath(Path.Combine(Paths.Maps, folder));
-        return new Choices(dir, name, fake, me, rebuild, overwrite) { From = from, Set = set };
+        return new Choices(dir, name, fake, me, rebuild, overwrite) { From = from ?? None, Set = set, Preset = preset };
     }
 
     private List<MapResult> ConvertWithBar(IReadOnlyList<string> maps, Choices choices)
@@ -174,7 +187,7 @@ internal sealed class ConvertCommand(string dataDir)
             clock.Restart();
             var map = Gbx.ParseNode<CGameCtnChallenge>(path);
             var parse = clock.ElapsedMilliseconds;
-            var report = converter.Convert(map);
+            var report = converter.Convert(map, new ConversionRules { RulesOn = true });
             Console.WriteLine($"run {i}: parse {parse} ms, decide {clock.ElapsedMilliseconds - parse} ms, custom blocks {report.UsedBlocks.Count}");
         }
         return 0;

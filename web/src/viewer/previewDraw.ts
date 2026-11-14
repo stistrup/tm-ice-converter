@@ -13,13 +13,21 @@ export const previewDraw = (
   decisions: (PreviewDecision | undefined)[],
   infos: InstanceInfo[],
   changed: { manifest: SceneManifest; geometry: ArrayBuffer } | null,
+  waiting: Set<number>,
 ): PreviewDraw => {
   const groups = new Map<number, number[]>()
   const looks: LookChange[] = []
   const hiddenBlocks = new Set(result.hiddenBlocks)
   const hiddenItems = new Set(result.hiddenItems)
+  const pendingBlocks = new Set(result.pendingBlocks)
+  const pendingItems = new Set(result.pendingItems)
   decisions.forEach((decision, index) => {
     const info = infos[index]
+    const pending = waiting.has(index) || (typeof info?.block === 'number' ? pendingBlocks.has(info.block) : typeof info?.item === 'number' && pendingItems.has(info.item))
+    if (pending) {
+      looks.push({ index, materials: view.materialNames(index).map(() => view.pendingMaterial), topsOnly: false })
+      return
+    }
     if (decision?.outcome === 'removed') {
       looks.push({ index, materials: view.materialNames(index).map(() => view.ghostMaterial), topsOnly: false })
       return
@@ -50,5 +58,13 @@ export const previewDraw = (
     if (group) group.push(index)
     else groups.set(color, [index])
   })
-  return { changed, looks, tints: [...groups].map(([color, indices]) => ({ color, indices })) }
+  return { changed, looks, tints: [...groups].map(([color, indices]) => ({ color, indices })), waiting: [...waiting] }
 }
+
+// before the first result: only the pieces the run is working on
+export const waitingDraw = (view: MapScene, waiting: Set<number>): PreviewDraw => ({
+  changed: null,
+  looks: [...waiting].map((index) => ({ index, materials: view.materialNames(index).map(() => view.pendingMaterial), topsOnly: false })),
+  tints: [],
+  waiting: [...waiting],
+})

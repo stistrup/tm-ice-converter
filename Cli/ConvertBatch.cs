@@ -16,13 +16,14 @@ internal sealed class ConvertBatch
     private readonly ItemBuilder items;
     private readonly ConversionRules dataRules;
     private readonly HashSet<string> known;
+    private readonly string dataDir;
     private readonly SettingsStore log = SettingsStore.Default;
     private List<(BlockCatalog Shapes, MapConverter Converter)> workers = [];
     private readonly List<MapResult> results = [];
 
     public ConvertBatch(string dataDir, Choices choices, ConvertProgress progress, CancellationToken cancel)
     {
-        (this.choices, this.progress, this.cancel) = (choices, progress, cancel);
+        (this.dataDir, this.choices, this.progress, this.cancel) = (dataDir, choices, progress, cancel);
         items = new ItemBuilder(dataDir) { RewriteBlocks = choices.RebuildBlocks, MeshWhilePlanning = true };
         dataRules = ConversionRules.Load(dataDir);
         known = KnownBlocks(dataDir);
@@ -161,14 +162,21 @@ internal sealed class ConvertBatch
         var header = Gbx.ParseHeaderNode<CGameCtnChallenge>(path);
         var (settings, from) = choices.Settings is { } handed ? (handed, "the GUI's settings") : choices.From switch
         {
-            null => log.Current(header.MapUid),
-            "defaults" => (MapSettings.Empty, "defaults"),
+            // the GUI's batch: each map's own
+            null or "current" => log.Current(header.MapUid),
+            None => (MapSettings.Empty, "nothing"),
             "saved" => log.SavedOf(header.MapUid) is { } saved ? (new MapSettings(saved.Settings), $"saved {saved.Updated.ToLocalTime():yyyy-MM-dd HH:mm}")
                 : throw new FormatException("no saved settings for this map"),
             var given when File.Exists(given) => (SettingsFile(given), given),
             var id => log.Run(id) is { } run ? (new MapSettings(run.Settings), $"run {run.Id}") : throw new FormatException($"--settings: no file or run '{id}'"),
         };
         if (choices.Set is { Count: > 0 } set) (settings, from) = (settings.WithOptions(set), from + " with --set");
+        if (choices.Preset is { } presetName)
+        {
+            var preset = Preset.Load(dataDir).FirstOrDefault(p => p.Name == presetName) ?? throw new FormatException($"--preset: no preset '{presetName}'");
+            var applied = GroupRun.Apply(new ConversionPreview(dataDir), path, settings, preset.Steps, GroupCatalog.Load(dataDir), null).GetAwaiter().GetResult();
+            (settings, from) = (new MapSettings(applied), from + $" with preset {presetName}");
+        }
         var problems = new List<string>();
         var own = settings.Read(problems);
         var name = choices.Name ?? MapNames.DefaultOutput(header.MapName, own.Name, choices.Suffix);
@@ -190,8 +198,9 @@ internal sealed class ConvertBatch
     private static MapSettings SettingsFile(string file)
     {
         var json = MapSettings.Parse(File.ReadAllText(file));
+        // a run or saved record carries its version; bare settings are as written now
         return json.Json["settings"] is JsonObject inner && (json.Json.ContainsKey("source") || json.Json.ContainsKey("updated"))
-            ? new MapSettings(MapSettings.Upgrade(inner.DeepClone().AsObject(), 0)) : json;
+            ? new MapSettings(MapSettings.Upgrade(inner.DeepClone().AsObject(), json.Json["version"]?.GetValue<int>() ?? 0)) : json;
     }
 
     private static string MapsRelative(string path)

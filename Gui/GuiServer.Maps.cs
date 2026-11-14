@@ -118,19 +118,34 @@ internal sealed partial class GuiServer
 
     private sealed record PresetAsk(string Preset, List<string>? Only);
 
-    // POST { "preset": name, "only": [piece keys] | null }: one step on the working copy; the map converts by picks from then on
+    private sealed record GroupAsk(string Group, string Method, List<string>? Only);
+
+    // POST { "preset": name, "only": [piece keys] | null }
     private async Task ApplyPreset(Call c)
     {
-        var map = MapFileOf(c);
         var ask = Read<PresetAsk>(c.Body) ?? throw new Refused(400, "no preset named");
         var preset = Preset.Load(dataDir).FirstOrDefault(p => p.Name == ask.Preset) ?? throw new Refused(404, "no such preset");
+        await ApplySteps(c, preset.Steps, ask.Only);
+    }
+
+    // POST { "group": path, "method": id | "original", "only": [piece keys] | null }
+    private async Task ApplyGroup(Call c)
+    {
+        var ask = Read<GroupAsk>(c.Body) ?? throw new Refused(400, "no group named");
+        await ApplySteps(c, [new GroupStep(ask.Group, ask.Method)], ask.Only);
+    }
+
+    // one undo step on the working copy; the map converts by its targets from then on
+    private async Task ApplySteps(Call c, List<GroupStep> steps, List<string>? only)
+    {
+        var map = MapFileOf(c);
         var uid = Gbx.ParseHeaderNode<CGameCtnChallenge>(map).MapUid;
         DocumentState working;
         lock (documents) working = SettingsStore.Default.Document(uid);
-        var only = ask.Only?.Select(PresetApply.Normal).ToHashSet();
         JsonObject settings;
-        try { settings = await PresetRun.Apply(preview, map, new MapSettings(working.Settings), preset, only); }
+        try { settings = await GroupRun.Apply(preview, map, new MapSettings(working.Settings), steps, GroupCatalog.Load(dataDir), only?.Select(PresetApply.Normal).ToHashSet()); }
         catch (ConversionPreview.Superseded e) { throw new Refused(409, e.Message); }
+        catch (FormatException e) { throw new Refused(400, e.Message); }
         DocumentState state;
         lock (documents) state = SettingsStore.Default.Edit(uid, settings);
         await Json(c.Response, state);

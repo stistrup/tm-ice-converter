@@ -2,6 +2,7 @@
 import { useHistoryStore } from '../stores/history'
 import { useMapStore } from '../stores/map'
 import { usePreviewStore } from '../stores/preview'
+import GroupConversion from './GroupConversion.vue'
 import OptionList from './OptionList.vue'
 import TargetList from './TargetList.vue'
 import PresetPicker from './PresetPicker.vue'
@@ -34,12 +35,8 @@ const history = useHistoryStore()
       </div>
 
       <PresetPicker v-if="preview.state" />
+      <GroupConversion v-if="preview.state" />
 
-      <label v-if="preview.state" :class="[$style.option, $style.rulesSwitch]">
-        <input type="checkbox" :checked="preview.rulesOn" @change="history.change(() => preview.setRules(($event.target as HTMLInputElement).checked))" />
-        <span>Enable global conversion rules</span>
-        <span :class="$style.info" title="Off: only pieces with a conversion target convert" aria-label="What it does">i</span>
-      </label>
 
       <div v-if="preview.result?.problems.length || preview.result?.stalePicks.length || preview.state?.unreadable.length" :class="$style.problems">
         <p v-for="problem in preview.result?.problems ?? []" :key="problem">Left out: {{ problem }}</p>
@@ -107,10 +104,6 @@ const history = useHistoryStore()
 
 .error {
   composes: error from '../ui.module.css';
-  margin-bottom: 8px;
-}
-
-.rulesSwitch {
   margin-bottom: 8px;
 }
 

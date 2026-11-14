@@ -1,0 +1,46 @@
+// group conversions: pieces by group (a tree; a piece belongs to the first leaf that matches it), each converted one way.
+// A method runs the rules with some options, or gives every piece one target (pick). Children take their parent's methods unless they list their own;
+// a toggle swaps the chosen method for another while ticked. match: preview kinds, waypoint types, a name pattern, trees (items the swap tables freeze)
+{
+  "methods": {
+    "custom": { "label": "Custom block", "options": { "customBlocks": true, "customWaypoints": true, "skinsOnly": false, "skinWaypoints": false } },
+    "skin": { "label": "Surface skin", "options": { "skinsOnly": true, "skinWaypoints": true } },
+    "plain": { "label": "Plain, without its effect", "pick": "plain" },
+    "gate": { "label": "Effect on a gate", "pick": "gate" },
+    "tops": { "label": "Tops", "options": { "convertScenery": true } },
+    "topsNative": { "label": "Tops, ground deco native", "options": { "convertScenery": true, "snowOnGroundDeco": true } },
+    "cover": { "label": "Ground cover", "pick": "snow" },
+    "swap": { "label": "Swapped", "pick": "frozen" },
+    "swapOnConverted": { "label": "Swapped on converted blocks", "options": { "convertTrees": true } },
+    "copy": { "label": "Copy", "options": {} }
+  },
+  "groups": [
+    { "id": "roads", "label": "Roads", "methods": ["custom", "skin"], "children": [
+      { "id": "start", "label": "Start", "match": { "waypoints": ["Start"] } },
+      { "id": "checkpoints", "label": "Checkpoints", "match": { "waypoints": ["Checkpoint"] } },
+      { "id": "finish", "label": "Finish", "match": { "waypoints": ["Finish", "StartFinish"] } },
+      { "id": "special", "label": "Special", "methods": ["custom", "skin", "plain", "gate"], "children": [
+        { "id": "turbo", "label": "Turbo", "match": { "kinds": ["special", "specialground"], "name": "Turbo" } },
+        { "id": "reactor", "label": "Reactor", "match": { "kinds": ["reactor", "reactorground"] } },
+        { "id": "engineoff", "label": "Engine off", "match": { "kinds": ["special", "specialground"], "name": "NoEngine" } },
+        { "id": "reset", "label": "Reset", "match": { "kinds": ["special", "specialground"], "name": "Reset" } },
+        { "id": "slowmotion", "label": "Slow motion", "match": { "kinds": ["special", "specialground"], "name": "SlowMotion" } },
+        { "id": "other", "label": "Other effects", "match": { "kinds": ["special", "specialground"] } }
+      ] },
+      { "id": "platforms", "label": "Platforms, roads", "match": { "kinds": ["roads"] } }
+    ] },
+    { "id": "scenery", "label": "Scenery", "methods": ["tops", "cover"], "toggles": [{ "label": "Ground deco as native blocks", "from": "tops", "to": "topsNative" }], "children": [
+      { "id": "walls", "label": "Walls", "match": { "kinds": ["deco", "decononsnow"], "name": "^DecoWall" } },
+      { "id": "pillars", "label": "Pillars, free deco", "methods": ["tops"], "match": { "kinds": ["decononsnow"] } },
+      { "id": "deco", "label": "Deco", "match": { "kinds": ["deco"] } }
+    ] },
+    { "id": "terrain", "label": "Terrain", "methods": ["cover"], "children": [
+      { "id": "shores", "label": "Shores", "match": { "kinds": ["shore"] } },
+      { "id": "cliffs", "label": "Cliffs", "match": { "kinds": ["terrain"], "name": "Cliff" } },
+      { "id": "hills", "label": "Hills", "match": { "kinds": ["terrain"], "name": "Hill" } },
+      { "id": "flat", "label": "Flat", "match": { "kinds": ["terrain"] } }
+    ] },
+    { "id": "trees", "label": "Trees", "methods": ["swap"], "toggles": [{ "label": "Only on converted blocks", "from": "swap", "to": "swapOnConverted" }], "match": { "kinds": ["items"], "trees": true } },
+    { "id": "items", "label": "Other items", "methods": ["copy"], "match": { "kinds": ["items"] } }
+  ]
+}

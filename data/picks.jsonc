@@ -2,7 +2,7 @@
 // The converter knows the values (Translations.PieceChoices); this file only shows them
 {
   "picks": {
-    "": { "label": "Rule", "description": "As the conversion rules decide" },
+    "": { "label": "Original", "description": "No conversion target: stays as it is" },
     "keep": { "label": "Original", "description": "Stays as it is" },
     "twin": { "label": "Native ice", "description": "The game's own ice version of the block" },
     "twincover": { "label": "Native ice, snow", "description": "The game's own ice version, with snow over its ground" },
@@ -21,17 +21,17 @@
     "sink": { "label": "Sunk into the ice", "description": "Lowered a little, so a flat top doesn't flicker with the ice" }
   },
   "kinds": {
-    "roads": { "label": "Roads, platforms", "picks": ["", "keep", "twin", "custom", "item", "skin", "tops"] },
-    "waypoints": { "label": "Start, checkpoint, finish", "picks": ["", "keep", "twin", "custom", "item", "skin"] },
-    "deco": { "label": "Deco, walls", "picks": ["", "keep", "snow", "tops", "twin", "twincover", "custom", "item", "skin"] },
+    "roads": { "label": "Roads, platforms", "picks": ["", "twin", "custom", "skin", "tops"] },
+    "waypoints": { "label": "Start, checkpoint, finish", "picks": ["", "twin", "custom", "skin"] },
+    "deco": { "label": "Deco, walls", "picks": ["", "snow", "tops", "twin", "twincover", "custom", "skin"] },
     // the snow rule leaves these alone
-    "decononsnow": { "label": "Pillars, free-placed deco", "picks": ["", "keep", "tops", "twin", "custom"] },
-    "terrain": { "label": "Terrain", "picks": ["", "keep", "snow"] },
-    "shore": { "label": "Shore, water", "picks": ["", "keep", "snow"] },
-    "special": { "label": "Special", "picks": ["", "keep", "plain", "twin", "custom", "gate", "remove"] },
-    "specialground": { "label": "Special, on the ground", "picks": ["", "keep", "plain", "snow"] },
-    "reactor": { "label": "Reactor", "picks": ["", "keep", "plain", "flip"] },
-    "reactorground": { "label": "Reactor, on the ground", "picks": ["", "keep", "plain", "snow", "flip", "snowflip"] },
-    "items": { "label": "Items", "picks": ["", "keep", "remove", "frozen", "copy", "sink"] }
+    "decononsnow": { "label": "Pillars, free-placed deco", "picks": ["", "tops", "twin", "custom"] },
+    "terrain": { "label": "Terrain", "picks": ["", "snow"] },
+    "shore": { "label": "Shore, water", "picks": ["", "snow"] },
+    "special": { "label": "Special", "picks": ["", "plain", "twin", "custom", "gate", "remove"] },
+    "specialground": { "label": "Special, on the ground", "picks": ["", "plain", "snow"] },
+    "reactor": { "label": "Reactor", "picks": ["", "plain", "flip"] },
+    "reactorground": { "label": "Reactor, on the ground", "picks": ["", "plain", "snow", "flip", "snowflip"] },
+    "items": { "label": "Items", "picks": ["", "remove", "frozen", "copy", "sink"] }
   }
 }

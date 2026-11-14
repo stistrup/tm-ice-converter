@@ -29,7 +29,7 @@ public sealed partial class ItemBuilder
             (Vector3 At, float Pitch, float Roll)? spawn = shapes.Waypoint(block) is not null ? shapes.Spawn(block, ground, variant, mobil) : null;
             CustomBlockWriter.Write(item.FilePath, to, ident, block, archetype, variantId, spawn, lift ? size : null, ramp: ramp == 0 ? null : (ramp, Style.SkinLift, size));
         });
-        return new BuiltBlock(ident, path);
+        return new BuiltBlock(ident, path, item.FilePath);
     }
 
     internal void WriteBlock(string path, string itemPath, Action<string> write)

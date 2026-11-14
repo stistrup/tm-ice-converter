@@ -51,6 +51,8 @@ export interface SceneMarker {
 export interface SceneManifest {
   map: string
   environment: string | null
+  // what cells without a terrain block are: Sea, Grass, Dirt, Land
+  baseZone: string | null
   geometryBytes: number
   // game files still to extract, under GameData
   notExtracted: string[]
@@ -239,6 +241,8 @@ export interface PreviewDecision {
   kind: string
   key: string
   picked: string | null
+  // for group conversions, e.g. roads/checkpoints (data/groups.jsonc)
+  group: string | null
 }
 
 // data/picks.jsonc
@@ -271,12 +275,26 @@ export interface PreviewResult {
   // settings fields left out because they don't read; picks for pieces this map doesn't have
   problems: string[]
   stalePicks: string[]
+  // waiting for their items to be built (info.block / info.item)
+  pendingBlocks: number[]
+  pendingItems: number[]
 }
 
 export const fetchPreview = async (map: string, settings: MapSettings): Promise<PreviewResult> => {
   const query = new URLSearchParams({ map })
   return (await check(await fetch(`/api/preview?${query}`, { method: 'POST', body: JSON.stringify({ settings }) }))).json()
 }
+
+// every piece's target key by index in the map's own order (blocks also by their plain cell key)
+export interface PieceKeys {
+  blocks: string[]
+  plainBlocks: string[]
+  items: string[]
+}
+
+export const normalKey = (key: string) => key.trim().replace(/\s*,\s*/g, ',')
+
+export const fetchPieceKeys = async (map: string): Promise<PieceKeys> => (await check(await fetch(`/api/piece-keys?${new URLSearchParams({ map })}`))).json()
 
 export const fetchMapState = async (map: string): Promise<MapState> => (await check(await fetch(`/api/settings?${new URLSearchParams({ map })}`))).json()
 
@@ -292,16 +310,38 @@ export const redoSettings = (map: string) => documentCall('redo', map)
 export const saveSettings = (map: string) => documentCall('save-settings', map)
 export const revertSettings = (map: string) => documentCall('revert', map)
 
-// data/presets.jsonc; kinds as the preview groups pieces
+// one group ("" = all, else a path and what's under it) converted one way; "original" takes its targets away
+export interface GroupStep {
+  group: string
+  method: string
+}
+
+// data/presets.jsonc
 export interface Preset {
   name: string
-  kinds: string[]
+  steps: GroupStep[]
+}
+
+// data/groups.jsonc, with methods and toggles resolved down to every group
+export interface GroupNode {
+  path: string
+  label: string
+  methods: string[]
+  toggles: { label: string; from: string; to: string }[]
+  children: GroupNode[]
+}
+
+export interface Groups {
+  methods: Record<string, string>
+  tree: GroupNode[]
 }
 
 export const fetchPresets = async (): Promise<Preset[]> => (await check(await fetch('/api/presets'))).json()
+export const fetchGroups = async (): Promise<Groups> => (await check(await fetch('/api/groups'))).json()
 
-// one undo step; only: these keys, null: the whole map
+// one undo step each; only: these keys, null: the whole map
 export const applyPreset = (map: string, preset: string, only: string[] | null) => documentCall('apply-preset', map, { preset, only })
+export const applyGroup = (map: string, group: string, method: string, only: string[] | null) => documentCall('apply-group', map, { group, method, only })
 
 export const fetchPreviewScene = async (id: string): Promise<{ manifest: SceneManifest; geometry: ArrayBuffer }> => {
   const [manifest, geometry] = await Promise.all([

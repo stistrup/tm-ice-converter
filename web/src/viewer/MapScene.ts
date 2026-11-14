@@ -9,6 +9,7 @@ import {
   Mesh,
   MOUSE,
   PerspectiveCamera,
+  Plane,
   Raycaster,
   Scene,
   Vector2,
@@ -22,12 +23,15 @@ import type { InstanceInfo, SceneManifest, SceneMaterial } from '../api'
 import { baseGround, CELL } from './baseGround'
 import { categoryOf, type Category } from './categories'
 import { Looks, type LookChange } from './looks'
-import { flatMaterial, SceneMaterials } from './materials'
+import { flatMaterial, groundHeight, SceneMaterials } from './materials'
+import { isWaterZone } from './materialRules'
 import { ghostMaterial, highlightMaterial, replaceOverlay } from './overlays'
+import { pendingMaterial } from './pending'
 import { Picker } from './picker'
-import { originOf, pieceGeometry, tintOf, type LayerPiece, type PieceParts, type Placed } from './placed'
+import { PivotOrbit } from './pivotOrbit'
+import { originOf, ownsGroundOf, pieceGeometry, tintOf, type LayerPiece, type PieceParts, type Placed } from './placed'
 import { buildLayer, type PreviewLayer } from './previewLayer'
-import { drawOver, markCutter, TerrainCut, type Extent } from './terrainCut'
+import { drawOver, isTerrainShaped, markCutter, TerrainCut, type Extent } from './terrainCut'
 
 export type { LookChange } from './looks'
 export type { PieceParts } from './placed'
@@ -36,6 +40,8 @@ export interface PreviewDraw {
   changed: { manifest: SceneManifest; geometry: ArrayBuffer } | null
   looks: LookChange[]
   tints: { color: number; indices: number[] }[]
+  // pieces the next result is on its way for: their converted parts are hidden
+  waiting: number[]
 }
 
 const SKY = 0x393939
@@ -62,6 +68,7 @@ export class MapScene {
   private readonly scene = new Scene()
   private readonly camera = new PerspectiveCamera(60, 1, 1, 12000)
   private readonly controls: OrbitControls
+  private readonly orbit: PivotOrbit
   private readonly raycaster = new Raycaster()
   private readonly placed: Placed[] = []
   private readonly categoryMeshes = new Map<Category, InstancedMesh[]>()
@@ -82,10 +89,13 @@ export class MapScene {
   private readonly tintMaterials = new Map<number, Material>()
   private readonly lookMaterials = new Map<string, Material>()
   private layer: PreviewLayer | null = null
+  // what the layer was built from
+  private layerSource: PreviewDraw['changed'] = null
   private selection: number[] = []
   private extent: Extent | null = null
   private ground: Mesh | null = null
   private environment: string | null = null
+  private baseZone: string | null = null
   private previewCall = 0
   private frame = 0
   private needsRender = true
@@ -110,7 +120,8 @@ export class MapScene {
     })
     this.looks = new Looks(this.scene, this.geometries)
     this.controls = new OrbitControls(this.camera, canvas)
-    this.controls.mouseButtons = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.ROTATE }
+    // right-drag is PivotOrbit's
+    this.controls.mouseButtons = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.DOLLY, RIGHT: null }
     // a drag pans about the distance to the orbit point: closer than this it crawls (a block is 32 m)
     this.controls.minDistance = 16
     this.controls.zoomToCursor = true
@@ -118,6 +129,7 @@ export class MapScene {
     this.controls.maxPolarAngle = Math.PI * 0.98
     this.controls.addEventListener('change', this.invalidate)
     this.controls.addEventListener('change', () => this.events.cameraMoved())
+    this.orbit = new PivotOrbit(this.camera, this.controls, canvas, this.surfaceAt)
 
     this.resize = new ResizeObserver(() => this.fit())
     this.resize.observe(canvas)
@@ -166,6 +178,7 @@ export class MapScene {
     }
 
     this.buildInstances()
+    this.baseZone = manifest.baseZone
     this.addGround(manifest.environment)
     this.scheduleCut()
     this.picker = new Picker(
@@ -198,17 +211,25 @@ export class MapScene {
   // the originals they replace hidden, the rest repainted or coloured
   async showPreview(draw: PreviewDraw | null) {
     const call = ++this.previewCall
-    const layer = draw?.changed ? await buildLayer(draw.changed, this.scene, this.renderer, this.materials, this.invalidate) : null
+    // the same converted pieces as shown (spinners going on or off): no rebuild, so it shows at once
+    const same = !!draw?.changed && draw.changed === this.layerSource && !!this.layer
+    const layer = same ? this.layer : draw?.changed ? await buildLayer(draw.changed, this.scene, this.renderer, this.materials, this.invalidate) : null
     if (call !== this.previewCall) {
-      layer?.dispose()
+      if (!same) layer?.dispose()
       return
     }
-    this.layer?.dispose()
-    this.layer = layer
-    for (const mesh of layer?.meshes ?? []) this.scene.add(mesh)
+    if (!same) {
+      this.layer?.dispose()
+      this.layer = layer
+      this.layerSource = draw?.changed ?? null
+      for (const mesh of layer?.meshes ?? []) this.scene.add(mesh)
+    }
+    layer?.hide(new Set((draw?.waiting ?? []).map((i) => this.placed[i]?.origin).filter((o): o is string => !!o)))
     this.looks.set(draw?.looks ?? [], this.placed)
+    this.animating = (draw?.looks ?? []).some((look) => look.materials.includes(this.pendingMaterial))
     this.setTints(draw?.tints ?? [])
-    this.addGround(this.environment, layer?.covered ?? [])
+    const gone = (draw?.looks ?? []).filter((look) => !look.topsOnly && look.materials.every((m) => m === null)).map((look) => look.index)
+    this.addGround(this.environment, layer?.covered ?? [], new Set(gone))
     this.setSelection(this.selection)
     this.scheduleCut()
     this.invalidate()
@@ -218,10 +239,13 @@ export class MapScene {
     return this.placed[index]?.materials.map((material) => this.materials?.nameOf(material) ?? null) ?? []
   }
 
-  // a preview material, made once per name
   // a removed piece: a faint white ghost of itself
   readonly ghostMaterial: Material = ghostMaterial()
+  // its item still being built: turns while shown
+  readonly pendingMaterial = pendingMaterial()
+  private animating = false
 
+  // a preview material, made once per name
   lookMaterial(source: SceneMaterial): Material | null {
     if (!this.materials) return null
     let material = this.lookMaterials.get(source.name)
@@ -348,6 +372,7 @@ export class MapScene {
     window.removeEventListener('keydown', this.onKeyDown)
     window.removeEventListener('keyup', this.onKeyUp)
     window.removeEventListener('blur', this.onBlur)
+    this.orbit.dispose()
     this.controls.dispose()
     this.materials?.dispose()
     this.previewCall++
@@ -357,6 +382,7 @@ export class MapScene {
     for (const material of this.ownMaterials) material.dispose()
     this.hoverMaterial.dispose()
     this.selectMaterial.dispose()
+    this.pendingMaterial.dispose()
     for (const material of this.tintMaterials.values()) material.dispose()
     this.renderer.dispose()
     this.renderer.forceContextLoss()
@@ -364,14 +390,11 @@ export class MapScene {
 
   private place(meshKey: string, geometries: BufferGeometry[], materials: Material[], m: number[], info: InstanceInfo) {
     // M is row-major with world = local * M, which is three's column-major layout
-    // our custom blocks carry no ground of their own, except on hills and cliffs (BlockNames.OnTerrainShape)
-    const custom = info.kind === 'custom block'
-    const keepsTerrain = custom && /On[A-Z][a-z]+(Cliff|Hill)/.test(String(info.sourceBlock ?? ''))
-    const ownsGround = info.kind.includes('block') && (!custom || keepsTerrain) && /\b(ground|terrain)\b/.test(info.tags ?? '')
+    const ownsGround = ownsGroundOf(info)
     const tint = typeof info.color === 'number' ? info.color : 0
     const stacked = info.stacked === true
     const category = categoryOf(info)
-    const cuts = info.kind.includes('block') && /\bground\b/.test(info.tags ?? '') && !/\bterrain\b/.test(info.tags ?? '')
+    const cuts = info.kind.includes('block') && /\bground\b/.test(info.tags ?? '') && !/\bterrain\b/.test(info.tags ?? '') && !isTerrainShaped(materials)
     const origin = originOf(info, 'block', 'item')
     this.placed.push({ meshKey, geometries, materials, matrix: new Matrix4().fromArray(m), category, ownsGround, cuts, tint, stacked, slots: [], origin })
   }
@@ -405,18 +428,19 @@ export class MapScene {
     }
   }
 
-  // cells without a ground or terrain block show the environment's base ground; covered: cells the preview fills
-  private addGround(environment: string | null, covered: Iterable<string> = []) {
+  // cells without a ground or terrain block show the environment's base ground; covered: cells the preview fills,
+  // hidden: originals it takes away
+  private addGround(environment: string | null, covered: Iterable<string> = [], hidden: ReadonlySet<number> = new Set()) {
     this.environment = environment
     if (this.ground) {
       this.scene.remove(this.ground)
       this.ground.geometry.dispose()
       this.ground = null
     }
-    const { geometry, extent } = baseGround(this.placed, environment, covered)
+    const { geometry, extent } = baseGround(this.placed, environment, this.baseZone, covered, hidden)
     this.extent = extent
     if (!geometry) return
-    this.ground = new Mesh(this.own(geometry), this.materials!.ground())
+    this.ground = new Mesh(this.own(geometry), isWaterZone(this.baseZone) ? this.materials!.water() : this.materials!.ground())
     this.scene.add(this.ground)
     this.invalidate()
   }
@@ -463,6 +487,18 @@ export class MapScene {
     const ndc = new Vector2(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1)
     this.raycaster.setFromCamera(ndc, this.camera)
     return this.raycaster.ray
+  }
+
+  // nearest of the pieces, the base ground, else the ground plane
+  private readonly surfaceAt = (x: number, y: number): Vector3 | null => {
+    const ray = this.rayAt(x, y).clone()
+    let distance = this.picker?.hit(ray)?.distance ?? Infinity
+    if (this.ground) {
+      const ground = this.raycaster.intersectObject(this.ground, false)[0]
+      if (ground) distance = Math.min(distance, ground.distance)
+    }
+    if (distance < Infinity) return ray.at(distance, new Vector3())
+    return ray.intersectPlane(new Plane(new Vector3(0, 1, 0), -groundHeight(this.environment)), new Vector3())
   }
 
   private pickAt(x: number, y: number): number | null {
@@ -512,6 +548,10 @@ export class MapScene {
     } else if (this.lastMove && !this.pointerDown) {
       this.setHover(this.pickAt(this.lastMove.x, this.lastMove.y))
       this.lastMove = null
+    }
+    if (this.animating) {
+      this.pendingMaterial.uniforms.time.value = time / 1000
+      this.needsRender = true
     }
     if (this.needsRender) {
       this.needsRender = false
@@ -570,6 +610,7 @@ export class MapScene {
   private readonly onKeyUp = (event: KeyboardEvent) => {
     this.keys.delete(event.code)
     if (event.key === 'Shift') this.controls.enabled = true
+    if (/^Key[WASDQE]$/.test(event.code)) this.orbit.reseat()
   }
 
   private readonly onBlur = () => {

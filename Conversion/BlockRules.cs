@@ -61,7 +61,7 @@ internal static partial class BlockRules
             }
     }
 
-    // each pick goes the way its rule would; snow goes through the snow columns, plain renames and lets the rules go on
+    // each pick goes the way its rule would; snow goes through the snow columns
     private static bool Picked(CGameCtnBlock block, ConversionRun run)
     {
         var choice = run.Rules.PieceChoice(block);
@@ -96,14 +96,16 @@ internal static partial class BlockRules
                 return true;
             case "snow" when CoverRules.PickedCover(block, run):
                 return true;
+            // then the road way, as the rules go: native twin first
             case "plain" when Gates.PlainOf(block.Name, run) is { } plain:
                 block.Name = plain;
-                return false;
-            // presets off: only a picked snow column changes an unpicked block
-            case null when !run.Rules.RulesOn:
-                if (CoverRules.TerrainCell(block, run) || CoverRules.DecoInTerrain(block, run)) return true;
-                Bump(run.Report.KeptByList, block.Name);
-                return true;
+                return NativeTwin(block, run) || BuildCustom(block, run) || SkinRules.OnGround(block, run) || AsItem(block, run);
+            // Flips.Run turned it
+            case "flip":
+                return NativeTwin(block, run) || Kept(block, run);
+            // no target, or one with nothing to do here: only a snowed column changes it
+            case var _ when !run.Rules.RulesOn:
+                return CoverRules.TerrainCell(block, run) || CoverRules.DecoInTerrain(block, run) || Kept(block, run);
             default:
                 return false;
         }

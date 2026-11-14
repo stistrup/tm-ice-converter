@@ -107,8 +107,11 @@ public sealed partial class BlockCatalog
             ? npb : null;
 
     // a block's TerrainModifier (TrackWallToDecoCliff: only TrackWall, from PlatformGrass)
-    public MaterialModifier? MaterialModifierOf(string blockName)
-        => TryLoadBlock(blockName, out var block) && block.Info.MaterialModifierFile?.FilePath is { } file ? MaterialModifier.Read(block.Path, file, stadiumDir) : null;
+    // parent: the block a pillar holds up
+    public MaterialModifier? MaterialModifierOf(string blockName, string? parent = null)
+        => TryLoadBlock(blockName, out var block) && block.Info.MaterialModifierFile?.FilePath is { } file
+            ? MaterialModifier.Read(block.Path, file, stadiumDir)?.Under(parent is null ? null : MaterialModifierOf(parent))
+            : null;
 
     private static CGameCtnBlockInfoVariant? PickVariant(CGameCtnBlockInfo info, bool ground, int index)
     {
