@@ -111,6 +111,13 @@ const chosenUnder = computed(() => {
   return counts
 })
 
+const refreshing = ref(false)
+const refresh = async () => {
+  refreshing.value = true
+  await store.loadMaps()
+  refreshing.value = false
+}
+
 const checked = (event: Event) => (event.target as HTMLInputElement).checked
 const indent = (depth: number) => ({ paddingLeft: `${6 + depth * 12}px` })
 </script>
@@ -131,7 +138,14 @@ const indent = (depth: number) => ({ paddingLeft: `${6 + depth * 12}px` })
       <input v-model="search" type="search" placeholder="Search" aria-label="Search maps" />
       <div :class="$style.chosen">
         <span>{{ chosen }} selected</span>
-        <button type="button" :class="$style.clear" :disabled="!chosen" @click="store.chosenMaps.clear()">Clear</button>
+        <span :class="$style.actions">
+          <button type="button" :class="[$style.clear, $style.icon]" :disabled="refreshing" title="Refresh maps" aria-label="Refresh maps" @click="refresh">
+            <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+              <path d="M13.5 8A5.5 5.5 0 1 1 11.9 4.1M12.5 1.5v3h-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </button>
+          <button type="button" :class="$style.clear" :disabled="!chosen" @click="store.chosenMaps.clear()">Clear</button>
+        </span>
       </div>
     </div>
     <p v-if="shown && store.mapsError" :class="$style.error">{{ store.mapsError }}</p>
@@ -231,6 +245,15 @@ const indent = (depth: number) => ({ paddingLeft: `${6 + depth * 12}px` })
   cursor: default;
   background: none;
   border: 0;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+}
+
+.icon svg {
+  display: block;
 }
 
 .clear:hover:not(:disabled) {

@@ -6,6 +6,7 @@ import { useSetupStore } from '../stores/setup'
 import { displayName } from '../viewer/names'
 import FloatingPanel from './FloatingPanel.vue'
 import { useHoverFocus } from '../hoverFocus'
+import FocusEye from './FocusEye.vue'
 
 const store = useMapStore()
 const setup = useSetupStore()
@@ -37,10 +38,11 @@ watch(manifest, () => (missingOpen.value = false))
       {{ missing.length }} without mesh
     </button>
     <FloatingPanel v-model="missingOpen" :anchor="missingButton" :title="`Without mesh, drawn as boxes or cones: ${missing.length}`">
-      <li v-for="piece in missing" :key="piece.index" @mouseenter="enter(piece.index)" @mouseleave="leave()" @click="keep(piece.index)">
+      <li v-for="piece in missing" :key="piece.index" @click="keep(piece.index)">
         <span :class="$style.grow">{{ piece.name }}</span>
         <span>{{ piece.cell }}</span>
         <span>{{ piece.kind }}</span>
+        <FocusEye @enter="enter(piece.index)" @leave="leave()" @keep="keep(piece.index)" />
       </li>
     </FloatingPanel>
     <span

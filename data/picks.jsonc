@@ -24,9 +24,7 @@
     "sunk": { "label": "Sunk", "description": "Lowered a little, so a flat top doesn't flicker" }
   },
   // a tick under the ways: shown when a selected piece has it for the chosen material and way
-  "options": {
-    "tops": { "label": "Deco: only on top faces", "description": "Deco, walls, pillars: the material only on their upward faces" }
-  },
+  "options": {},
   "picks": {
     "": { "label": "Original", "material": "original" },
     "keep": { "label": "Original", "material": "original" },
@@ -35,7 +33,8 @@
     "custom": { "label": "Ice, custom block", "material": "ice", "way": "custom" },
     "item": { "label": "Ice, item", "material": "ice", "way": "item" },
     "skin": { "label": "Ice, skinned original", "material": "ice", "way": "skin" },
-    "tops": { "label": "Ice, top faces", "material": "ice", "way": "custom", "option": "tops" },
+    // the converter reads it as custom (older settings)
+    "tops": { "label": "Ice, custom block", "material": "ice", "way": "custom" },
     "table": { "label": "Swap table", "material": "ice", "way": "table" },
     "snow": { "label": "Snow cover", "material": "snow", "way": "cover" },
     "plain": { "label": "Ice, plain block", "material": "ice", "way": "plain" },
@@ -51,13 +50,13 @@
   "kinds": {
     "roads": { "label": "Roads, platforms", "picks": ["", "twin", "custom", "skin"] },
     "waypoints": { "label": "Start, checkpoint, finish", "picks": ["", "twin", "custom", "skin"] },
-    "deco": { "label": "Deco, walls", "picks": ["", "snow", "tops", "twin", "twincover", "custom", "skin"] },
+    "deco": { "label": "Deco, walls", "picks": ["", "snow", "custom", "twin", "twincover", "skin"] },
     // the snow rule leaves these alone
-    "decononsnow": { "label": "Pillars, free-placed deco", "picks": ["", "tops", "twin", "custom"] },
+    "decononsnow": { "label": "Pillars, free-placed deco", "picks": ["", "custom", "twin"] },
     "terrain": { "label": "Terrain", "picks": ["", "snow"] },
     "shore": { "label": "Shore, water", "picks": ["", "snow"] },
     "special": { "label": "Special", "picks": ["", "plain", "twin", "custom", "gate"] },
-    "specialground": { "label": "Special, on the ground", "picks": ["", "plain", "snow"] },
+    "specialground": { "label": "Special, on the ground", "picks": ["", "custom", "plain", "snow"] },
     "reactor": { "label": "Reactor", "picks": ["", "plain", "flip"] },
     "reactorground": { "label": "Reactor, on the ground", "picks": ["", "plain", "snow", "flip", "snowflip"] },
     "items": { "label": "Items", "picks": ["", "frozen", "copy", "sink"] }

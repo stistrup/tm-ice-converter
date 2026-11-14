@@ -7,6 +7,7 @@ import { usePreviewStore } from '../stores/preview'
 import DropDown from './DropDown.vue'
 import FloatingPanel from './FloatingPanel.vue'
 import { useHoverFocus } from '../hoverFocus'
+import FocusEye from './FocusEye.vue'
 import { displayName } from '../viewer/names'
 
 const store = useMapStore()
@@ -193,6 +194,13 @@ const reach = computed(() => {
   return [...rows.filter((r) => r.applies), ...rows.filter((r) => !r.applies)]
 })
 
+// selected pieces on the target list: Revert takes their targets away
+const targeted = computed(() => pieces.value.filter((p) => p.now !== ''))
+const revert = () => {
+  const keys = targeted.value.map((p) => p.key)
+  history.change(() => preview.pick(keys, ''))
+}
+
 const apply = () => {
   const done = reached.value
   const byPick = new Map<string, string[]>()
@@ -211,11 +219,15 @@ const apply = () => {
     <template v-if="!store.selection.length" />
     <p v-else-if="!preview.result" :class="$style.muted">Calculating preview…</p>
     <template v-else-if="pieces.length">
-      <h3 ref="heading" :class="$style.heading" @mouseenter="showList(500)" @mouseleave="hideList">{{ store.selection.length }} selected</h3>
+      <div :class="$style.headRow">
+        <h3 ref="heading" :class="$style.heading" @mouseenter="showList(500)" @mouseleave="hideList">{{ store.selection.length }} selected</h3>
+        <button type="button" :class="$style.deselect" @click="history.change(() => (store.selection = []))">Deselect all</button>
+      </div>
       <FloatingPanel v-model="listOpen" :anchor="heading" :title="`Selected: ${store.selection.length}`"
         fit @enter="showList()" @leave="hideList">
-        <li v-for="piece in listed" :key="piece.index" @mouseenter="enter(piece.index)" @mouseleave="leave()" @click="keep(piece.index, false)">
+        <li v-for="piece in listed" :key="piece.index" @click="keep(piece.index, false)">
           <span :class="$style.grow">{{ piece.name }}</span>
+          <FocusEye @enter="enter(piece.index)" @leave="leave()" @keep="keep(piece.index, false)" />
         </li>
       </FloatingPanel>
       <div :class="$style.row">
@@ -236,8 +248,6 @@ const apply = () => {
           :key="piece.index"
           :class="{ [$style.out]: !piece.applies }"
           :title="piece.applies ? undefined : 'Not for this one'"
-          @mouseenter="enter(piece.index)"
-          @mouseleave="leave()"
           @click="keep(piece.index, false)"
         >
           <span :class="$style.name">{{ piece.name }}</span>
@@ -245,9 +255,13 @@ const apply = () => {
             <span :class="$style.arrow">→</span>
             <span :class="[$style.becomes, $style.next]" :title="piece.same ? `Already ${piece.next}` : 'After Apply'">{{ piece.same ? 'Unchanged' : piece.next }}</span>
           </template>
+          <FocusEye :class="$style.eyeEnd" @enter="enter(piece.index)" @leave="leave()" @keep="keep(piece.index, false)" />
         </li>
       </ul>
       <div :class="$style.actions">
+        <button v-if="targeted.length" type="button" :class="[$style.button, $style.revert]" title="Take their targets away" @click="revert">
+          {{ targeted.length < pieces.length ? `Revert ${targeted.length}` : 'Revert' }}
+        </button>
         <button type="button" :class="$style.button" :disabled="!reached.length || !changes" @click="apply">
           {{ partial ? `Apply to ${reached.length} and deselect` : 'Apply' }}
         </button>
@@ -265,6 +279,25 @@ const apply = () => {
 
 .grow {
   composes: grow from '../ui.module.css';
+}
+
+.headRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.deselect {
+  padding: 0 4px;
+  color: var(--text);
+  cursor: default;
+  background: none;
+  border: 0;
+}
+
+.deselect:hover {
+  color: var(--strong);
 }
 
 .heading {
@@ -313,9 +346,16 @@ const apply = () => {
 .reach li {
   display: flex;
   gap: 6px;
+  align-items: center;
   padding: 1px 6px;
   white-space: nowrap;
   cursor: default;
+}
+
+/* pushed to the row's end, kept to the small rows' height */
+.eyeEnd {
+  height: 14px;
+  margin-left: auto;
 }
 
 .reach li:hover {
@@ -356,6 +396,10 @@ const apply = () => {
 
 .button {
   composes: button from '../ui.module.css';
+}
+
+.revert {
+  margin-right: auto;
 }
 
 .muted {

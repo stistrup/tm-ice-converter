@@ -5,6 +5,7 @@ import { usePreviewStore } from '../stores/preview'
 import { normalKey } from '../api'
 import FloatingPanel from './FloatingPanel.vue'
 import { useHoverFocus } from '../hoverFocus'
+import FocusEye from './FocusEye.vue'
 
 const preview = usePreviewStore()
 const history = useHistoryStore()
@@ -50,12 +51,11 @@ watch(() => picks.value.length, (n) => n || (open.value = false))
       :key="pick.key"
       :class="{ [$style.gone]: pick.index === null }"
       :title="pick.index === null ? `${pick.key}: not on this map` : pick.key"
-      @mouseenter="enter(pick.index)"
       @click="keep(pick.index)"
-      @mouseleave="leave()"
     >
       <span :class="$style.grow">{{ pick.name }}</span>
       <span :class="$style.choice">{{ pick.label }}</span>
+      <FocusEye v-if="pick.index !== null" @enter="enter(pick.index)" @leave="leave()" @keep="keep(pick.index)" />
       <button type="button" :class="$style.remove" @click.stop="remove(pick.key)">Remove</button>
     </li>
   </FloatingPanel>

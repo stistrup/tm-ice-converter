@@ -19,6 +19,9 @@ internal sealed class GuiCommand(string dataDir)
         var url = $"http://localhost:{port}/";
         var preview = new ConversionPreview(dataDir);
         var server = new GuiServer(url, webRoot, preview, new ConvertJobs(new ConvertCommand(dataDir), preview), dataDir, devPage);
+        // work in progress lasts while the app runs (tools/gui-dev: since the script started, across API restarts)
+        var session = long.TryParse(Environment.GetEnvironmentVariable("SURFACE_EDITOR_SESSION"), out var s) ? DateTimeOffset.FromUnixTimeSeconds(s).UtcDateTime : DateTime.UtcNow;
+        server.Started += () => SettingsStore.Default.DropWorkingBefore(session);
         if (!noOpen) server.Started += () => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
         try { server.RunAsync().GetAwaiter().GetResult(); }
         // started twice: the first one is serving, show it

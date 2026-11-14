@@ -72,15 +72,19 @@ internal static partial class BlockRules
             case "keep":
                 Bump(run.Report.KeptByList, block.Name);
                 return true;
-            case "custom":
+            // already the material: as it is; scenery with wall materials: their upward faces only; the rest a whole custom block
+            case "custom" or "tops":
+                if (AlreadyThemed(block, run)) return true;
+                if (IsScenery(block.Name, block.Flags, run) && HasWallMaterial(block, run))
+                {
+                    TopsOnly(block, run);
+                    if (run.Topped.Contains(block)) return true;
+                }
                 return BuildCustom(block, run) || SkinRules.OnGround(block, run) || AsItem(block, run);
             case "item":
                 return AsItem(block, run);
             case "skin":
                 SkinRules.Skin(block, run, run.InTerrain(block) ? ItemKind.InTerrain : block.IsGround ? ItemKind.None : ItemKind.Skin);
-                return true;
-            case "tops":
-                if (!AlreadyThemed(block, run)) TopsOnly(block, run);
                 return true;
             case "twin":
                 return NativeTwin(block, run) || Kept(block, run);
@@ -141,6 +145,9 @@ internal static partial class BlockRules
         Bump(run.Report.SceneryKept, block.Name);
         return true;
     }
+
+    private static bool HasWallMaterial(CGameCtnBlock block, ConversionRun run)
+        => run.Shapes.Materials(block.Name, block.IsGround, run.Variant(block), MobilOf(block), run.Clips(block)) is { } materials && materials.Any(BlockNames.IsWallMaterial);
 
     private static void TopsOnly(CGameCtnBlock block, ConversionRun run)
         => SurfaceTops.Add(run, block, run.Variant(block), run.Clips(block), inBlock: true);
@@ -327,6 +334,15 @@ internal static partial class BlockRules
     private static partial Regex Surface();
 
     private static readonly string[] TwinPrefixes = ["DecoPlatform", "DecoHill", "DecoCliff10", "DecoCliff8", "DecoCliff"];
+
+    // the game's scenery families: deco and grandstands (a stand's PlatformTech floor isn't a road)
+    private static readonly string[] SceneryFamilies = ["Deco", "Stand"];
+
+    // scenery whatever the settings: those families, pillar blocks, and blocks with neither a road name nor a material the theme makes its road
+    public static bool IsScenery(string name, int flags, ConversionRun run)
+        => SceneryFamilies.Any(name.StartsWith) || run.Shapes.IsPillarBlock(name)
+            || !WantsItem(name) && !(run.Shapes.Materials(name, (flags & Ground) != 0, (flags >> 21) & 0x3F, flags & 0xFFF, ConversionRun.NoClips) is { } materials
+                && materials.Any(run.Items.Theme.IsRoadMaterial));
 
     private static bool WantsItem(string name)
         => Surface().IsMatch(name) || TwinPrefixes.Any(name.StartsWith) || name.StartsWith("SnowRoad") || name.StartsWith("DecoWall");

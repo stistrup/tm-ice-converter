@@ -27,12 +27,13 @@ internal sealed partial class ConversionPreview(string dataDir)
     private List<string>? CannotOf(ConversionRun run, object piece, string kind)
         => run.CannotPick.TryGetValue(piece, out var no) && picks!.Kinds.TryGetValue(kind, out var k) && k.Picks.Where(no.Contains).ToList() is { Count: > 0 } list ? list : null;
 
-    private static string KindOf(ConversionRun run, string name, bool ground, bool pillarOrFree, string? rule)
+    private static string KindOf(ConversionRun run, string name, int flags, bool pillarOrFree, string? rule)
     {
+        var ground = (flags & BlockFlags.Ground) != 0;
         if (run.Shapes.IsTerrain(name)) return System.Text.RegularExpressions.Regex.IsMatch(name, "Lake|Sea|Water|River") ? "shore" : "terrain";
         if (run.Shapes.Waypoint(name) is not null) return "waypoints";
         if (BlockNames.IsGameplayBlock(name)) return (BlockNames.IsReactor(name) ? "reactor" : "special") + (ground ? "ground" : "");
-        var scenery = name.StartsWith("Deco") || rule is not null && BlockRules.SceneryRules.Contains(rule);
+        var scenery = BlockRules.IsScenery(name, flags, run) || rule is not null && BlockRules.SceneryRules.Contains(rule);
         if (!scenery) return "roads";
         return pillarOrFree || run.Shapes.IsPillarBlock(name) ? "decononsnow" : "deco";
     }
@@ -320,8 +321,7 @@ internal sealed partial class ConversionPreview(string dataDir)
     private static Decision BlockDecision(ConversionRun run, Before before, int i, ConversionRules rulesNow, GroupCatalog groups)
     {
         var d = Of(run, before.Blocks[i]);
-        var ground = (before.Flags[i] & BlockFlags.Ground) != 0;
-        var (name, kind) = (before.Names[i], KindOf(run, before.Names[i], ground, before.PillarOrFree[i], d.Rule));
+        var (name, kind) = (before.Names[i], KindOf(run, before.Names[i], before.Flags[i], before.PillarOrFree[i], d.Rule));
         return d with
         {
             Kind = kind,

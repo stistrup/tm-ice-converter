@@ -2,7 +2,7 @@
 [
   { "name": "Roads: custom blocks", "steps": [{ "group": "roads", "method": "custom" }] },
   { "name": "Roads: surface skins", "steps": [{ "group": "roads", "method": "skin" }] },
-  { "name": "Roads and scenery tops", "steps": [{ "group": "roads", "method": "custom" }, { "group": "scenery", "method": "tops" }] },
+  { "name": "Roads and scenery", "steps": [{ "group": "roads", "method": "custom" }, { "group": "scenery", "method": "tops" }] },
   {
     "name": "Whole map",
     "steps": [

@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { usePreviewStore } from '../stores/preview'
 import FoldSection from './FoldSection.vue'
 import OptionList from './OptionList.vue'
-import PresetPicker from './PresetPicker.vue'
-
-const preview = usePreviewStore()
+// presets parked until there are reasonable ones
+// import { usePreviewStore } from '../stores/preview'
+// import PresetPicker from './PresetPicker.vue'
+// const preview = usePreviewStore()
 </script>
 
 <template>
@@ -12,9 +12,11 @@ const preview = usePreviewStore()
     <FoldSection id="map-options" title="Map options">
       <OptionList />
     </FoldSection>
+    <!-- presets parked until there are reasonable ones
     <FoldSection id="presets" title="Presets">
       <PresetPicker v-if="preview.state" />
     </FoldSection>
+    -->
   </div>
 </template>
 

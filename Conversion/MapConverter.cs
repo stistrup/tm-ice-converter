@@ -68,11 +68,23 @@ public sealed class MapConverter(HashSet<string> knownBlocks, ConversionRules da
         foreach (var (block, iceBlock) in run.Customs)
         {
             if (run.Stacked.Contains(block)) block.Flags |= BlockFlags.Ghost;
+            if (run.BuiltAs.TryGetValue(block, out var built)) KeepPivot(run, block, built.Archetype);
             block.Name = iceBlock.Ident.Id + "_CustomBlock";
             block.Flags |= CustomBlockWriter.CustomFlag;
             block.Author = iceBlock.Ident.Author;
             run.Report.UsedBlocks.Add(iceBlock);
         }
+    }
+
+    // the game turns a block about its archetype's footprint: on a smaller stand-in, the cell moves so the body stays put
+    private static void KeepPivot(ConversionRun run, CGameCtnBlock block, string archetype)
+    {
+        if (block.IsFree || archetype == block.Name) return;
+        var variant = BlockFlags.VariantOf(block);
+        var (own, stand) = (run.Shapes.BlockSize(block.Name, block.IsGround, variant), run.Shapes.BlockSize(archetype, block.IsGround, variant));
+        if (own == stand) return;
+        var shift = Placement.Of(block, own).Translation - Placement.Of(block, stand).Translation;
+        block.Coord += new Int3((int)MathF.Round(shift.X / 32), 0, (int)MathF.Round(shift.Z / 32));
     }
 
     // lone Default-colour platform gets the others' colour

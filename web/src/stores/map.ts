@@ -117,6 +117,7 @@ export const useMapStore = defineStore('map', () => {
   const loadMaps = async () => {
     try {
       maps.value = await fetchMaps()
+      mapsError.value = ''
       const remembered = maps.value.find((map) => map.path === rememberedMap())
       if (remembered && !currentMap.value) void openMap(remembered)
     } catch (error) {

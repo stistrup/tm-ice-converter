@@ -4,6 +4,7 @@ import { useMapStore } from '../stores/map'
 import { MapScene } from '../viewer/MapScene'
 import { previewDraw, waitingDraw } from '../viewer/previewDraw'
 import ConvertMenu from './ConvertMenu.vue'
+import DocumentActions from './DocumentActions.vue'
 import PreviewBar from './PreviewBar.vue'
 import ConvertDialog from './ConvertDialog.vue'
 import InspectPanel from './InspectPanel.vue'
@@ -146,7 +147,10 @@ onBeforeUnmount(() => {
       >
         {{ hoverName }}
       </div>
-      <button v-if="store.currentMap" type="button" :class="$style.mapTitle" :title="store.currentMap.path" @click="store.revealMap()">{{ store.currentMap.name }}</button>
+      <div v-if="store.currentMap" :class="$style.titleBar">
+        <button type="button" :class="$style.mapTitle" :title="store.currentMap.path" @click="store.revealMap()">{{ store.currentMap.name }}</button>
+        <DocumentActions />
+      </div>
       <div v-if="store.scene" :class="$style.topLeft">
         <div v-if="busy" :class="$style.busy" role="status">
           <span :class="$style.spinner" aria-hidden="true" />
@@ -245,12 +249,17 @@ onBeforeUnmount(() => {
 
 /* home, then the preview at work, right of the floating maps panel */
 /* the open map, beside the maps panel's header */
-.mapTitle {
+.titleBar {
   position: absolute;
   top: 0;
   left: var(--side-width, 0px);
   z-index: 1;
+  display: flex;
   max-width: calc(100% - var(--side-width, 0px) - var(--panel-width) - 50px);
+}
+
+.mapTitle {
+  min-width: 0;
   height: 24px;
   padding: 0 10px;
   overflow: hidden;

@@ -366,14 +366,18 @@ const onClosed = () => {
   composes: button from '../ui.module.css';
 }
 
-.primary,
-.primary:disabled {
+/* over ui.module.css's button, whatever order the sheets load in */
+.button.primary {
   font-weight: 600;
   color: #1a1a1a;
   background: var(--accent);
 }
 
-.primary:disabled {
+.button.primary:hover:not(:disabled) {
+  background: #ffb866;
+}
+
+.button.primary:disabled {
   opacity: 0.55;
 }
 </style>

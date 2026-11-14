@@ -143,6 +143,8 @@ export interface ConvertJob {
   results: { map: string; output: string | null; error: string | null }[]
   // Cancel pressed, the builds that started are finishing
   cancelling: boolean
+  // item files built while the game was running
+  restartItems: number
 }
 
 // starts it in the background

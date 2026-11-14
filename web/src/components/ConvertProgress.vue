@@ -58,6 +58,9 @@ const stepState = (index: number): 'done' | 'now' | 'todo' => {
           {{ job.outcome.missingFiles }} game files aren't extracted: in Openplanet: Plugins › Extract game files, then convert again
         </p>
       </div>
+      <p v-if="job.state === 'done' && job.restartItems" :class="$style.restart" role="status">
+        {{ job.restartItems }} item{{ job.restartItems === 1 ? '' : 's' }} built while the game ran: restart likely needed
+      </p>
       <p v-if="job.error" :class="$style.error" role="alert">{{ job.error }}</p>
     </div>
     <footer :class="$style.actions">
@@ -193,6 +196,12 @@ const stepState = (index: number): 'done' | 'now' | 'todo' => {
   padding: 0;
   list-style: none;
   overflow-wrap: anywhere;
+}
+
+.restart {
+  margin: 0;
+  font-weight: 600;
+  color: var(--accent);
 }
 
 .warn {

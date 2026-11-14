@@ -73,6 +73,16 @@ public sealed partial class SettingsStore
     // a step of its own: undo brings the edits back
     public DocumentState Revert(string uid) => Edit(uid, SavedOrEmpty(uid));
 
+    // working copies of an earlier app session, kept aside in working-earlier/ until the next drop
+    public void DropWorkingBefore(DateTime start)
+    {
+        var old = Directory.EnumerateFiles(Dir("working"), "*.json").Where(f => File.GetLastWriteTimeUtc(f) < start).ToList();
+        if (old.Count == 0) return;
+        var aside = Dir("working-earlier");
+        foreach (var file in Directory.EnumerateFiles(aside)) File.Delete(file);
+        foreach (var file in old) File.Move(file, Path.Combine(aside, Path.GetFileName(file)));
+    }
+
     private WorkingCopy NewWorking(string uid) => new(Version, uid, DateTime.UtcNow, SavedOrEmpty(uid), [], []);
 
     private void WriteWorking(WorkingCopy w) => Write(WorkingFile(w.Uid), w with { Version = Version, Updated = DateTime.UtcNow });

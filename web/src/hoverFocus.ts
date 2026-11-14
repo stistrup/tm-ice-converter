@@ -2,7 +2,7 @@ import type { CameraState } from './viewer/MapScene'
 import { useHistoryStore } from './stores/history'
 import { useMapStore } from './stores/map'
 
-// list rows: hovering one shows it in the view; a click keeps the view there (and may select it),
+// list rows' eyes (FocusEye): hovering one shows its piece in the view; a click keeps the view there (and may select it),
 // otherwise the view goes back to where it was before the hovering started
 export const useHoverFocus = () => {
   const store = useMapStore()

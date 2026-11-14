@@ -53,6 +53,13 @@ public sealed class Theme
         return map;
     }
 
+    // a game material the theme turns into its road, or one that already drives as the theme
+    public bool IsRoadMaterial(string material) => RoadMaterials.Contains(material) || DrivesAsTheme(material);
+
+    [JsonIgnore]
+    private HashSet<string> RoadMaterials => roadMaterials ??= [.. Map(null).Where(kv => kv.Value == Road && !kv.Key.Contains(':') && !kv.Key.Contains('|')).Select(kv => kv.Key)];
+    private HashSet<string>? roadMaterials;
+
     public bool DrivesAsTheme(string material) => MaterialLib.Surface(material) is { } s && Surfaces.Contains(s);
 
     public bool SwappedIn(IReadOnlyDictionary<string, string> map, string material)

@@ -11,6 +11,9 @@ if [ "${1:-}" = restart ]; then
     exit 0
 fi
 
+# one app session: unsaved work survives API restarts, not a new start of this script
+export SURFACE_EDITOR_SESSION=${SURFACE_EDITOR_SESSION:-$(date +%s)}
+
 (cd "$root/web" && exec npm run dev) &
 vite=$!
 trap 'kill $vite 2>/dev/null; exit 0' INT TERM EXIT

@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useHistoryStore } from '../stores/history'
 import { usePreviewStore } from '../stores/preview'
 import TargetList from './TargetList.vue'
 
 const preview = usePreviewStore()
-const history = useHistoryStore()
 
 // determinate while pieces build, running without a number while the preview is worked out
 const work = computed(() => {
@@ -27,12 +25,6 @@ const work = computed(() => {
         <input type="radio" name="shown" :checked="!preview.showOriginal" @change="preview.showOriginal = false" />
         <span>Preview</span>
       </label>
-      <span :class="$style.grow" />
-      <template v-if="preview.dirty">
-        <span :class="$style.muted">Not saved</span>
-        <button type="button" :class="$style.textButton" @click="history.revert()">Revert</button>
-        <button type="button" :class="$style.smallButton" @click="preview.save()">Save</button>
-      </template>
     </div>
     <TargetList />
     <div v-if="work" :class="$style.progress" role="progressbar" :aria-valuenow="work.percent ?? undefined" aria-valuemin="0" aria-valuemax="100">
@@ -140,23 +132,7 @@ const work = computed(() => {
   color: var(--strong);
 }
 
-.muted {
-  composes: muted from '../ui.module.css';
-}
-
 .option {
   composes: option from '../ui.module.css';
-}
-
-.grow {
-  composes: grow from '../ui.module.css';
-}
-
-.smallButton {
-  composes: smallButton from '../ui.module.css';
-}
-
-.textButton {
-  composes: textButton from '../ui.module.css';
 }
 </style>

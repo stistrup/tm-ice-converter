@@ -5,7 +5,11 @@ internal sealed class ConvertJobs(ConvertCommand convert, ConversionPreview prev
 {
     // State: running | done | failed (none converted) | cancelled (Results: the maps saved before). Outcome: the only map's; Results: each map's. Outputs relative to Maps
     public sealed record Job(string Id, string Map, string Name, int Count, string State, ConvertProgress.Snapshot Progress, DateTime Started, DateTime? Ended,
-        ConvertCommand.Outcome? Outcome, string? Error, List<Result> Results, bool Cancelling = false);
+        ConvertCommand.Outcome? Outcome, string? Error, List<Result> Results, bool Cancelling = false)
+    {
+        // item files built while the game ran: it shows them only after a restart
+        public int RestartItems { get; init; }
+    }
 
     public sealed record Result(string Map, string? Output, string? Error);
 
@@ -32,7 +36,7 @@ internal sealed class ConvertJobs(ConvertCommand convert, ConversionPreview prev
             cancel = new CancellationTokenSource();
             var token = cancel.Token;
             job = new Job(Guid.NewGuid().ToString("N")[..12], Paths.MapsRelativeOrFull(maps[0]), name, maps.Count, "running", progress.Now(), DateTime.UtcNow, null, null, null, []);
-            var (id, steps) = (job.Id, progress);
+            var (id, steps, started) = (job.Id, progress, job.Started);
             _ = Task.Run(async () =>
             {
                 List<ConvertCommand.MapResult> results = [];
@@ -52,11 +56,14 @@ internal sealed class ConvertJobs(ConvertCommand convert, ConversionPreview prev
                     error = $"{e.GetType().Name}: {e.Message}";
                 }
                 var outcome = maps.Count == 1 ? results.SingleOrDefault()?.Done : null;
+                var restartItems = 0;
+                try { restartItems = GameProcess.ItemsNeedingRestart(started); }
+                catch (Exception e) { Console.Error.WriteLine($"game check: {e.Message}"); }
                 lock (gate)
                     if (job?.Id == id)
                         job = job with
                         {
-                            State = token.IsCancellationRequested ? "cancelled" : error is null ? "done" : "failed", Ended = DateTime.UtcNow, Error = error,
+                            State = token.IsCancellationRequested ? "cancelled" : error is null ? "done" : "failed", Ended = DateTime.UtcNow, Error = error, RestartItems = restartItems,
                             Outcome = outcome is null ? null : outcome with { Output = Paths.MapsRelativeOrFull(outcome.Output) },
                             Results = [.. results.Select(r => new Result(Paths.MapsRelativeOrFull(r.Map),
                                 r.Done is null ? null : Paths.MapsRelativeOrFull(r.Done.Output), r.Error))],
