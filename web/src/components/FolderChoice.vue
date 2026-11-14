@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { fetchFolders, type FolderList } from '../api'
+import DropDown from './DropDown.vue'
 
 // "" = Maps itself
 const target = defineModel<string>({ required: true })
@@ -41,9 +42,12 @@ defineExpose({ refresh })
       <input v-model="folderMode" type="radio" value="pick" :disabled="!folders.length" />
       <span>Existing folder</span>
     </label>
-    <select v-model="pickedFolder" :class="$style.select" :disabled="folderMode !== 'pick'" aria-label="Existing folder">
-      <option v-for="folder in folders" :key="folder" :value="folder">{{ folder }}</option>
-    </select>
+    <DropDown
+      v-model="pickedFolder"
+      :options="folders.map((f) => ({ value: f, label: f }))"
+      :disabled="folderMode !== 'pick'"
+      aria-label="Existing folder"
+    />
     <label :class="$style.option">
       <input v-model="folderMode" type="radio" value="type" />
       <span>New folder</span>

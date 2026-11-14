@@ -27,6 +27,7 @@ public sealed class MapConverter(HashSet<string> knownBlocks, ConversionRules da
         var run = new ConversionRun(map, collection, rules, dataRules, knownBlocks, shapes, items, surfaceParents, flatTops);
 
         run.Report.FilledCells = filled;
+        if (items.Planning) BlockRules.LearnPicks(run, ConversionRules.PieceChoices);
         foreach (var block in map.GetBlocks()) BlockRules.Decide(block, run);
         Neighbours.Keep(run);
         CoverReach.Run(run);

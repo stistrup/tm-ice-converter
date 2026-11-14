@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useHistoryStore } from '../stores/history'
-import { useMapStore } from '../stores/map'
 import { usePreviewStore } from '../stores/preview'
 import { normalKey } from '../api'
 import FloatingPanel from './FloatingPanel.vue'
+import { useHoverFocus } from '../hoverFocus'
 
-const store = useMapStore()
 const preview = usePreviewStore()
 const history = useHistoryStore()
 
@@ -29,22 +28,14 @@ const picks = computed(() => {
   })
 })
 
-// as a click in the view: one undo step
-const select = (index: number | null) => {
-  if (index !== null) history.change(() => (store.selected = index))
-}
-
-const hover = (index: number | null) => {
-  store.view?.showHover(index)
-  if (index !== null) store.view?.focus(index)
-}
+const { enter, leave, keep } = useHoverFocus()
 
 const remove = (key: string) => {
-  hover(null)
+  leave()
   history.change(() => preview.pick([key], ''))
 }
 
-watch(open, (now) => now || hover(null))
+watch(open, (now) => now || leave())
 watch(() => picks.value.length, (n) => n || (open.value = false))
 </script>
 
@@ -59,9 +50,9 @@ watch(() => picks.value.length, (n) => n || (open.value = false))
       :key="pick.key"
       :class="{ [$style.gone]: pick.index === null }"
       :title="pick.index === null ? `${pick.key}: not on this map` : pick.key"
-      @mouseenter="hover(pick.index)"
-      @click="select(pick.index)"
-      @mouseleave="hover(null)"
+      @mouseenter="enter(pick.index)"
+      @click="keep(pick.index)"
+      @mouseleave="leave()"
     >
       <span :class="$style.grow">{{ pick.name }}</span>
       <span :class="$style.choice">{{ pick.label }}</span>

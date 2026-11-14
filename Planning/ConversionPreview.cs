@@ -20,7 +20,12 @@ internal sealed partial class ConversionPreview(string dataDir)
         public string? Picked { get; init; }
         // its group for group conversions (data/groups.jsonc), e.g. roads/checkpoints; null: none
         public string? Group { get; init; }
+        // its kind's picks that wouldn't change it
+        public List<string>? Cannot { get; init; }
     }
+
+    private List<string>? CannotOf(ConversionRun run, object piece, string kind)
+        => run.CannotPick.TryGetValue(piece, out var no) && picks!.Kinds.TryGetValue(kind, out var k) && k.Picks.Where(no.Contains).ToList() is { Count: > 0 } list ? list : null;
 
     private static string KindOf(ConversionRun run, string name, bool ground, bool pillarOrFree, string? rule)
     {
@@ -50,6 +55,7 @@ internal sealed partial class ConversionPreview(string dataDir)
         // per kind what a piece can be picked to become (data/picks.jsonc)
         public Dictionary<string, List<PickCatalog.Choice>> Choices { get; init; } = [];
         public Dictionary<string, string> KindLabels { get; init; } = [];
+        public PickCatalog.Words? Words { get; init; }
         // waiting for their items to be built, by index in the map's own order
         public List<int> PendingBlocks { get; init; } = [];
         public List<int> PendingItems { get; init; } = [];
@@ -264,9 +270,9 @@ internal sealed partial class ConversionPreview(string dataDir)
         var before = Before.Of(map);
         var run = converter!.Run(map, own);
 
-        var blockDecisions = before.Blocks.Index().ToDictionary(b => b.Index, b => BlockDecision(run, before, b.Index, rulesNow, groups!));
+        var blockDecisions = before.Blocks.Index().ToDictionary(b => b.Index, b => BlockDecision(run, before, b.Index, rulesNow, groups!) is var d ? d with { Cannot = CannotOf(run, b.Item, d.Kind) } : null!);
         var now = new HashSet<object>(map.AnchoredObjects ?? [], ReferenceEqualityComparer.Instance);
-        var itemDecisions = before.Items.Index().ToDictionary(o => o.Index, o => ItemDecision(run, o.Item, now, rulesNow, groups!));
+        var itemDecisions = before.Items.Index().ToDictionary(o => o.Index, o => ItemDecision(run, o.Item, now, rulesNow, groups!) is var d ? d with { Cannot = CannotOf(run, o.Item.Item, d.Kind) } : null!);
 
         // what the conversion changed, drawn from the converted map where a real mesh exists; the originals those replace get hidden
         var blockOrigin = before.Blocks.Index().ToDictionary(b => (object)b.Item, b => b.Index, ReferenceEqualityComparer.Instance);
@@ -301,6 +307,7 @@ internal sealed partial class ConversionPreview(string dataDir)
                 {
                     Choices = picks!.Choices,
                     KindLabels = picks.KindLabels,
+                    Words = picks.Labels,
                     PendingBlocks = [.. before.Blocks.Index().Where(b => run.Waiting.TryGetValue(b.Item, out var file) && !File.Exists(file) || run.Customs.TryGetValue(b.Item, out var c) && c.Waiting).Select(b => b.Index)],
                     PendingItems = [.. before.Items.Index().Where(o => run.WaitingItems.TryGetValue(o.Item.Item, out var file) && !File.Exists(file)).Select(o => o.Index)],
                 };

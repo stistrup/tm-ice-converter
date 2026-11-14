@@ -43,3 +43,21 @@ export const remembered = <T>(key: string, fallback: T, deep = false): Ref<T> =>
   watch(value, (now) => writeJson(key, now), { deep })
   return value
 }
+
+// this tab only: survives a reload, not a new session
+export const readSession = <T>(key: string, fallback: T): T => {
+  try {
+    const text = sessionStorage.getItem(key)
+    return text === null ? fallback : (JSON.parse(text) as T)
+  } catch {
+    return fallback
+  }
+}
+
+export const writeSession = (key: string, value: unknown) => {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // only a convenience
+  }
+}

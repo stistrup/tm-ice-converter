@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { fetchVersion, type VersionInfo } from '../api'
-import { useHistoryStore } from '../stores/history'
 import { useMapStore } from '../stores/map'
 import { useSetupStore } from '../stores/setup'
 import { displayName } from '../viewer/names'
 import FloatingPanel from './FloatingPanel.vue'
+import { useHoverFocus } from '../hoverFocus'
 
 const store = useMapStore()
 const setup = useSetupStore()
-const history = useHistoryStore()
 const manifest = computed(() => store.scene?.manifest)
 const version = ref<VersionInfo | null>(null)
 onMounted(async () => {
@@ -26,14 +25,8 @@ const missing = computed(() => {
 })
 const missingOpen = ref(false)
 const missingButton = ref<HTMLElement>()
-// as a click in the view: one undo step
-const select = (index: number) => history.change(() => (store.selected = index))
-
-const hover = (index: number | null) => {
-  store.view?.showHover(index)
-  if (index !== null) store.view?.focus(index)
-}
-watch(missingOpen, (now) => now || hover(null))
+const { enter, leave, keep } = useHoverFocus()
+watch(missingOpen, (now) => now || leave())
 watch(manifest, () => (missingOpen.value = false))
 </script>
 
@@ -44,7 +37,7 @@ watch(manifest, () => (missingOpen.value = false))
       {{ missing.length }} without mesh
     </button>
     <FloatingPanel v-model="missingOpen" :anchor="missingButton" :title="`Without mesh, drawn as boxes or cones: ${missing.length}`">
-      <li v-for="piece in missing" :key="piece.index" @mouseenter="hover(piece.index)" @mouseleave="hover(null)" @click="select(piece.index)">
+      <li v-for="piece in missing" :key="piece.index" @mouseenter="enter(piece.index)" @mouseleave="leave()" @click="keep(piece.index)">
         <span :class="$style.grow">{{ piece.name }}</span>
         <span>{{ piece.cell }}</span>
         <span>{{ piece.kind }}</span>

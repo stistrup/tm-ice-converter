@@ -45,14 +45,13 @@ export const useHistoryStore = defineStore('history', () => {
     push({ before: map.selection, after: map.selection, settings: true })
   }
 
-  // a preset's or a group conversion's targets: one step
+  // a preset's targets: one step
   const applied = async (apply: () => Promise<unknown>) => {
     const selection = map.selection
     await apply()
     push({ before: selection, after: selection, settings: true })
   }
   const preset = (name: string, only: string[] | null) => applied(() => preview.applyPreset(name, only))
-  const group = (path: string, method: string, only: string[] | null) => applied(() => preview.applyGroup(path, method, only))
 
   // a shift-drag stroke is one step
   let strokeBefore: number[] | null = null
@@ -100,7 +99,7 @@ export const useHistoryStore = defineStore('history', () => {
     },
   )
 
-  return { past, future, canUndo, canRedo, change, revert, preset, group, stroke, undo, redo }
+  return { past, future, canUndo, canRedo, change, revert, preset, stroke, undo, redo }
 })
 
 if (import.meta.hot) import.meta.hot.accept(acceptHMRUpdate(useHistoryStore, import.meta.hot))

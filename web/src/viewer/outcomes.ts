@@ -6,7 +6,7 @@ export const outcomes: Record<string, { label: string; color: number | null }> =
   item: { label: 'Ice item', color: 0xb48cf0 },
   skin: { label: 'Ice skin', color: 0x5f6cff },
   ice: { label: 'Ice copy (item)', color: 0xb48cf0 },
-  swapped: { label: 'Swapped (frozen)', color: 0xffffff },
+  swapped: { label: 'Native snow tree', color: 0xffffff },
   sunk: { label: 'Sunk into the ice', color: 0xc0c0c0 },
   removed: { label: 'Removed', color: 0x8a8a8a },
   kept: { label: 'Kept (scenery off)', color: null },

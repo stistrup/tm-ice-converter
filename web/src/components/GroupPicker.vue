@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { GroupNode } from '../api'
 
-const props = defineProps<{ tree: GroupNode[] }>()
+// placeholder: shown while the path is none of the tree's
+const props = defineProps<{ tree: GroupNode[]; placeholder?: string }>()
 // "" = all
 const path = defineModel<string>({ required: true })
 
@@ -23,7 +24,7 @@ const labelOf = (wanted: string): string => {
       trail.pop()
       return false
     })
-  return wanted === '' || !find(props.tree) ? 'All' : trail.join(' ▸ ')
+  return wanted === '' ? 'All' : !find(props.tree) ? (props.placeholder ?? 'All') : trail.join(' ▸ ')
 }
 const label = computed(() => labelOf(path.value))
 

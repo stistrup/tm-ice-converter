@@ -2,8 +2,11 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
 
 // a list that needs more room than its spot: on the page next to the anchor, toward the larger side of the window
-const props = defineProps<{ anchor: HTMLElement | undefined; title: string }>()
+// fit: as wide as its rows, not the usual width
+const props = defineProps<{ anchor: HTMLElement | undefined; title: string; fit?: boolean }>()
 const open = defineModel<boolean>({ required: true })
+// the pointer coming onto or off the panel, for lists opened by hovering
+const emit = defineEmits<{ enter: []; leave: [] }>()
 
 const panel = ref<HTMLElement>()
 const at = ref<Record<string, string>>({})
@@ -40,7 +43,7 @@ onBeforeUnmount(() => listen(false))
 
 <template>
   <Teleport to="body">
-    <section v-if="open" ref="panel" :class="$style.panel" :style="at">
+    <section v-if="open" ref="panel" :class="[$style.panel, { [$style.fit]: fit }]" :style="at" @mouseenter="emit('enter')" @mouseleave="emit('leave')">
       <header :class="$style.header">
         <span :class="$style.grow">{{ title }}</span>
         <button type="button" :class="$style.close" aria-label="Close" @click="close">×</button>
@@ -65,6 +68,11 @@ onBeforeUnmount(() => listen(false))
   border: 1px solid var(--line);
   border-radius: 2px;
   box-shadow: 0 6px 18px rgb(0 0 0 / 45%);
+}
+
+.fit {
+  width: max-content;
+  min-width: 160px;
 }
 
 .header {

@@ -1,37 +1,65 @@
-// what a piece can be picked to become: each pick once, with its label and what it does; each kind (as the preview groups pieces) lists its picks.
-// The converter knows the values (Translations.PieceChoices); this file only shows them
+// what a piece can be picked to become: each pick once, as material + way (+ an option), with its label and what it does;
+// each kind (as the preview groups pieces) lists its picks. The converter knows the values (ConversionRules.PieceChoices); this file only shows them
 {
-  "picks": {
-    "": { "label": "Original", "description": "No conversion target: stays as it is" },
-    "keep": { "label": "Original", "description": "Stays as it is" },
-    "twin": { "label": "Native ice", "description": "The game's own ice version of the block" },
-    "twincover": { "label": "Native ice, snow", "description": "The game's own ice version, with snow over its ground" },
-    "custom": { "label": "Custom block", "description": "An ice copy of the block; closest to the original look" },
-    "item": { "label": "Custom item", "description": "An ice item in its place" },
-    "skin": { "label": "Ice skin", "description": "The original stays, a thin ice layer on top; smallest maps" },
-    "tops": { "label": "Ice tops", "description": "The original stays, ice only on its upward faces" },
-    "snow": { "label": "Snow", "description": "The ground in snow; the column above it follows" },
-    "plain": { "label": "Plain ice", "description": "Without its effect, as a plain block" },
-    "gate": { "label": "Effect on a gate", "description": "Plain ice with a gate that keeps the effect" },
-    "flip": { "label": "Flip", "description": "Turned around: you enter from the other side" },
-    "snowflip": { "label": "Snow flipped", "description": "Turned around, on snow ground" },
-    "remove": { "label": "Remove", "description": "Taken out of the map" },
-    "frozen": { "label": "Snow trees", "description": "Swapped for a frozen or snowy one" },
-    "copy": { "label": "Ice copy", "description": "An ice copy of the item" },
-    "sink": { "label": "Sunk into the ice", "description": "Lowered a little, so a flat top doesn't flicker with the ice" }
+  "materials": {
+    "original": { "label": "Original", "description": "Stays as it is" },
+    "ice": { "label": "Ice", "description": "" },
+    "snow": { "label": "Snow", "description": "" },
+    "remove": { "label": "Remove", "description": "Taken out of the map" }
   },
+  // in this order; the first that works is the default
+  "ways": {
+    "native": { "label": "Native equivalent", "description": "The game's own version of the block" },
+    "nativesnow": { "label": "Native equivalent, snow on the ground", "description": "The game's own version, with snow over its ground" },
+    "nativeflip": { "label": "Native equivalent, flipped", "description": "Turned around: you enter from the other side" },
+    "custom": { "label": "Custom block", "description": "A copy of the block in the material; closest to the original look" },
+    "skin": { "label": "Skinned original", "description": "The original stays, a thin layer on top; smallest maps" },
+    "item": { "label": "Item", "description": "An item in its place" },
+    "plain": { "label": "Plain block", "description": "Without its effect, as a plain block" },
+    "gate": { "label": "Plain block, effect on a gate", "description": "Plain, with a gate that keeps the effect" },
+    "cover": { "label": "Snow cover", "description": "The ground covered; the column above it follows" },
+    "coverflip": { "label": "Snow cover, flipped", "description": "Turned around, on snow ground" },
+    "swap": { "label": "Native snow tree", "description": "Swapped for the game's own snow tree" },
+    "table": { "label": "Swap table", "description": "As the swap table says" },
+    "sunk": { "label": "Sunk", "description": "Lowered a little, so a flat top doesn't flicker" }
+  },
+  // a tick under the ways: shown when a selected piece has it for the chosen material and way
+  "options": {
+    "tops": { "label": "Deco: only on top faces", "description": "Deco, walls, pillars: the material only on their upward faces" }
+  },
+  "picks": {
+    "": { "label": "Original", "material": "original" },
+    "keep": { "label": "Original", "material": "original" },
+    "twin": { "label": "Ice, native equivalent", "material": "ice", "way": "native" },
+    "twincover": { "label": "Ice, native equivalent, snow on the ground", "material": "ice", "way": "nativesnow" },
+    "custom": { "label": "Ice, custom block", "material": "ice", "way": "custom" },
+    "item": { "label": "Ice, item", "material": "ice", "way": "item" },
+    "skin": { "label": "Ice, skinned original", "material": "ice", "way": "skin" },
+    "tops": { "label": "Ice, top faces", "material": "ice", "way": "custom", "option": "tops" },
+    "table": { "label": "Swap table", "material": "ice", "way": "table" },
+    "snow": { "label": "Snow cover", "material": "snow", "way": "cover" },
+    "plain": { "label": "Ice, plain block", "material": "ice", "way": "plain" },
+    "gate": { "label": "Ice, effect on a gate", "material": "ice", "way": "gate" },
+    "flip": { "label": "Ice, flipped", "material": "ice", "way": "nativeflip" },
+    "snowflip": { "label": "Snow cover, flipped", "material": "snow", "way": "coverflip" },
+    "remove": { "label": "Remove", "material": "remove" },
+    "frozen": { "label": "Snow, native snow tree", "material": "snow", "way": "swap" },
+    "copy": { "label": "Ice, item", "material": "ice", "way": "item" },
+    "sink": { "label": "Sunk", "material": "original", "way": "sunk" }
+  },
+  // "remove" left out of the lists for now (not a surface choice); the converter still reads it
   "kinds": {
-    "roads": { "label": "Roads, platforms", "picks": ["", "twin", "custom", "skin", "tops"] },
+    "roads": { "label": "Roads, platforms", "picks": ["", "twin", "custom", "skin"] },
     "waypoints": { "label": "Start, checkpoint, finish", "picks": ["", "twin", "custom", "skin"] },
     "deco": { "label": "Deco, walls", "picks": ["", "snow", "tops", "twin", "twincover", "custom", "skin"] },
     // the snow rule leaves these alone
     "decononsnow": { "label": "Pillars, free-placed deco", "picks": ["", "tops", "twin", "custom"] },
     "terrain": { "label": "Terrain", "picks": ["", "snow"] },
     "shore": { "label": "Shore, water", "picks": ["", "snow"] },
-    "special": { "label": "Special", "picks": ["", "plain", "twin", "custom", "gate", "remove"] },
+    "special": { "label": "Special", "picks": ["", "plain", "twin", "custom", "gate"] },
     "specialground": { "label": "Special, on the ground", "picks": ["", "plain", "snow"] },
     "reactor": { "label": "Reactor", "picks": ["", "plain", "flip"] },
     "reactorground": { "label": "Reactor, on the ground", "picks": ["", "plain", "snow", "flip", "snowflip"] },
-    "items": { "label": "Items", "picks": ["", "remove", "frozen", "copy", "sink"] }
+    "items": { "label": "Items", "picks": ["", "frozen", "copy", "sink"] }
   }
 }

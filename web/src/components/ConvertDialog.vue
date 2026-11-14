@@ -213,7 +213,7 @@ const onClosed = () => {
         </div>
         <label v-if="!batch && preview.dirty" :class="$style.option">
           <input v-model="saveSettings" type="checkbox" />
-          <span>Save these settings</span>
+          <span>Save these settings for this map</span>
         </label>
         <p v-if="startError" :class="$style.error" role="alert">{{ startError }}</p>
       </div>

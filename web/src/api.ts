@@ -245,13 +245,29 @@ export interface PreviewDecision {
   picked: string | null
   // for group conversions, e.g. roads/checkpoints (data/groups.jsonc)
   group: string | null
+  // its kind's picks that wouldn't change it
+  cannot?: string[] | null
 }
 
 // data/picks.jsonc
 export interface PieceChoice {
   value: string
   label: string
+  material: string
+  way: string | null
+  option: string | null
+}
+
+export interface Named {
+  label: string
   description: string
+}
+
+// material, way and option labels; ways in their default order
+export interface PickWords {
+  materials: Record<string, Named>
+  ways: Record<string, Named>
+  options: Record<string, Named>
 }
 
 export interface PreviewResult {
@@ -274,6 +290,7 @@ export interface PreviewResult {
   // per kind what a piece can be picked to become ("" = as the rules say), and the kinds' names
   choices: Record<string, PieceChoice[]>
   kindLabels: Record<string, string>
+  words: PickWords | null
   // settings fields left out because they don't read; picks for pieces this map doesn't have
   problems: string[]
   stalePicks: string[]
@@ -343,7 +360,6 @@ export const fetchGroups = async (): Promise<Groups> => (await check(await fetch
 
 // one undo step each; only: these keys, null: the whole map
 export const applyPreset = (map: string, preset: string, only: string[] | null) => documentCall('apply-preset', map, { preset, only })
-export const applyGroup = (map: string, group: string, method: string, only: string[] | null) => documentCall('apply-group', map, { group, method, only })
 
 export const fetchPreviewScene = async (id: string): Promise<{ manifest: SceneManifest; geometry: ArrayBuffer }> => {
   const [manifest, geometry] = await Promise.all([

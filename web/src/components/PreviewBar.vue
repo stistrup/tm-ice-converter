@@ -11,7 +11,7 @@ const history = useHistoryStore()
 const work = computed(() => {
   const b = preview.building
   if (b && b.total) return { text: `Building pieces ${b.done} of ${b.total}`, percent: Math.round((b.done / b.total) * 100) }
-  if (preview.loading && !preview.showOriginal) return { text: 'Working out the preview', percent: null }
+  if (preview.loading && !preview.showOriginal) return { text: 'Calculating preview', percent: null }
   return null
 })
 </script>

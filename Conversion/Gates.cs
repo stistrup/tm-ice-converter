@@ -61,7 +61,7 @@ internal static class Gates
         return true;
     }
 
-    private static string? GateEffect(string name) => name.Contains("SlowMotion") ? "SlowMotion" : name.Contains("Reset") ? "Reset" : null;
+    public static string? GateEffect(string name) => name.Contains("SlowMotion") ? "SlowMotion" : name.Contains("Reset") ? "Reset" : null;
 
     private static bool GateOn(ConversionRun run, CGameCtnBlock block, string effect, int variant, IReadOnlySet<int> clips)
     {

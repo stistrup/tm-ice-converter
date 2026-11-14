@@ -7,12 +7,13 @@ import { outcomeLabel } from '../viewer/outcomes'
 import TargetChoice from './TargetChoice.vue'
 import PiecePicture from './PiecePicture.vue'
 import FoldSection from './FoldSection.vue'
+import GroupSelect from './GroupSelect.vue'
 
 const store = useMapStore()
 const preview = usePreviewStore()
 
 const info = computed(() => (store.selected === null ? null : store.infos[store.selected]))
-const single = computed(() => store.selection.length <= 1)
+const single = computed(() => !!info.value && store.selection.length <= 1)
 
 const becomes = computed(() => {
   const decision = store.selected === null ? undefined : preview.decisions?.[store.selected]
@@ -37,13 +38,11 @@ const details = computed(() => {
 </script>
 
 <template>
-  <FoldSection v-if="info" id="selection" title="Selection">
-    <template #side>
-      <span :class="$style.count">{{ store.selection.length }} selected</span>
-    </template>
+  <FoldSection id="selection" title="Selection">
+    <GroupSelect />
     <PiecePicture v-if="single" />
     <div :class="{ [$style.below]: single }">
-      <template v-if="single">
+      <template v-if="single && info">
         <h2 :class="$style.title">
           {{ displayName(info) }}
           <span :class="$style.info" :title="details" aria-label="Properties">i</span>
@@ -151,9 +150,6 @@ const details = computed(() => {
   transform: rotate(90deg);
 }
 
-.count {
-  color: var(--muted);
-}
 
 .properties .list {
   grid-column: 2;

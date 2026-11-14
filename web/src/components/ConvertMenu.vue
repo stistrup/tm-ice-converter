@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { usePreviewStore } from '../stores/preview'
 import FoldSection from './FoldSection.vue'
-import GroupConversion from './GroupConversion.vue'
 import OptionList from './OptionList.vue'
 import PresetPicker from './PresetPicker.vue'
 
@@ -14,10 +13,7 @@ const preview = usePreviewStore()
       <OptionList />
     </FoldSection>
     <FoldSection id="presets" title="Presets">
-      <template v-if="preview.state">
-        <PresetPicker />
-        <GroupConversion />
-      </template>
+      <PresetPicker v-if="preview.state" />
     </FoldSection>
   </div>
 </template>

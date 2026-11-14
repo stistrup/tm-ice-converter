@@ -5,6 +5,7 @@ import { fetchPresets, type Preset } from '../api'
 import { useHistoryStore } from '../stores/history'
 import { useMapStore } from '../stores/map'
 import { usePreviewStore } from '../stores/preview'
+import DropDown from './DropDown.vue'
 
 const store = useMapStore()
 const preview = usePreviewStore()
@@ -31,13 +32,9 @@ const apply = () => {
   <div v-if="presets.length" :class="$style.preset">
     <div :class="$style.row">
       <span :class="$style.title">Preset</span>
-      <select v-model="presetName" :class="[$style.select, $style.grow]" aria-label="Preset">
-        <option v-for="p in presets" :key="p.name" :value="p.name">{{ p.name }}</option>
-      </select>
+      <DropDown v-model="presetName" :options="presets.map((p) => ({ value: p.name, label: p.name }))" aria-label="Preset" />
       <span :class="$style.muted">to</span>
-      <select :class="$style.select" aria-label="Material" disabled>
-        <option>Ice</option>
-      </select>
+      <DropDown model-value="ice" :options="[{ value: 'ice', label: 'Ice' }]" narrow disabled aria-label="Material" />
     </div>
     <div :class="$style.actions">
       <span :class="[$style.muted, $style.grow]">{{ status }}</span>

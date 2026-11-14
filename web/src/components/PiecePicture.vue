@@ -23,13 +23,18 @@ onMounted(() => {
 onBeforeUnmount(() => preview?.dispose())
 
 watch(() => [store.selected, store.view, previewStore.lookVersion], update)
+
+const focus = () => {
+  if (store.selected !== null) store.view?.focus(store.selected)
+}
 watch(() => store.textureLoads, () => preview?.invalidate())
 </script>
 
 <template>
-  <div :class="$style.picture">
+  <div :class="$style.picture" @dblclick="focus">
     <canvas ref="canvas" :class="$style.canvas" />
     <p v-if="!hasMesh" :class="$style.none">No mesh to show</p>
+    <button type="button" :class="$style.focus" title="Focus the view on it (or double-click)" @click="focus">Focus</button>
   </div>
 </template>
 
@@ -45,6 +50,13 @@ watch(() => store.textureLoads, () => preview?.invalidate())
   display: block;
   width: 100%;
   height: 100%;
+}
+
+.focus {
+  composes: smallButton from '../ui.module.css';
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
 }
 
 .none {

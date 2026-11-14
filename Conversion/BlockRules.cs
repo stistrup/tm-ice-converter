@@ -175,15 +175,18 @@ internal static partial class BlockRules
     private static bool NativeTwin(CGameCtnBlock block, ConversionRun run)
     {
         var name = block.Name;
-        // air open roads off Stadium become items
-        if (!block.IsGround && name.StartsWith("Open") && !run.Collection.StartsWith("Stadium")) return false;
-        if (run.Items.Theme.BlockWord is not { } word || Candidates(name, word).FirstOrDefault(c => Available(c, run)) is not { } twin) return false;
+        if (TwinOf(block, run) is not { } twin) return false;
         block.Name = twin;
         run.Renamed.Add(block);
         Bump(run.Report.Swapped, (name, twin, Source.Rule));
         SurfaceTops.Add(run, block, run.Variant(block), run.Clips(block), ItemKind.TopOfTwin);
         return true;
     }
+
+    // air open roads off Stadium become items
+    private static string? TwinOf(CGameCtnBlock block, ConversionRun run)
+        => !block.IsGround && block.Name.StartsWith("Open") && !run.Collection.StartsWith("Stadium") || run.Items.Theme.BlockWord is not { } word ? null
+            : Candidates(block.Name, word).FirstOrDefault(c => Available(c, run));
 
     // water stays water: an ice top on a water block is a solid slab; banks with an ice version swapped above
     private static bool Water(CGameCtnBlock block, ConversionRun run)
@@ -226,15 +229,17 @@ internal static partial class BlockRules
     private static bool CoverOverTwin(CGameCtnBlock block, ConversionRun run, bool always)
     {
         var name = block.Name;
-        if (!(block.IsGround || run.InTerrain(block)) || !BlockNames.IsWholeOnGround(name, run.Collection) || !(always || run.Rules.Options.SnowOnGroundDeco)) return false;
-        if (run.Items.Theme.BlockWord is not { } word) return false;
-        var twin = "Platform" + word + name["DecoPlatform".Length..];
-        if (!Available(twin, run) || !ItemPlacer.Place(run, block, run.Variant(block), run.Clips(block), ItemKind.OverTwin)) return false;
+        if (!(always || run.Rules.Options.SnowOnGroundDeco) || CoverTwinOf(block, run) is not { } twin
+            || !ItemPlacer.Place(run, block, run.Variant(block), run.Clips(block), ItemKind.OverTwin)) return false;
         block.Name = twin;
         run.Renamed.Add(block);
         Bump(run.Report.Swapped, (name, twin, Source.Rule));
         return true;
     }
+
+    private static string? CoverTwinOf(CGameCtnBlock block, ConversionRun run)
+        => (block.IsGround || run.InTerrain(block)) && BlockNames.IsWholeOnGround(block.Name, run.Collection) && run.Items.Theme.BlockWord is { } word
+            && "Platform" + word + block.Name["DecoPlatform".Length..] is var twin && Available(twin, run) ? twin : null;
 
     // waypoints as custom blocks need customWaypoints; free blocks too, the game turns and tilts them; ground blocks keep their ground plate.
     // the game draws the placed variant's body, not the resolver's no-pillar-below one

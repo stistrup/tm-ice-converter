@@ -34,6 +34,8 @@ internal sealed class ConversionRun
 
     public CoverArea Cover { get; }
 
+    // picks that wouldn't change a piece (blocks, items), learnt for the preview
+    public Dictionary<object, HashSet<string>> CannotPick { get; } = new(ReferenceEqualityComparer.Instance);
     public HashSet<CGameCtnBlock> Replaced { get; } = new(ReferenceEqualityComparer.Instance);
     public HashSet<CGameCtnBlock> Renamed { get; } = new(ReferenceEqualityComparer.Instance);
     public HashSet<CGameCtnBlock> Skinned { get; } = new(ReferenceEqualityComparer.Instance);

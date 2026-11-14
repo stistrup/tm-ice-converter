@@ -10,7 +10,7 @@
     "tops": { "label": "Tops", "options": { "convertScenery": true } },
     "topsNative": { "label": "Tops, ground deco native", "options": { "convertScenery": true, "snowOnGroundDeco": true } },
     "cover": { "label": "Ground cover", "pick": "snow" },
-    "swap": { "label": "Swapped", "pick": "frozen" },
+    "swap": { "label": "Native snow tree", "pick": "frozen" },
     "swapOnConverted": { "label": "Swapped on converted blocks", "options": { "convertTrees": true } },
     "copy": { "label": "Copy", "options": {} }
   },

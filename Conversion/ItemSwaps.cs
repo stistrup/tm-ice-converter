@@ -13,12 +13,14 @@ internal static class ItemSwaps
         var removed = new List<CGameCtnAnchoredObject>();
         foreach (var item in run.Map.GetAnchoredObjects())
         {
-            if (item.ItemModel is not { Author: "Nadeo" } model) continue;
+            var model = item.ItemModel;
             if (run.DataRules.Untouched(model.Id)) { Bump(run.Report.Untouched, model.Id); continue; }
             var p = item.AbsolutePositionInMap;
             var at = new Vector3(p.X, p.Y, p.Z);
             var picked = run.Rules.ChoiceAt(model.Id, at) ?? (run.Rules.RulesOn ? null : "keep");
+            // any item can go; only the game's own convert
             if (picked == "remove" || picked is null && run.Rules.RemovesItem(model.Id, at)) { removed.Add(item); Bump(run.Report.RemovedByList, model.Id); }
+            else if (model.Author != "Nadeo") continue;
             else if (picked == "keep" || picked is null && run.Rules.KeepsItem(model.Id)) Bump(run.Report.KeptByList, model.Id);
             else if (SwapTree(run, item, model, picked, snow)) { }
             else if (run.Items.ForItem(model.Id) is { } copy) PlaceCopy(run, item, model, copy, icedAt);
@@ -49,6 +51,17 @@ internal static class ItemSwaps
         Bump(run.Report.SwappedItems, (model.Id, target));
         return true;
     }
+
+    // as Run goes: other authors' items only go; a tree with a frozen one swaps, the rest copy; a sink pick copies too
+    public static bool Can(string pick, Ident model, ConversionRun run) => pick switch
+    {
+        "remove" or "" or "keep" => true,
+        _ when model.Author != "Nadeo" => false,
+        "frozen" => CoverSwap(run, model.Id) is not null,
+        "copy" => CoverSwap(run, model.Id) is null,
+        "sink" => false,
+        _ => true,
+    };
 
     // stacked copies go up 1 cm each
     private static void PlaceCopy(ConversionRun run, CGameCtnAnchoredObject item, Ident model, BuiltItem copy, Dictionary<(float, float, float), int> placedAt)

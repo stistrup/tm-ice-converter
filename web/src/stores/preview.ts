@@ -7,7 +7,6 @@ import {
   normalKey,
   fetchPreview,
   fetchPreviewScene,
-  applyGroup as postGroup,
   applyPreset as postPreset,
   editSettings,
   redoSettings,
@@ -161,7 +160,6 @@ export const usePreviewStore = defineStore('preview', () => {
   const save = () => documentCall(saveSettings, false)
   const revert = () => documentCall(revertSettings, true)
   const applyPreset = (name: string, only: string[] | null) => documentCall((path) => postPreset(path, name, only), true)
-  const applyGroup = (group: string, method: string, only: string[] | null) => documentCall((path) => postGroup(path, group, method, only), true)
 
   const loadState = async () => {
     const current = map.currentMap
@@ -276,7 +274,6 @@ export const usePreviewStore = defineStore('preview', () => {
     save,
     revert,
     applyPreset,
-    applyGroup,
     picks,
     pick,
     building,
